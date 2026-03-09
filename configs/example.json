@@ -1,0 +1,37 @@
+{
+  "id": "vm-12345",
+  "name": "web-server-01",
+  "status": "running",
+  "cpu": {
+    "cores": 4,
+    "threads_per_core": 2,
+    "architecture": "x86_64"
+  },
+  "memory_gb": 16,
+  "os": {
+    "name": "Ubuntu",
+    "version": "22.04",
+    "distribution": "linux"
+  },
+  "disks": [
+    {
+      "name": "os-disk",
+      "size_gb": 100,
+      "type": "ssd",
+      "boot": true
+    }
+  ],
+  "network_interfaces": [
+    {
+      "name": "eth0",
+      "mac_address": "00:16:3e:5e:6c:00",
+      "private_ip": "10.0.0.5",
+      "public_ip": "34.120.10.25"
+    }
+  ],
+  "tags": ["production", "web"],
+  "metadata": {
+    "owner": "devops",
+    "environment": "prod"
+  }
+}
