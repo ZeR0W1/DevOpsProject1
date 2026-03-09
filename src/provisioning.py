@@ -1,9 +1,7 @@
 import json
-from typing import List, Optional, Dict, Annotated
 from enum import Enum
-from pydantic import BaseModel, Field, IPvAnyAddress, ValidationError, StringConstraints, create_model, fields
+from pydantic import BaseModel, IPvAnyAddress, ValidationError, create_model, fields
 import scheme
-from dotty_dict import Dotty
 from ipaddress import IPv4Address
 
 
@@ -22,15 +20,15 @@ def validate_one_field(model_cls: type[BaseModel], field_name: str, raw_value):
     return getattr(obj, field_name)
 
 
-
-def fill_model(model_name: str, annotation: type[BaseModel]):
+# prompt users for input only on fields that have a prompt written
+def fill_model(model_name: str, model: type[BaseModel]):
     data = {}
-    print(model_name + " nested")
-    for subfield in annotation.model_fields.items():
-                if subfield[1].description is None:
+    print(model_name + " nested") #debug
+    for field in model.model_fields.items():
+                if field[1].description is None:
                      continue
-                data[subfield[0]] = get_field_input(subfield, annotation)
-                if model_name is "VirtualMachine" and data[subfield[0]] is "done":
+                data[field[0]] = get_field_input(field, model)
+                if model_name is "VirtualMachine" and data[field[0]] is "done":
                      return "done"
     return data
 
@@ -43,9 +41,9 @@ def get_field_input(field: tuple[str, fields.FieldInfo], parent_model):
                  return None
             return data
     
-    print(field[0] + " simple")
+    print(field[0] + " simple") #debug
     while True:
-        if isinstance(field[1].annotation, Enum):
+        if isinstance(field[1].annotation, Enum): # TODO: put this in a separate function for handling enums?
             print("Enter " + field[1].description + ":")
             for option in field[1].annotation:
                 print(option.value + " - " + option.name)
