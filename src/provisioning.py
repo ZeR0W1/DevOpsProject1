@@ -7,13 +7,14 @@ from dotty_dict import Dotty
 from ipaddress import IPv4Address
 
 
-
+# TODO: remove unnecessary imports
+# TODO: readability
 
 def validate_one_field(model_cls: type[BaseModel], field_name: str, raw_value):
     field = model_cls.model_fields[field_name]
 
     TempModel = create_model(
-        "TempModel",
+        "TempModel"
         **{field_name: (field.annotation, field)}
     )
 
@@ -37,7 +38,7 @@ def fill_model(model_name: str, annotation: type[BaseModel]):
 def get_field_input(field: tuple[str, fields.FieldInfo], parent_model):
 
     if isinstance(field[1].annotation, type) and issubclass(field[1].annotation, BaseModel):
-            data = fill_model(field[0], field[1].annotation) #return None instead of "done" so next 3 lines can be re[laced by direct return 
+            data = fill_model(field[0], field[1].annotation) #return None instead of "done" so next 3 lines can be re[laced by direct return OR use try catch to terminate input
             if data is "done":
                  return None
             return data
