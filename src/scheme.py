@@ -1,6 +1,6 @@
 import json
 from typing import List, Optional, Dict, Annotated
-from enum import Enum
+from enum import IntEnum, Enum
 from pydantic import BaseModel, Field, IPvAnyAddress, ValidationError, StringConstraints
 
 
@@ -15,25 +15,25 @@ class VMStatus(str, Enum):
     terminated = "terminated"
 
 
-class CPUArchitecture(str, Enum):
-    x86_64 = "1"
-    arm64 = "2"
+class CPUArchitecture(IntEnum):
+    x86_64 = 1
+    arm64 = 2
 
 
-class DiskType(str, Enum):
-    ssd = "ssd"
-    hdd = "hdd"
-    nvme = "nvme"
+class DiskType(IntEnum):
+    ssd = 1
+    hdd = 2
+    nvme = 3
 
 
-class OSType(str, Enum):
-    linux = "linux"
-    windows = "windows"
-    bsd = "bsd"
+class OSType(IntEnum):
+    linux = 1
+    windows = 2
+    bsd = 3
 
-class OSName(str, Enum):
-    ubuntu = "ubuntu"
-    centos = "centos"
+class OSName(IntEnum):
+    ubuntu = 1
+    centos = 2
 
 
 # -------------------------
@@ -49,7 +49,7 @@ class CPUConfig(BaseModel):
 class OSConfig(BaseModel):
     name: OSName = Field(description="OS", json_schema_extra={"is_numeric" : False})
     version: Optional[str] = Field(description="version", json_schema_extra={"is_numeric" : False})
-    distribution: OSType = "linux"
+    distribution: OSType = 1
 
 
 class DiskConfig(BaseModel):
@@ -78,14 +78,14 @@ class VirtualMachine(BaseModel):
 
     #TODO: add metadata to all user inputted fields that stores an is_numeric bool to check user input before validation
 
-    id: str
+    id: str = "1"
     name: str = Field(description="machine name", json_schema_extra={"is_numeric" : False})
-    status: VMStatus
+    status: VMStatus = "stopped"
     cpu: CPUConfig = Field(description="CPU config parameters")
     memory_gb: int = Field(description="RAM(in GB, numeric only)", gt=0, json_schema_extra={"is_numeric" : True})
     os: OSConfig = Field(description="OS details")
     disks: DiskConfig = Field(description="disk details")
-    network_interfaces: NetworkInterface
+    network_interfaces: NetworkInterface = Field(description="network interface details")
     tags: List[str] = []
     metadata: Dict[str, str] = {}
 
@@ -118,4 +118,4 @@ def validate_json_file(filepath: str):
 
 
 if __name__ == "__main__":
-    validate_json_file("infra-automation/configs/ex2.json")
+    validate_json_file("configs/ex2.json")
