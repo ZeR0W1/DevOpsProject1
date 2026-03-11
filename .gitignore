@@ -8,3 +8,6 @@ dist/
 
 logs/
 .env
+
+__pycache__/
+*.pyc
