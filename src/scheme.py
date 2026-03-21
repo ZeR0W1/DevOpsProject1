@@ -1,7 +1,8 @@
 import json
-from typing import List, Optional, Dict, Annotated
-from enum import IntEnum, Enum
-from pydantic import BaseModel, Field, IPvAnyAddress, ValidationError, StringConstraints
+from enum import Enum, IntEnum
+from typing import Annotated, Optional
+
+from pydantic import BaseModel, Field, IPvAnyAddress, StringConstraints, ValidationError
 
 
 # -------------------------
@@ -41,22 +42,22 @@ class OSName(IntEnum):
 # -------------------------
 
 class CPUConfig(BaseModel):
-    cores: int = Field(gt=0, description="number of cores")
-    threads_per_core: int = Field(gt=0, description="number of threads per core", json_schema_extra={"is_numeric" : True})
-    architecture: CPUArchitecture = Field(description="CPU architecture", json_schema_extra={"is_numeric" : False})
+    cores: int = Field(gt=0, description="number of cores", json_schema_extra={"is_numeric": True})
+    threads_per_core: int = Field(gt=0, description="number of threads per core", json_schema_extra={"is_numeric": True})
+    architecture: CPUArchitecture = Field(description="CPU architecture", json_schema_extra={"is_numeric": False})
 
 
 class OSConfig(BaseModel):
-    name: OSName = Field(description="OS", json_schema_extra={"is_numeric" : False})
-    version: str = Field(description="version", json_schema_extra={"is_numeric" : False})
-    distribution: OSType = OSType.linux
+    name: OSName = Field(description="OS", json_schema_extra={"is_numeric": False})
+    version: str = Field(description="version", json_schema_extra={"is_numeric": False})
+    distribution: OSType = Field(default=OSType.linux, json_schema_extra={"is_numeric": False})
 
 
 class DiskConfig(BaseModel):
-    name: str = Field(description="disk name", json_schema_extra={"is_numeric" : False})
-    size_gb: float = Field(gt=0, description="size(in GB)", json_schema_extra={"is_numeric" : True})
-    type: DiskType = Field(description="disk type", json_schema_extra={"is_numeric" : False})
-    boot: bool = False
+    name: str = Field(description="disk name", json_schema_extra={"is_numeric": False})
+    size_gb: float = Field(gt=0, description="size(in GB)", json_schema_extra={"is_numeric": True})
+    type: DiskType = Field(description="disk type", json_schema_extra={"is_numeric": False})
+    boot: bool = Field(default=False, json_schema_extra={"is_numeric": False})
 
 MacAddress = Annotated[
     str,
@@ -64,30 +65,10 @@ MacAddress = Annotated[
 ]
 
 class NetworkInterface(BaseModel):
-    name: str = Field(description="network interface name", json_schema_extra={"is_numeric" : False})
-    mac_address: MacAddress = Field(description="mac address", json_schema_extra={"is_numeric" : False})
-    private_ip: IPvAnyAddress = Field(description="private ip", json_schema_extra={"is_numeric" : False})
-    public_ip: Optional[IPvAnyAddress] = None
-
-
-# -------------------------
-# Main VM Model
-# -------------------------
-
-class VirtualMachine(BaseModel):
-
-    #TODO: add metadata to all user inputted fields that stores an is_numeric bool to check user input before validation
-
-    id: str = "1"
-    name: str = Field(description="machine name", json_schema_extra={"is_numeric" : False})
-    status: VMStatus = VMStatus.stopped
-    cpu: CPUConfig = Field(description="CPU config parameters")
-    memory_gb: int = Field(description="RAM(in GB, numeric only)", gt=0, json_schema_extra={"is_numeric" : True})
-    os: OSConfig = Field(description="OS details")
-    disks: DiskConfig = Field(description="disk details")
-    network_interfaces: NetworkInterface = Field(description="network interface details")
-    tags: List[str] = Field(default_factory=list)
-    metadata: Dict[str, str] = Field(default_factory=dict)
+    name: str = Field(description="network interface name", json_schema_extra={"is_numeric": False})
+    private_ip: IPvAnyAddress = Field(description="private ip", json_schema_extra={"is_numeric": False})
+    mac_address: Optional[MacAddress] = Field(default=None, description="mac address", json_schema_extra={"is_numeric": False})
+    public_ip: Optional[IPvAnyAddress] = Field(default=None, description="public ip", json_schema_extra={"is_numeric": False})
 
 
 # -------------------------
@@ -95,11 +76,13 @@ class VirtualMachine(BaseModel):
 # -------------------------
 
 def validate_json_file(filepath: str):
+    from machine import Machine
+
     try:
         with open(filepath, "r", encoding="utf-8") as f:
             data = json.load(f)
 
-        vm = VirtualMachine.model_validate(data)
+        vm = Machine.model_validate(data)
 
         print("JSON is valid!")
         print("\nParsed VM object:")

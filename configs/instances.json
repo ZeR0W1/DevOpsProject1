@@ -1,0 +1,70 @@
+[
+  {
+    "id": "1",
+    "name": "Machine A",
+    "status": "stopped",
+    "cpu": {
+      "cores": 6,
+      "threads_per_core": 3,
+      "architecture": 1
+    },
+    "memory_gb": 64,
+    "os": {
+      "name": 1,
+      "version": "",
+      "distribution": 1
+    },
+    "disks": [
+      {
+        "name": "voluma a",
+        "size_gb": 128.0,
+        "type": 1,
+        "boot": false
+      }
+    ],
+    "network_interfaces": [
+      {
+        "name": "net",
+        "mac_address": "00:16:3e:5e:6c:00",
+        "private_ip": "192.168.0.1",
+        "public_ip": null
+      }
+    ],
+    "tags": [],
+    "metadata": {}
+  },
+  {
+    "id": "1",
+    "name": "Machine B",
+    "status": "stopped",
+    "cpu": {
+      "cores": 4,
+      "threads_per_core": 2,
+      "architecture": 2
+    },
+    "memory_gb": 2,
+    "os": {
+      "name": 2,
+      "version": "",
+      "distribution": 1
+    },
+    "disks": [
+      {
+        "name": "volume 1",
+        "size_gb": 64.0,
+        "type": 2,
+        "boot": false
+      }
+    ],
+    "network_interfaces": [
+      {
+        "name": "net 1",
+        "mac_address": "00:16:3e:5e:6c:01",
+        "private_ip": "192.168.0.2",
+        "public_ip": null
+      }
+    ],
+    "tags": [],
+    "metadata": {}
+  }
+]
