@@ -48,8 +48,8 @@ class CPUConfig(BaseModel):
 
 class OSConfig(BaseModel):
     name: OSName = Field(description="OS", json_schema_extra={"is_numeric" : False})
-    version: Optional[str] = Field(description="version", json_schema_extra={"is_numeric" : False})
-    distribution: OSType = 1
+    version: str = Field(description="version", json_schema_extra={"is_numeric" : False})
+    distribution: OSType = OSType.linux
 
 
 class DiskConfig(BaseModel):
@@ -80,14 +80,14 @@ class VirtualMachine(BaseModel):
 
     id: str = "1"
     name: str = Field(description="machine name", json_schema_extra={"is_numeric" : False})
-    status: VMStatus = "stopped"
+    status: VMStatus = VMStatus.stopped
     cpu: CPUConfig = Field(description="CPU config parameters")
     memory_gb: int = Field(description="RAM(in GB, numeric only)", gt=0, json_schema_extra={"is_numeric" : True})
     os: OSConfig = Field(description="OS details")
     disks: DiskConfig = Field(description="disk details")
     network_interfaces: NetworkInterface = Field(description="network interface details")
-    tags: List[str] = []
-    metadata: Dict[str, str] = {}
+    tags: List[str] = Field(default_factory=list)
+    metadata: Dict[str, str] = Field(default_factory=dict)
 
 
 # -------------------------
