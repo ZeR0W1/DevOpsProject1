@@ -1,70 +1,189 @@
 [
   {
-    "id": "1",
-    "name": "Machine A",
+    "id": 1,
+    "name": "Machine G",
     "status": "stopped",
     "cpu": {
-      "cores": 6,
-      "threads_per_core": 3,
+      "cores": 2,
+      "threads_per_core": 2,
       "architecture": 1
     },
-    "memory_gb": 64,
+    "memory_gb": 8,
     "os": {
       "name": 1,
-      "version": "",
+      "version": "22.04",
       "distribution": 1
     },
     "disks": [
       {
-        "name": "voluma a",
-        "size_gb": 128.0,
+        "name": "disk-g1",
+        "size_gb": 50.0,
         "type": 1,
         "boot": false
       }
     ],
     "network_interfaces": [
       {
-        "name": "net",
-        "mac_address": "00:16:3e:5e:6c:00",
-        "private_ip": "192.168.0.1",
-        "public_ip": null
+        "name": "nic-g1",
+        "private_ip": "192.168.10.10",
+        "mac_address": "00:16:3e:5e:6c:20",
+        "public_ip": "34.10.10.10"
       }
     ],
     "tags": [],
     "metadata": {}
   },
   {
-    "id": "1",
-    "name": "Machine B",
+    "id": 2,
+    "name": "Machine H",
     "status": "stopped",
     "cpu": {
       "cores": 4,
       "threads_per_core": 2,
       "architecture": 2
     },
-    "memory_gb": 2,
+    "memory_gb": 16,
     "os": {
       "name": 2,
-      "version": "",
+      "version": "2019",
       "distribution": 1
     },
     "disks": [
       {
-        "name": "volume 1",
-        "size_gb": 64.0,
+        "name": "disk-h1",
+        "size_gb": 100.0,
         "type": 2,
+        "boot": false
+      },
+      {
+        "name": "disk-h2",
+        "size_gb": 200.0,
+        "type": 1,
         "boot": false
       }
     ],
     "network_interfaces": [
       {
-        "name": "net 1",
-        "mac_address": "00:16:3e:5e:6c:01",
-        "private_ip": "192.168.0.2",
-        "public_ip": null
+        "name": "nic-h1",
+        "private_ip": "192.168.10.11",
+        "mac_address": "00:16:3e:5e:6c:21",
+        "public_ip": "34.10.10.11"
       }
     ],
     "tags": [],
     "metadata": {}
+  },
+  {
+    "id": 3,
+    "name": "Machine I",
+    "status": "stopped",
+    "cpu": {
+      "cores": 8,
+      "threads_per_core": 2,
+      "architecture": 1
+    },
+    "memory_gb": 32,
+    "os": {
+      "name": 1,
+      "version": "24.04",
+      "distribution": 1
+    },
+    "disks": [
+      {
+        "name": "disk-i1",
+        "size_gb": 256.0,
+        "type": 3,
+        "boot": false
+      }
+    ],
+    "network_interfaces": [
+      {
+        "name": "nic-i1",
+        "private_ip": "192.168.10.12",
+        "mac_address": "00:16:3e:5e:6c:22",
+        "public_ip": "34.10.10.12"
+      },
+      {
+        "name": "nic-i2",
+        "private_ip": "192.168.10.13",
+        "mac_address": "00:16:3e:5e:6c:23",
+        "public_ip": "34.10.10.13"
+      }
+    ],
+    "tags": [],
+    "metadata": {}
+  },
+  {
+    "id": 4,
+    "name": "Machine J",
+    "status": "stopped",
+    "cpu": {
+      "cores": 16,
+      "threads_per_core": 2,
+      "architecture": 2
+    },
+    "memory_gb": 64,
+    "os": {
+      "name": 2,
+      "version": "2022",
+      "distribution": 1
+    },
+    "disks": [
+      {
+        "name": "disk-j1",
+        "size_gb": 500.0,
+        "type": 1,
+        "boot": false
+      }
+    ],
+    "network_interfaces": [
+      {
+        "name": "nic-j1",
+        "private_ip": "192.168.10.14",
+        "mac_address": "00:16:3e:5e:6c:24",
+        "public_ip": "34.10.10.14"
+      }
+    ],
+    "tags": [],
+    "metadata": {}
+  },
+  {
+    "id": 5,
+    "name": "Machine K",
+    "status": "stopped",
+    "cpu": {
+      "cores": 2,
+      "threads_per_core": 2,
+      "architecture": 1
+    },
+    "memory_gb": 8,
+    "os": {
+      "name": 1,
+      "version": "22.04",
+      "distribution": 1
+    },
+    "disks": [
+      {
+        "name": "disk-k1",
+        "size_gb": 60.0,
+        "type": 1,
+        "boot": false
+      }
+    ],
+    "network_interfaces": [
+      {
+        "name": "nic-k1",
+        "private_ip": "192.168.20.10",
+        "mac_address": "00:16:3e:5e:6c:30",
+        "public_ip": "34.20.20.10"
+      }
+    ],
+    "tags": [
+      "web",
+      "prod"
+    ],
+    "metadata": {
+      "owner": "ops-team"
+    }
   }
 ]
