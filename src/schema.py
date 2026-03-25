@@ -81,12 +81,13 @@ def validate_json_file(filepath: str):
     try:
         with open(filepath, "r", encoding="utf-8") as f:
             data = json.load(f)
+        for machine in data:
+            vm = Machine.model_validate(machine)
+            print("JSON is valid!")
+            print("\nParsed VM object:")
+            print(vm.model_dump_json(indent=2))
 
-        vm = Machine.model_validate(data)
-
-        print("JSON is valid!")
-        print("\nParsed VM object:")
-        print(vm.model_dump_json(indent=2))
+        print("JSON file validation successful")
 
     except ValidationError as e:
         print("Validation failed!")

@@ -51,8 +51,9 @@ def new_vm():
 
 def append_vm_to_instances_file(vm: Machine, filepath=INSTANCES_FILEPATH):
     instances = load_instances(filepath)
-
     instances.append(vm.to_dict())
+
+    filepath.parent.mkdir(parents=True, exist_ok=True)
 
     with open(filepath, "w", encoding="utf-8") as file:
         json.dump(instances, file, indent=2)

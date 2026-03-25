@@ -8,7 +8,8 @@ from pydantic import BaseModel, ValidationError, Field, TypeAdapter, fields
 logger = logging.getLogger(__name__)
 
 
-def validate_one_item(model_cls: type[BaseModel], field_name: str, raw_value):
+def validate_field(model_cls: type[BaseModel], field_name: str, raw_value):
+    """Validate a single field in a model"""
     field = model_cls.model_fields[field_name]
     field_definition = field.asdict()
 
@@ -61,7 +62,7 @@ def fill_model(model_name: str, model: type[BaseModel]):
             continue
 
         data[field_name] = get_field_input(field_name, field_info, model)
-        if model_name == "Machine" and data[field_name] == "done":
+        if model_name == "Machine" and data[field_name] == "done": # end user input if "done" is entered into the machine name
             return None
 
     return data
@@ -132,7 +133,7 @@ def get_scalar_input(field_name, field_info: fields.FieldInfo, parent_model: typ
             raw = raw.strip()
 
         try:
-            value = validate_one_item(parent_model, field_name, raw)
+            value = validate_field(parent_model, field_name, raw)
             print("ok")
             return value
         except ValidationError as e:
