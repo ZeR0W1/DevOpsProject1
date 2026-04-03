@@ -29,7 +29,8 @@ scripts/
 ## Setup Instructions
 
 1. Make sure Python is installed.
-2. Install the required dependency in a venv:
+2. Clone the project repository from: https://github.com/ZeR0W1/DevOpsProject1/tree/main
+3. In the project root directory, install the required dependency in a venv:
 
 from the project root directory:
 
