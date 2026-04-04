@@ -3,8 +3,6 @@
 
 This is a rolling project that will evolve as new topics are learned. At this stage, the goal is to build the skeleton of an infrastructure provisioning tool. Future enhancements may integrate AWS and Terraform to create real resources. For now, the provisioning process is mocked to simulate infrastructure automation.
 
-GitHub repository: https://github.com/ZeR0W1/DevOpsProject1.git
-
 ## Project Objective
 
 Develop a modular Python-based automation tool that simulates infrastructure provisioning and service configuration by accepting and validating user inputs, all while maintining proper logging and error handling
@@ -30,7 +28,7 @@ scripts/
 ## Setup Instructions
 
 1. Make sure Python is installed.
-2. Clone the project repository from: https://github.com/ZeR0W1/DevOpsProject1/tree/main
+2. Clone the project repository from: https://github.com/ZeR0W1/DevOpsProject1/tree/aws-assignment1
 3. In the project root directory, install the required dependency in a venv:
 
 from the project root directory:
