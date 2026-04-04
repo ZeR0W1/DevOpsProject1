@@ -12,6 +12,7 @@ Develop a modular Python-based automation tool that simulates infrastructure pro
 ## Current Project Structure
 ```text
 src/
+  api_backend.py        FastAPI backend entry point for nginx-proxied API mode
   config.py            Shared config values and output helper
   infra_simulator.py   Main entry point
   machine.py           Pydantic machine model
@@ -50,11 +51,85 @@ venv\Scripts\Activate
 pip install -r requirements.txt
 ```
 
-3. Run the simulator from the project root:
+4. Run the simulator from the project root:
 
 ```bash
 python src/infra_simulator.py
 ```
+
+## Backend API Mode
+
+The project now also supports a backend API flow for the AWS assignment.
+
+### Added requirements and why
+
+- `fastapi` - used to expose real HTTP endpoints, read JSON request bodies, and validate them against the existing Pydantic-based machine schema.
+- `uvicorn` - used to run the FastAPI app as the local Python web server that nginx can proxy requests to.
+
+### Backend input/output model
+
+- `MachineInput` represents the data the frontend is allowed to send.
+- `Machine` represents the saved machine object, including backend-managed fields like `id` and default `status`.
+
+### Run the backend API
+
+From the project root:
+
+```bash
+python src/api_backend.py
+```
+
+By default, the backend listens on `127.0.0.1:8000`, which is appropriate when nginx is used as the public-facing reverse proxy.
+
+### API endpoints
+
+- `GET /health` - backend health check
+- `GET /machines` - list saved machine configurations
+- `POST /machines` - create and save a machine from frontend JSON input
+- `GET /schema/machine` - return the machine JSON schema
+
+### Expected frontend JSON payload
+
+The frontend should send JSON matching `MachineInput`, for example:
+
+```json
+{
+  "name": "Machine G",
+  "cpu": {
+    "cores": 2,
+    "threads_per_core": 2,
+    "architecture": 1
+  },
+  "memory_gb": 8,
+  "os": {
+    "name": 1,
+    "version": "22.04",
+    "distribution": 1
+  },
+  "disks": [
+    {
+      "name": "disk-g1",
+      "size_gb": 50.0,
+      "type": 1,
+      "boot": false
+    }
+  ],
+  "network_interfaces": [
+    {
+      "name": "nic-g1",
+      "private_ip": "192.168.10.10",
+      "mac_address": "00:16:3e:5e:6c:20",
+      "public_ip": "34.10.10.10"
+    }
+  ],
+  "tags": ["web", "prod"],
+  "metadata": {
+    "owner": "ops-team"
+  }
+}
+```
+
+The backend assigns the machine `id` and applies the default `status`.
 
 ## Example Expected Output
 

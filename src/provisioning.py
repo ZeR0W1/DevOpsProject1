@@ -3,7 +3,7 @@ import logging
 from config import INSTANCES_FILEPATH, combined_output
 from user_input import fill_model
 
-from machine import Machine
+from machine import Machine, MachineInput
 
 
 logger = logging.getLogger(__name__)
@@ -37,13 +37,12 @@ def get_next_machine_id(filepath=INSTANCES_FILEPATH):
 
 def new_vm():
     """Build and validate one VM object from user input."""
-    data = fill_model("Machine", Machine)
+    data = fill_model("Machine", MachineInput)
     if data is None:
         combined_output("--END OF USER INPUT--")
         return None
 
-    data["id"] = get_next_machine_id()
-    vm = Machine.model_validate(data)
+    vm = Machine.from_input_data(data, get_next_machine_id())
     vm.output_on_init()
 
     return vm

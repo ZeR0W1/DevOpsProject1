@@ -13,5 +13,5 @@ logs/
 *.pyc
 *$py.class
 
-frontend/
 github.txt
+configs/instances.json

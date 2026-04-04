@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AWS Machine Configuration Portal</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --panel: #111827;
+      --panel-alt: #1f2937;
+      --text: #e5e7eb;
+      --muted: #94a3b8;
+      --accent: #38bdf8;
+      --accent-strong: #0ea5e9;
+      --success: #22c55e;
+      --border: rgba(148, 163, 184, 0.18);
+      --shadow: 0 20px 40px rgba(0, 0, 0, 0.35);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      background: linear-gradient(180deg, #020617 0%, #0f172a 100%);
+      color: var(--text);
+    }
+
+    .container {
+      width: min(1120px, calc(100% - 32px));
+      margin: 0 auto;
+    }
+
+    header {
+      padding: 56px 0 32px;
+    }
+
+    .hero {
+      display: grid;
+      grid-template-columns: 1.2fr 0.8fr;
+      gap: 24px;
+      align-items: stretch;
+    }
+
+    .hero-card,
+    .panel,
+    .service-card {
+      background: rgba(17, 24, 39, 0.88);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(8px);
+    }
+
+    .hero-card {
+      padding: 32px;
+    }
+
+    .eyebrow {
+      display: inline-block;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(56, 189, 248, 0.12);
+      color: var(--accent);
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.4px;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 18px 0 14px;
+      font-size: clamp(2rem, 4vw, 3.4rem);
+      line-height: 1.1;
+    }
+
+    .lead {
+      color: var(--muted);
+      font-size: 1.05rem;
+      line-height: 1.7;
+      margin-bottom: 24px;
+    }
+
+    .hero-actions {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .btn {
+      display: inline-block;
+      text-decoration: none;
+      border-radius: 12px;
+      padding: 12px 18px;
+      font-weight: 700;
+      transition: 0.2s ease;
+      border: 1px solid transparent;
+    }
+
+    .btn-primary {
+      background: var(--accent-strong);
+      color: white;
+    }
+
+    .btn-primary:hover {
+      background: #0284c7;
+    }
+
+    .btn-secondary {
+      border-color: var(--border);
+      color: var(--text);
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    .btn-secondary:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .hero-side {
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 16px;
+    }
+
+    .stat {
+      padding: 16px;
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--border);
+    }
+
+    .stat strong {
+      display: block;
+      font-size: 1.8rem;
+      margin-bottom: 6px;
+      color: white;
+    }
+
+    main {
+      padding-bottom: 56px;
+    }
+
+    .section-title {
+      font-size: 1.7rem;
+      margin: 0 0 8px;
+    }
+
+    .section-copy {
+      color: var(--muted);
+      margin: 0 0 24px;
+      line-height: 1.6;
+    }
+
+    .services {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 18px;
+      margin-bottom: 40px;
+    }
+
+    .service-card {
+      padding: 22px;
+    }
+
+    .service-card h3 {
+      margin-top: 0;
+      margin-bottom: 10px;
+    }
+
+    .service-card p,
+    .service-card li,
+    label,
+    .helper-text,
+    .mock-note {
+      color: var(--muted);
+    }
+
+    .service-card ul {
+      padding-left: 18px;
+      margin-bottom: 0;
+    }
+
+    .form-layout {
+      display: grid;
+      grid-template-columns: 1.3fr 0.7fr;
+      gap: 20px;
+    }
+
+    .panel {
+      padding: 24px;
+    }
+
+    form {
+      display: grid;
+      gap: 16px;
+    }
+
+    .grid-2,
+    .grid-3 {
+      display: grid;
+      gap: 16px;
+    }
+
+    .grid-2 {
+      grid-template-columns: repeat(2, 1fr);
+    }
+
+    .grid-3 {
+      grid-template-columns: repeat(3, 1fr);
+    }
+
+    label {
+      display: block;
+      font-size: 0.95rem;
+      margin-bottom: 6px;
+    }
+
+    input,
+    select,
+    textarea {
+      width: 100%;
+      border: 1px solid var(--border);
+      background: rgba(2, 6, 23, 0.8);
+      color: var(--text);
+      border-radius: 12px;
+      padding: 12px 14px;
+      font-size: 0.98rem;
+    }
+
+    textarea {
+      min-height: 110px;
+      resize: vertical;
+    }
+
+    input::placeholder,
+    textarea::placeholder {
+      color: #64748b;
+    }
+
+    .helper-text {
+      margin-top: -8px;
+      font-size: 0.9rem;
+    }
+
+    .form-actions {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .mock-note {
+      font-size: 0.92rem;
+      padding: 12px 14px;
+      border-radius: 12px;
+      background: rgba(34, 197, 94, 0.08);
+      border: 1px solid rgba(34, 197, 94, 0.25);
+    }
+
+    .status-box {
+      padding: 18px;
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--border);
+      margin-bottom: 16px;
+    }
+
+    .status-box h4 {
+      margin: 0 0 8px;
+    }
+
+    .badge {
+      display: inline-block;
+      margin-top: 8px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: rgba(34, 197, 94, 0.12);
+      color: #86efac;
+      font-size: 0.82rem;
+      font-weight: 700;
+    }
+
+    footer {
+      padding: 20px 0 40px;
+      color: var(--muted);
+      text-align: center;
+      font-size: 0.95rem;
+    }
+
+    @media (max-width: 900px) {
+      .hero,
+      .form-layout,
+      .services,
+      .grid-2,
+      .grid-3 {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="hero">
+        <section class="hero-card">
+          <span class="eyebrow">AWS Assignment Frontend</span>
+          <h1>Machine Configuration Portal</h1>
+          <p class="lead">
+            This frontend represents the public-facing service of the 3-EC2 architecture.
+            It provides a clean landing page and a mock interface for submitting machine
+            configuration data that will later be handled by the backend and worker services.
+          </p>
+          <div class="hero-actions">
+            <a class="btn btn-primary" href="#machine-form">Open Mock Form</a>
+            <a class="btn btn-secondary" href="#services">View Service Roles</a>
+          </div>
+        </section>
+
+        <aside class="hero-card hero-side">
+          <div class="stat">
+            <strong>3</strong>
+            <span>Dedicated EC2 instances: frontend, backend, and worker.</span>
+          </div>
+          <div class="stat">
+            <strong>Nginx</strong>
+            <span>Serves this page and will proxy dynamic requests to the backend.</span>
+          </div>
+          <div class="stat">
+            <strong>Mock UI</strong>
+            <span>Ready to evolve into a real form connected to your Python service.</span>
+          </div>
+        </aside>
+      </div>
+    </header>
+
+    <main>
+      <section id="services">
+        <h2 class="section-title">Service Overview</h2>
+        <p class="section-copy">
+          The application is split into three services so that each EC2 instance has a single,
+          clear responsibility in the AWS architecture.
+        </p>
+
+        <div class="services">
+          <article class="service-card">
+            <h3>Frontend EC2</h3>
+            <p>Public-facing nginx server that hosts the UI and routes requests to the backend.</p>
+            <ul>
+              <li>Accessible from the browser</li>
+              <li>Hosts static assets</li>
+              <li>Can reverse-proxy API requests</li>
+            </ul>
+          </article>
+
+          <article class="service-card">
+            <h3>Backend EC2</h3>
+            <p>Runs the main Python application logic for validation and machine configuration handling.</p>
+            <ul>
+              <li>Receives submitted machine data</li>
+              <li>Validates request payloads</li>
+              <li>Coordinates persistence and workflow</li>
+            </ul>
+          </article>
+
+          <article class="service-card">
+            <h3>Worker EC2</h3>
+            <p>Handles asynchronous processing so the backend remains responsive.</p>
+            <ul>
+              <li>Processes background jobs</li>
+              <li>Generates summaries or reports</li>
+              <li>Supports future AWS integrations</li>
+            </ul>
+          </article>
+        </div>
+      </section>
+
+      <section class="form-layout" id="machine-form">
+        <div class="panel">
+          <h2 class="section-title">Mock Machine Configuration Form</h2>
+          <p class="section-copy">
+            This mock form is now aligned with the backend API input format. It collects only the
+            fields the frontend should send, while the backend is responsible for assigning values
+            such as <code>id</code> and default <code>status</code>.
+          </p>
+
+          <form>
+            <div class="grid-2">
+              <div>
+                <label for="machine-name">Machine Name</label>
+                <input id="machine-name" type="text" placeholder="e.g. Machine G" />
+              </div>
+              <div>
+                <label for="tags">Tags</label>
+                <input id="tags" type="text" placeholder="Comma-separated, e.g. web, prod" />
+              </div>
+            </div>
+
+            <h3>CPU Configuration</h3>
+
+            <div class="grid-3">
+              <div>
+                <label for="cpu-cores">CPU Cores</label>
+                <input id="cpu-cores" type="number" min="1" placeholder="2" />
+              </div>
+              <div>
+                <label for="threads">Threads per Core</label>
+                <input id="threads" type="number" min="1" placeholder="2" />
+              </div>
+              <div>
+                <label for="architecture">CPU Architecture</label>
+                <select id="architecture">
+                  <option value="1">1 - x86_64</option>
+                  <option value="2">2 - arm64</option>
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <label for="memory">Memory (GB)</label>
+              <input id="memory" type="number" min="1" placeholder="8" />
+            </div>
+
+            <h3>Operating System</h3>
+
+            <div class="grid-2">
+              <div>
+                <label for="os-name">Operating System</label>
+                <select id="os-name">
+                  <option value="1">1 - ubuntu</option>
+                  <option value="2">2 - centos</option>
+                </select>
+              </div>
+              <div>
+                <label for="os-version">Version</label>
+                <input id="os-version" type="text" placeholder="e.g. 22.04" />
+              </div>
+            </div>
+
+            <div>
+              <label for="distribution">Distribution Type</label>
+              <select id="distribution">
+                <option value="1">1 - linux</option>
+                <option value="2">2 - windows</option>
+                <option value="3">3 - bsd</option>
+              </select>
+            </div>
+
+            <h3>Disk Configuration</h3>
+
+            <div class="grid-2">
+              <div>
+                <label for="disk-name">Disk Name</label>
+                <input id="disk-name" type="text" placeholder="e.g. disk-g1" />
+              </div>
+              <div>
+                <label for="disk-size">Disk Size (GB)</label>
+                <input id="disk-size" type="number" min="1" step="0.1" placeholder="50" />
+              </div>
+            </div>
+
+            <div class="grid-2">
+              <div>
+                <label for="disk-type">Disk Type</label>
+                <select id="disk-type">
+                  <option value="1">1 - ssd</option>
+                  <option value="2">2 - hdd</option>
+                  <option value="3">3 - nvme</option>
+                </select>
+              </div>
+              <div>
+                <label for="disk-boot">Boot Disk</label>
+                <select id="disk-boot">
+                  <option value="false">false</option>
+                  <option value="true">true</option>
+                </select>
+              </div>
+            </div>
+
+            <p class="helper-text">
+              The real CLI supports multiple disks. This mockup currently shows one disk entry block.
+            </p>
+
+            <h3>Network Interface</h3>
+
+            <div class="grid-2">
+              <div>
+                <label for="nic-name">Network Interface Name</label>
+                <input id="nic-name" type="text" placeholder="e.g. nic-g1" />
+              </div>
+              <div>
+                <label for="private-ip">Private IP</label>
+                <input id="private-ip" type="text" placeholder="192.168.10.10" />
+              </div>
+            </div>
+
+            <div class="grid-2">
+              <div>
+                <label for="mac-address">MAC Address</label>
+                <input id="mac-address" type="text" placeholder="00:16:3e:5e:6c:20" />
+              </div>
+              <div>
+                <label for="public-ip">Public IP</label>
+                <input id="public-ip" type="text" placeholder="Optional, e.g. 34.10.10.10" />
+              </div>
+            </div>
+
+            <p class="helper-text">
+              The real CLI supports multiple network interfaces. This mockup currently shows one interface entry block.
+            </p>
+
+            <h3>Tags and Metadata</h3>
+
+            <div>
+              <label for="metadata">Metadata</label>
+              <textarea id="metadata" placeholder='JSON-style example: {"owner": "ops-team", "environment": "prod"}'></textarea>
+            </div>
+
+            <p class="helper-text">
+              Frontend payload fields: <strong>name</strong>, <strong>cpu</strong>, <strong>memory_gb</strong>,
+              <strong>os</strong>, <strong>disks</strong>, <strong>network_interfaces</strong>, <strong>tags</strong>,
+              and <strong>metadata</strong>. The backend adds <strong>id</strong> and <strong>status</strong>.
+            </p>
+
+            <div class="form-actions">
+              <button class="btn btn-primary" type="button" onclick="submitMachine()">Submit Mock Request</button>
+              <button class="btn btn-secondary" type="reset">Clear Form</button>
+            </div>
+
+            <div class="mock-note">
+              This form now builds the JSON payload expected by the backend API. When connected to nginx
+              and the backend service, it can submit directly to <code>POST /machines</code>.
+            </div>
+
+            <div>
+              <label for="payload-preview">Generated JSON Payload</label>
+              <textarea id="payload-preview" readonly placeholder="The generated request body will appear here."></textarea>
+            </div>
+          </form>
+        </div>
+
+        <aside class="panel">
+          <div class="status-box">
+            <h4>Frontend Status</h4>
+            <p>Nginx is serving the assignment landing page successfully.</p>
+            <span class="badge">ACTIVE</span>
+          </div>
+
+          <div class="status-box">
+            <h4>Backend Integration</h4>
+            <p>Future step: connect form submission to a Python API endpoint on the backend EC2.</p>
+          </div>
+
+          <div class="status-box">
+            <h4>Worker Integration</h4>
+            <p>Future step: dispatch background jobs for async machine-processing tasks.</p>
+          </div>
+        </aside>
+      </section>
+    </main>
+
+    <footer>
+      AWS 3-Service Assignment Frontend • Nginx Landing Page Mockup
+    </footer>
+  </div>
+  <script>
+    function buildMachinePayload() {
+      const tagsValue = document.getElementById("tags").value.trim();
+      const metadataValue = document.getElementById("metadata").value.trim();
+
+      let metadata = {};
+      if (metadataValue) {
+        metadata = JSON.parse(metadataValue);
+      }
+
+      return {
+        name: document.getElementById("machine-name").value.trim(),
+        cpu: {
+          cores: Number(document.getElementById("cpu-cores").value),
+          threads_per_core: Number(document.getElementById("threads").value),
+          architecture: Number(document.getElementById("architecture").value)
+        },
+        memory_gb: Number(document.getElementById("memory").value),
+        os: {
+          name: Number(document.getElementById("os-name").value),
+          version: document.getElementById("os-version").value.trim(),
+          distribution: Number(document.getElementById("distribution").value)
+        },
+        disks: [
+          {
+            name: document.getElementById("disk-name").value.trim(),
+            size_gb: Number(document.getElementById("disk-size").value),
+            type: Number(document.getElementById("disk-type").value),
+            boot: document.getElementById("disk-boot").value === "true"
+          }
+        ],
+        network_interfaces: [
+          {
+            name: document.getElementById("nic-name").value.trim(),
+            private_ip: document.getElementById("private-ip").value.trim(),
+            mac_address: document.getElementById("mac-address").value.trim() || null,
+            public_ip: document.getElementById("public-ip").value.trim() || null
+          }
+        ],
+        tags: tagsValue ? tagsValue.split(",").map(tag => tag.trim()).filter(Boolean) : [],
+        metadata: metadata
+      };
+    }
+
+    function submitMachine() {
+      try {
+        const payload = buildMachinePayload();
+        document.getElementById("payload-preview").value = JSON.stringify(payload, null, 2);
+      } catch (error) {
+        alert("Invalid metadata JSON: " + error.message);
+      }
+    }
+  </script>
+</body>
+</html>
