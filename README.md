@@ -38,8 +38,8 @@ Initial clone:
 ```bash
 git clone --filter=blob:none --no-checkout --branch aws-assignment1 https://github.com/ZeR0W1/DevOpsProject1.git infra-automation
 cd infra-automation
-git sparse-checkout init --cone
-git sparse-checkout set README.md requirements.txt requirements-backend.txt requirements-worker.txt src configs scripts .gitignore
+git sparse-checkout init --no-cone
+git sparse-checkout set /README.md /requirements.txt /requirements-backend.txt src/ configs/ scripts/ /.gitignore
 git checkout aws-assignment1
 ```
 
@@ -58,8 +58,8 @@ Initial clone:
 ```bash
 git clone --filter=blob:none --no-checkout --branch aws-assignment1 https://github.com/ZeR0W1/DevOpsProject1.git infra-automation
 cd infra-automation
-git sparse-checkout init --cone
-git sparse-checkout set README.md requirements.txt requirements-worker.txt src configs .gitignore
+git sparse-checkout init --no-cone
+git sparse-checkout set /README.md /requirements.txt /requirements-worker.txt src/ configs/ /.gitignore
 git checkout aws-assignment1
 ```
 
@@ -78,7 +78,7 @@ If you want the HTML file directly from the repo on the frontend machine:
 ```bash
 git clone --filter=blob:none --no-checkout --branch aws-assignment1 https://github.com/ZeR0W1/DevOpsProject1.git infra-automation
 cd infra-automation
-git sparse-checkout init --cone
+git sparse-checkout init --no-cone
 git sparse-checkout set frontend/index2.html
 git checkout aws-assignment1
 ```
