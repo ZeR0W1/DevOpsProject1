@@ -1,12 +1,29 @@
 import json
 import logging
-from config import INSTANCES_FILEPATH, combined_output
+from config import INSTANCES_FILEPATH, S3_BUCKET_NAME, S3_INSTANCES_OBJECT_KEY, combined_output
 from user_input import fill_model
 
 from machine import Machine, MachineInput
 
 
 logger = logging.getLogger(__name__)
+
+
+def sync_instances_file_to_s3(filepath=INSTANCES_FILEPATH):
+    try:
+        import boto3
+
+        s3_client = boto3.client("s3")
+        s3_client.upload_file(str(filepath), S3_BUCKET_NAME, S3_INSTANCES_OBJECT_KEY)
+        logger.info(
+            "Instances file uploaded to s3://%s/%s",
+            S3_BUCKET_NAME,
+            S3_INSTANCES_OBJECT_KEY,
+        )
+    except ImportError:
+        logger.warning("boto3 is not installed, skipping S3 sync")
+    except Exception:
+        logger.exception("Failed to sync instances file to S3")
 
 
 def load_instances(filepath=INSTANCES_FILEPATH):
@@ -58,6 +75,7 @@ def append_vm_to_instances_file(vm: Machine, filepath=INSTANCES_FILEPATH):
         json.dump(instances, file, indent=2)
 
     logger.info("Machine saved to %s: %s", filepath, vm.name)
+    sync_instances_file_to_s3(filepath)
 
 
 def get_user_input():
