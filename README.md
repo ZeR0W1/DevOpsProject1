@@ -39,7 +39,7 @@ Initial clone:
 git clone --filter=blob:none --no-checkout --branch aws-assignment1 https://github.com/ZeR0W1/DevOpsProject1.git infra-automation
 cd infra-automation
 git sparse-checkout init --no-cone
-git sparse-checkout set /README.md /requirements.txt /requirements-backend.txt src/ configs/ scripts/ /.gitignore
+git sparse-checkout set /README.md /requirements.txt /requirements-backend.txt src/api_backend.py src/config.py src/machine.py src/provisioning.py src/schema.py src/user_input.py configs/ /.gitignore
 git checkout aws-assignment1
 ```
 
@@ -59,7 +59,7 @@ Initial clone:
 git clone --filter=blob:none --no-checkout --branch aws-assignment1 https://github.com/ZeR0W1/DevOpsProject1.git infra-automation
 cd infra-automation
 git sparse-checkout init --no-cone
-git sparse-checkout set /README.md /requirements.txt /requirements-worker.txt src/ configs/ /.gitignore
+git sparse-checkout set /README.md /requirements.txt /requirements-worker.txt src/worker.py src/config.py src/machine.py src/schema.py configs/ /.gitignore
 git checkout aws-assignment1
 ```
 
