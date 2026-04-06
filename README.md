@@ -67,7 +67,7 @@ The project now also supports a backend API flow for the AWS assignment.
 ### Backend input/output model
 
 - `MachineInput` represents the data the frontend is allowed to send.
-- `Machine` represents the saved machine object, including backend-managed fields like `id` and default `status`.
+- `Machine` represents the saved machine object, including backend-managed fields like `id`, default `status`, and internal `metadata`.
 
 ### Run the backend API
 
@@ -120,14 +120,14 @@ The frontend should send JSON matching `MachineInput`, for example:
       "public_ip": "34.10.10.10"
     }
   ],
-  "tags": ["web", "prod"],
-  "metadata": {
-    "owner": "ops-team"
+  "tags": {
+    "Environment": "Production",
+    "Role": "Web"
   }
 }
 ```
 
-The backend assigns the machine `id` and applies the default `status`.
+The backend assigns the machine `id`, applies the default `status`, and can attach internal `metadata` separately from the frontend payload.
 
 ## Example Expected Output
 
@@ -175,12 +175,11 @@ ok
 Enter public ip: 34.10.10.10
 ok
 Add another network_interface? [y/N]: n
-Enter tag (leave blank to finish): web
-Enter tag (leave blank to finish): prod
-Enter tag (leave blank to finish):
-Enter metadata key (leave blank to finish): owner
-Enter value for owner: ops-team
-Enter metadata key (leave blank to finish):
+Enter tags key (leave blank to finish): Environment
+Enter value for Environment: Production
+Enter tags key (leave blank to finish): Role
+Enter value for Role: Web
+Enter tags key (leave blank to finish):
 Machine created: Machine G
 VM saved successfully
 Run service installation script? (y/N)
@@ -223,9 +222,9 @@ Example machine entry in `configs/instances.json`:
       "public_ip": "34.10.10.10"
     }
   ],
-  "tags": ["web", "prod"],
-  "metadata": {
-    "owner": "ops-team"
+  "tags": {
+    "Environment": "Production",
+    "Role": "Web"
   }
 }
 ```

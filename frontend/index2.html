@@ -207,6 +207,36 @@
       gap: 16px;
     }
 
+    .stack {
+      display: grid;
+      gap: 16px;
+    }
+
+    .repeatable-block {
+      padding: 18px;
+      border-radius: 16px;
+      border: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.03);
+    }
+
+    .repeatable-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
+    .repeatable-header h4 {
+      margin: 0;
+      color: var(--text);
+    }
+
+    .btn-small {
+      padding: 8px 12px;
+      font-size: 0.9rem;
+    }
+
     .grid-2 {
       grid-template-columns: repeat(2, 1fr);
     }
@@ -261,6 +291,17 @@
       border-radius: 12px;
       background: rgba(34, 197, 94, 0.08);
       border: 1px solid rgba(34, 197, 94, 0.25);
+    }
+
+    .error-box {
+      display: none;
+      font-size: 0.92rem;
+      padding: 12px 14px;
+      border-radius: 12px;
+      background: rgba(239, 68, 68, 0.12);
+      border: 1px solid rgba(239, 68, 68, 0.35);
+      color: #fecaca;
+      white-space: pre-line;
     }
 
     .status-box {
@@ -390,15 +431,9 @@
           </p>
 
           <form>
-            <div class="grid-2">
-              <div>
-                <label for="machine-name">Machine Name</label>
-                <input id="machine-name" type="text" placeholder="e.g. Machine G" />
-              </div>
-              <div>
-                <label for="tags">Tags</label>
-                <input id="tags" type="text" placeholder="Comma-separated, e.g. web, prod" />
-              </div>
+            <div>
+              <label for="machine-name">Machine Name</label>
+              <input id="machine-name" type="text" placeholder="e.g. Machine G" />
             </div>
 
             <h3>CPU Configuration</h3>
@@ -453,78 +488,116 @@
 
             <h3>Disk Configuration</h3>
 
-            <div class="grid-2">
-              <div>
-                <label for="disk-name">Disk Name</label>
-                <input id="disk-name" type="text" placeholder="e.g. disk-g1" />
-              </div>
-              <div>
-                <label for="disk-size">Disk Size (GB)</label>
-                <input id="disk-size" type="number" min="1" step="0.1" placeholder="50" />
+            <div id="disks-container" class="stack">
+              <div class="repeatable-block disk-block">
+                <div class="repeatable-header">
+                  <h4>Disk 1</h4>
+                  <button class="btn btn-secondary btn-small" type="button" onclick="removeBlock(this, 'disk')">Remove</button>
+                </div>
+                <div class="grid-2">
+                  <div>
+                    <label>Disk Name</label>
+                    <input class="disk-name" type="text" placeholder="e.g. disk-g1" />
+                  </div>
+                  <div>
+                    <label>Disk Size (GB)</label>
+                    <input class="disk-size" type="number" min="1" step="0.1" placeholder="50" />
+                  </div>
+                </div>
+
+                <div class="grid-2">
+                  <div>
+                    <label>Disk Type</label>
+                    <select class="disk-type">
+                      <option value="1">1 - ssd</option>
+                      <option value="2">2 - hdd</option>
+                      <option value="3">3 - nvme</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label>Boot Disk</label>
+                    <select class="disk-boot">
+                      <option value="false">false</option>
+                      <option value="true">true</option>
+                    </select>
+                  </div>
+                </div>
               </div>
             </div>
 
-            <div class="grid-2">
-              <div>
-                <label for="disk-type">Disk Type</label>
-                <select id="disk-type">
-                  <option value="1">1 - ssd</option>
-                  <option value="2">2 - hdd</option>
-                  <option value="3">3 - nvme</option>
-                </select>
-              </div>
-              <div>
-                <label for="disk-boot">Boot Disk</label>
-                <select id="disk-boot">
-                  <option value="false">false</option>
-                  <option value="true">true</option>
-                </select>
-              </div>
-            </div>
+            <button class="btn btn-secondary btn-small" type="button" onclick="addDiskBlock()">Add Disk</button>
 
             <p class="helper-text">
-              The real CLI supports multiple disks. This mockup currently shows one disk entry block.
+              This form now supports multiple disks and sends them as a JSON list.
             </p>
 
             <h3>Network Interface</h3>
 
-            <div class="grid-2">
-              <div>
-                <label for="nic-name">Network Interface Name</label>
-                <input id="nic-name" type="text" placeholder="e.g. nic-g1" />
-              </div>
-              <div>
-                <label for="private-ip">Private IP</label>
-                <input id="private-ip" type="text" placeholder="192.168.10.10" />
+            <div id="interfaces-container" class="stack">
+              <div class="repeatable-block interface-block">
+                <div class="repeatable-header">
+                  <h4>Interface 1</h4>
+                  <button class="btn btn-secondary btn-small" type="button" onclick="removeBlock(this, 'interface')">Remove</button>
+                </div>
+                <div class="grid-2">
+                  <div>
+                    <label>Network Interface Name</label>
+                    <input class="nic-name" type="text" placeholder="e.g. nic-g1" />
+                  </div>
+                  <div>
+                    <label>Private IP</label>
+                    <input class="private-ip" type="text" placeholder="192.168.10.10" />
+                  </div>
+                </div>
+
+                <div class="grid-2">
+                  <div>
+                    <label>MAC Address</label>
+                    <input class="mac-address" type="text" placeholder="00:16:3e:5e:6c:20" />
+                  </div>
+                  <div>
+                    <label>Public IP</label>
+                    <input class="public-ip" type="text" placeholder="Optional, e.g. 34.10.10.10" />
+                  </div>
+                </div>
               </div>
             </div>
 
-            <div class="grid-2">
-              <div>
-                <label for="mac-address">MAC Address</label>
-                <input id="mac-address" type="text" placeholder="00:16:3e:5e:6c:20" />
-              </div>
-              <div>
-                <label for="public-ip">Public IP</label>
-                <input id="public-ip" type="text" placeholder="Optional, e.g. 34.10.10.10" />
-              </div>
-            </div>
+            <button class="btn btn-secondary btn-small" type="button" onclick="addInterfaceBlock()">Add Interface</button>
 
             <p class="helper-text">
-              The real CLI supports multiple network interfaces. This mockup currently shows one interface entry block.
+              This form now supports multiple network interfaces and sends them as a JSON list.
             </p>
 
             <h3>Tags and Metadata</h3>
 
             <div>
-              <label for="metadata">Metadata</label>
-              <textarea id="metadata" placeholder='JSON-style example: {"owner": "ops-team", "environment": "prod"}'></textarea>
+              <label>AWS-Style Tags</label>
+              <div id="tags-container" class="stack">
+                <div class="repeatable-block tag-block">
+                  <div class="repeatable-header">
+                    <h4>Tag 1</h4>
+                    <button class="btn btn-secondary btn-small" type="button" onclick="removeBlock(this, 'tag')">Remove</button>
+                  </div>
+                  <div class="grid-2">
+                    <div>
+                      <label>Tag Key</label>
+                      <input class="tag-key" type="text" placeholder="e.g. Environment" />
+                    </div>
+                    <div>
+                      <label>Tag Value</label>
+                      <input class="tag-value" type="text" placeholder="e.g. Production" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <button class="btn btn-secondary btn-small" type="button" onclick="addTagBlock()">Add Tag</button>
             </div>
 
             <p class="helper-text">
               Frontend payload fields: <strong>name</strong>, <strong>cpu</strong>, <strong>memory_gb</strong>,
-              <strong>os</strong>, <strong>disks</strong>, <strong>network_interfaces</strong>, <strong>tags</strong>,
-              and <strong>metadata</strong>. The backend adds <strong>id</strong> and <strong>status</strong>.
+              <strong>os</strong>, <strong>disks</strong>, <strong>network_interfaces</strong>, and <strong>tags</strong>.
+              The backend adds <strong>id</strong>, <strong>status</strong>, and any internal <strong>metadata</strong>.
             </p>
 
             <div class="form-actions">
@@ -536,6 +609,8 @@
               This form now builds the JSON payload expected by the backend API. When connected to nginx
               and the backend service, it can submit directly to <code>POST /machines</code>.
             </div>
+
+            <div id="form-errors" class="error-box"></div>
 
             <div>
               <label for="payload-preview">Generated JSON Payload</label>
@@ -569,14 +644,89 @@
     </footer>
   </div>
   <script>
-    function buildMachinePayload() {
-      const tagsValue = document.getElementById("tags").value.trim();
-      const metadataValue = document.getElementById("metadata").value.trim();
+    const ipv4Pattern = /^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/;
+    const macPattern = /^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$/;
 
-      let metadata = {};
-      if (metadataValue) {
-        metadata = JSON.parse(metadataValue);
+    function updateBlockTitles(selector, prefix) {
+      document.querySelectorAll(selector).forEach((block, index) => {
+        const heading = block.querySelector("h4");
+        if (heading) {
+          heading.textContent = `${prefix} ${index + 1}`;
+        }
+      });
+    }
+
+    function removeBlock(button, type) {
+      const container = type === "disk"
+        ? document.getElementById("disks-container")
+        : type === "interface"
+          ? document.getElementById("interfaces-container")
+          : document.getElementById("tags-container");
+
+      if (container.children.length === 1) {
+        return;
       }
+
+      button.closest(
+        type === "disk"
+          ? ".disk-block"
+          : type === "interface"
+            ? ".interface-block"
+            : ".tag-block"
+      ).remove();
+      updateBlockTitles(".disk-block", "Disk");
+      updateBlockTitles(".interface-block", "Interface");
+      updateBlockTitles(".tag-block", "Tag");
+    }
+
+    function addDiskBlock() {
+      const container = document.getElementById("disks-container");
+      const clone = container.firstElementChild.cloneNode(true);
+      clone.querySelectorAll("input").forEach(input => input.value = "");
+      clone.querySelectorAll("select").forEach(select => select.selectedIndex = 0);
+      container.appendChild(clone);
+      updateBlockTitles(".disk-block", "Disk");
+    }
+
+    function addInterfaceBlock() {
+      const container = document.getElementById("interfaces-container");
+      const clone = container.firstElementChild.cloneNode(true);
+      clone.querySelectorAll("input").forEach(input => input.value = "");
+      container.appendChild(clone);
+      updateBlockTitles(".interface-block", "Interface");
+    }
+
+    function addTagBlock() {
+      const container = document.getElementById("tags-container");
+      const clone = container.firstElementChild.cloneNode(true);
+      clone.querySelectorAll("input").forEach(input => input.value = "");
+      container.appendChild(clone);
+      updateBlockTitles(".tag-block", "Tag");
+    }
+
+    function buildMachinePayload() {
+      const tags = {};
+      Array.from(document.querySelectorAll(".tag-block")).forEach(block => {
+        const key = block.querySelector(".tag-key").value.trim();
+        const value = block.querySelector(".tag-value").value.trim();
+        if (key) {
+          tags[key] = value;
+        }
+      });
+
+      const disks = Array.from(document.querySelectorAll(".disk-block")).map(block => ({
+        name: block.querySelector(".disk-name").value.trim(),
+        size_gb: Number(block.querySelector(".disk-size").value),
+        type: Number(block.querySelector(".disk-type").value),
+        boot: block.querySelector(".disk-boot").value === "true"
+      }));
+
+      const networkInterfaces = Array.from(document.querySelectorAll(".interface-block")).map(block => ({
+        name: block.querySelector(".nic-name").value.trim(),
+        private_ip: block.querySelector(".private-ip").value.trim(),
+        mac_address: block.querySelector(".mac-address").value.trim() || null,
+        public_ip: block.querySelector(".public-ip").value.trim() || null
+      }));
 
       return {
         name: document.getElementById("machine-name").value.trim(),
@@ -591,33 +741,103 @@
           version: document.getElementById("os-version").value.trim(),
           distribution: Number(document.getElementById("distribution").value)
         },
-        disks: [
-          {
-            name: document.getElementById("disk-name").value.trim(),
-            size_gb: Number(document.getElementById("disk-size").value),
-            type: Number(document.getElementById("disk-type").value),
-            boot: document.getElementById("disk-boot").value === "true"
-          }
-        ],
-        network_interfaces: [
-          {
-            name: document.getElementById("nic-name").value.trim(),
-            private_ip: document.getElementById("private-ip").value.trim(),
-            mac_address: document.getElementById("mac-address").value.trim() || null,
-            public_ip: document.getElementById("public-ip").value.trim() || null
-          }
-        ],
-        tags: tagsValue ? tagsValue.split(",").map(tag => tag.trim()).filter(Boolean) : [],
-        metadata: metadata
+        disks: disks,
+        network_interfaces: networkInterfaces,
+        tags: tags
       };
+    }
+
+    function showErrors(errors) {
+      const errorBox = document.getElementById("form-errors");
+      if (!errors.length) {
+        errorBox.style.display = "none";
+        errorBox.textContent = "";
+        return;
+      }
+
+      errorBox.style.display = "block";
+      errorBox.textContent = errors.join("\n");
+    }
+
+    function validatePayload(payload) {
+      const errors = [];
+
+      if (!payload.name) {
+        errors.push("Machine name is required.");
+      }
+
+      if (!Number.isInteger(payload.cpu.cores) || payload.cpu.cores <= 0) {
+        errors.push("CPU cores must be a positive integer.");
+      }
+
+      if (!Number.isInteger(payload.cpu.threads_per_core) || payload.cpu.threads_per_core <= 0) {
+        errors.push("Threads per core must be a positive integer.");
+      }
+
+      if (!Number.isInteger(payload.memory_gb) || payload.memory_gb <= 0) {
+        errors.push("Memory must be a positive integer.");
+      }
+
+      if (!payload.os.version) {
+        errors.push("OS version is required.");
+      }
+
+      payload.disks.forEach((disk, index) => {
+        if (!disk.name) {
+          errors.push(`Disk ${index + 1}: name is required.`);
+        }
+        if (!(disk.size_gb > 0)) {
+          errors.push(`Disk ${index + 1}: size must be greater than 0.`);
+        }
+      });
+
+      payload.network_interfaces.forEach((nic, index) => {
+        if (!nic.name) {
+          errors.push(`Interface ${index + 1}: name is required.`);
+        }
+        if (!ipv4Pattern.test(nic.private_ip)) {
+          errors.push(`Interface ${index + 1}: private IP must be a valid IPv4 address.`);
+        }
+        if (nic.public_ip && !ipv4Pattern.test(nic.public_ip)) {
+          errors.push(`Interface ${index + 1}: public IP must be a valid IPv4 address if provided.`);
+        }
+        if (nic.mac_address && !macPattern.test(nic.mac_address)) {
+          errors.push(`Interface ${index + 1}: MAC address must use format 00:16:3e:5e:6c:20.`);
+        }
+      });
+
+      const tagKeys = Array.from(document.querySelectorAll(".tag-key")).map(input => input.value.trim());
+      const duplicateTagKeys = tagKeys.filter((key, index) => key && tagKeys.indexOf(key) !== index);
+      if (duplicateTagKeys.length) {
+        errors.push("Tag keys must be unique.");
+      }
+
+      Array.from(document.querySelectorAll(".tag-block")).forEach((block, index) => {
+        const key = block.querySelector(".tag-key").value.trim();
+        const value = block.querySelector(".tag-value").value.trim();
+        if (value && !key) {
+          errors.push(`Tag ${index + 1}: key is required when a value is provided.`);
+        }
+      });
+
+      return errors;
     }
 
     function submitMachine() {
       try {
         const payload = buildMachinePayload();
+        const errors = validatePayload(payload);
+        showErrors(errors);
+
+        if (errors.length) {
+          document.getElementById("payload-preview").value = "";
+          return;
+        }
+
         document.getElementById("payload-preview").value = JSON.stringify(payload, null, 2);
       } catch (error) {
-        alert("Invalid metadata JSON: " + error.message);
+        showErrors([error.message]);
+        document.getElementById("payload-preview").value = "";
       }
     }
   </script>

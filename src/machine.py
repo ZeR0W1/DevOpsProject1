@@ -16,14 +16,14 @@ class MachineInput(BaseModel):
     os: OSConfig = Field(description="OS details")
     disks: List[DiskConfig] = Field(description="disk details")
     network_interfaces: List[NetworkInterface] = Field(description="network interface details")
-    tags: List[str] = Field(default_factory=list, description="tags")
-    metadata: Dict[str, str] = Field(default_factory=dict, description="metadata")
+    tags: Dict[str, str] = Field(default_factory=dict, description="tags")
 
 
 class Machine(MachineInput):
 
     id: int
     status: VMStatus = VMStatus.stopped
+    metadata: Dict[str, str] = Field(default_factory=dict)
 
     @classmethod
     def from_input_data(cls, data: dict, machine_id: int):
