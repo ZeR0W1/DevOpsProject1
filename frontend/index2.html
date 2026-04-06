@@ -554,15 +554,6 @@
               </div>
             </div>
 
-            <div>
-              <label for="distribution">Distribution Type</label>
-              <select id="distribution">
-                <option value="1">1 - linux</option>
-                <option value="2">2 - windows</option>
-                <option value="3">3 - bsd</option>
-              </select>
-            </div>
-
             <h3>Disk Configuration</h3>
 
             <div id="disks-container" class="stack">
@@ -816,8 +807,7 @@
         memory_gb: Number(document.getElementById("memory").value),
         os: {
           name: Number(document.getElementById("os-name").value),
-          version: document.getElementById("os-version").value.trim(),
-          distribution: Number(document.getElementById("distribution").value)
+          version: document.getElementById("os-version").value.trim()
         },
         disks: disks,
         network_interfaces: networkInterfaces,

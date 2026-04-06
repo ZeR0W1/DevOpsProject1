@@ -12,11 +12,12 @@ Develop a modular Python-based automation tool that simulates infrastructure pro
 src/
   api_backend.py        FastAPI backend entry point for nginx-proxied API mode
   config.py            Shared config values and output helper
-  infra_simulator.py   Main entry point
+  infra_simulator.py   Legacy CLI/testing entry point (currently inactive)
   machine.py           Pydantic machine model
-  provisioning.py      Infrastructure provisioning simulation
+  provisioning.py      Local/testing provisioning helpers
   schema.py            Nested models and enums
   user_input.py        Interactive user input collection and validation
+  worker.py            Worker API for post-processing verified machines
 
 configs/
   instances.json       Saved provisioned machines
@@ -28,8 +29,69 @@ scripts/
 ## Setup Instructions
 
 1. Make sure Python is installed.
-2. Clone the project repository from: https://github.com/ZeR0W1/DevOpsProject1/tree/aws-assignment1
-3. In the project root directory, install the required dependency in a venv:
+2. Clone or update the project according to the role of the machine.
+
+### Backend EC2 clone/update
+
+Initial clone:
+
+```bash
+git clone --filter=blob:none --no-checkout --branch aws-assignment1 https://github.com/ZeR0W1/DevOpsProject1.git infra-automation
+cd infra-automation
+git sparse-checkout init --cone
+git sparse-checkout set README.md requirements.txt requirements-backend.txt requirements-worker.txt src configs scripts .gitignore
+git checkout aws-assignment1
+```
+
+Update later:
+
+```bash
+cd /home/ec2-user/infra-automation
+git checkout aws-assignment1
+git pull origin aws-assignment1
+```
+
+### Worker EC2 clone/update
+
+Initial clone:
+
+```bash
+git clone --filter=blob:none --no-checkout --branch aws-assignment1 https://github.com/ZeR0W1/DevOpsProject1.git infra-automation
+cd infra-automation
+git sparse-checkout init --cone
+git sparse-checkout set README.md requirements.txt requirements-worker.txt src configs .gitignore
+git checkout aws-assignment1
+```
+
+Update later:
+
+```bash
+cd /home/ec2-user/infra-automation
+git checkout aws-assignment1
+git pull origin aws-assignment1
+```
+
+### Frontend EC2 clone/update
+
+If you want the HTML file directly from the repo on the frontend machine:
+
+```bash
+git clone --filter=blob:none --no-checkout --branch aws-assignment1 https://github.com/ZeR0W1/DevOpsProject1.git infra-automation
+cd infra-automation
+git sparse-checkout init --cone
+git sparse-checkout set frontend/index2.html
+git checkout aws-assignment1
+```
+
+Update later:
+
+```bash
+cd /home/ec2-user/infra-automation
+git checkout aws-assignment1
+git pull origin aws-assignment1
+```
+
+3. In the project root directory, create and activate a virtual environment:
 
 from the project root directory:
 
@@ -38,7 +100,6 @@ from the project root directory:
 ```bash
 python -m venv venv
 source venv/bin/activate
-pip install -r requirements.txt
 ```
 ### Windows:
 
@@ -46,13 +107,43 @@ pip install -r requirements.txt
 Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
 python -m venv venv
 venv\Scripts\Activate
-pip install -r requirements.txt
 ```
 
-4. Run the simulator from the project root:
+
+
+
+4. Install dependencies according to the role you are running:
+
+- backend EC2:
 
 ```bash
-python src/infra_simulator.py
+pip install -r requirements-backend.txt
+```
+
+- worker EC2:
+
+```bash
+pip install -r requirements-worker.txt
+```
+
+- local/dev environment:
+
+```bash
+for f in *requirements*.txt; do pip install -r "$f"; done
+```
+
+5. Run the active services from the project root:
+
+- backend API:
+
+```bash
+python src/api_backend.py
+```
+
+- worker API:
+
+```bash
+python src/worker.py
 ```
 
 ## Backend API Mode
@@ -79,11 +170,29 @@ python src/api_backend.py
 
 By default, the backend listens on `127.0.0.1:8000`, which is appropriate when nginx is used as the public-facing reverse proxy.
 
+## Worker API Mode
+
+The worker is a separate service that receives verified machines from the backend over HTTP.
+
+Current worker responsibility:
+
+- own the authoritative `instances.json`
+- update that file when the backend sends a verified machine
+- sync the worker-owned `instances.json` to S3
+- detect machine ID overlap and ask the backend for reassignment when needed
+
+Run the worker from the project root:
+
+```bash
+python src/worker.py
+```
+
 ### API endpoints
 
 - `GET /health` - backend health check
-- `GET /machines` - list saved machine configurations
-- `POST /machines` - create and save a machine from frontend JSON input
+- `GET /machines` - list machines through the backend, which reads from the worker
+- `POST /machines` - validate a machine and forward it to the worker for persistence
+- `POST /machines/reassign` - reassign a machine ID when the worker detects an ID collision
 - `GET /schema/machine` - return the machine JSON schema
 
 ### Expected frontend JSON payload
@@ -101,8 +210,7 @@ The frontend should send JSON matching `MachineInput`, for example:
   "memory_gb": 8,
   "os": {
     "name": 1,
-    "version": "22.04",
-    "distribution": 1
+    "version": "22.04"
   },
   "disks": [
     {
@@ -127,11 +235,11 @@ The frontend should send JSON matching `MachineInput`, for example:
 }
 ```
 
-The backend assigns the machine `id`, applies the default `status`, and can attach internal `metadata` separately from the frontend payload.
+The backend assigns the machine `id`, applies the default `status`, and can attach internal `metadata` separately from the frontend payload before or after worker-side processing. If the worker detects an ID collision against its authoritative `instances.json`, it calls the backend reassign endpoint and stores the reassigned machine instead.
 
 ## Example Expected Output
 
-Example terminal session for creating one machine:
+Example terminal session for the legacy local CLI/testing path:
 
 ```text
 Welcome!
@@ -203,8 +311,7 @@ Example machine entry in `configs/instances.json`:
   "memory_gb": 8,
   "os": {
     "name": 1,
-    "version": "22.04",
-    "distribution": 1
+    "version": "22.04"
   },
   "disks": [
     {
@@ -231,4 +338,6 @@ Example machine entry in `configs/instances.json`:
 
 ## Notes
 
-- Machine IDs are generated from the highest existing ID in `configs/instances.json`
+- Machine IDs are generated from the highest existing ID in `instances.json`
+- In the current multi-EC2 design, the worker is intended to be the owner of the authoritative `instances.json`
+- The old CLI/local provisioning path is being kept only for testing/reference

@@ -1,14 +1,16 @@
 import logging
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
+import httpx
 
-from config import API_HOST, API_PORT
+from config import API_HOST, API_PORT, WORKER_HOST, WORKER_PORT
 from machine import Machine, MachineInput
-from provisioning import append_vm_to_instances_file, get_next_machine_id, load_instances
-from schema import CPUArchitecture, DiskType, OSName, OSType
+from provisioning import get_next_machine_id
+from schema import CPUArchitecture, DiskType, OSName  # , OSType
 
 
 logger = logging.getLogger(__name__)
+WORKER_MACHINES_URL = f"http://{WORKER_HOST}:{WORKER_PORT}/machines"
 
 app = FastAPI(
     title="Infrastructure Automation Backend API",
@@ -31,17 +33,17 @@ def translate_machine_for_display(machine: dict) -> dict:
 
     os_config = dict(translated.get("os", {}))
     os_name = os_config.get("name")
-    os_distribution = os_config.get("distribution")
+    # os_distribution = os_config.get("distribution")
     if os_name is not None:
         try:
             os_config["name"] = OSName(os_name).name
         except ValueError:
             pass
-    if os_distribution is not None:
-        try:
-            os_config["distribution"] = OSType(os_distribution).name
-        except ValueError:
-            pass
+    # if os_distribution is not None:
+    #     try:
+    #         os_config["distribution"] = OSType(os_distribution).name
+    #     except ValueError:
+    #         pass
     translated["os"] = os_config
 
     disks = []
@@ -66,7 +68,16 @@ def healthcheck():
 
 @app.get("/machines")
 def list_machines():
-    return [translate_machine_for_display(machine) for machine in load_instances()]
+    try:
+        response = httpx.get(WORKER_MACHINES_URL, timeout=10.0)
+        response.raise_for_status()
+        machines = response.json()
+        if not isinstance(machines, list):
+            raise ValueError("Worker returned a non-list machines response")
+        return [translate_machine_for_display(machine) for machine in machines]
+    except Exception as exc:
+        logger.exception("Failed to fetch machines from worker")
+        raise HTTPException(status_code=502, detail=f"Worker machines fetch failed: {exc}")
 
 
 @app.post("/machines", response_model=Machine, status_code=201)
@@ -75,8 +86,30 @@ def create_machine(machine_input: MachineInput):
         machine_input.model_dump(mode="json"),
         get_next_machine_id(),
     )
-    append_vm_to_instances_file(machine)
+
+    try:
+        response = httpx.post(
+            f"{WORKER_MACHINES_URL}/process",
+            json=machine.model_dump(mode="json"),
+            timeout=10.0,
+        )
+        response.raise_for_status()
+    except Exception as exc:
+        logger.exception("Failed to deliver machine %s to worker", machine.id)
+        raise HTTPException(status_code=502, detail=f"Worker processing failed: {exc}")
+
     return machine
+
+
+@app.post("/machines/reassign", response_model=Machine)
+def reassign_machine(machine: Machine):
+    reassigned_machine = Machine.from_input_data(
+        machine.model_dump(mode="json", exclude={"id", "status", "metadata"}),
+        get_next_machine_id(),
+    )
+    reassigned_machine.status = machine.status
+    reassigned_machine.metadata = machine.metadata
+    return reassigned_machine
 
 
 @app.get("/schema/machine")

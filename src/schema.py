@@ -27,10 +27,10 @@ class DiskType(IntEnum):
     nvme = 3
 
 
-class OSType(IntEnum):
-    linux = 1
-    windows = 2
-    bsd = 3
+# class OSType(IntEnum):
+#     linux = 1
+#     windows = 2
+#     bsd = 3
 
 class OSName(IntEnum):
     ubuntu = 1
@@ -50,7 +50,7 @@ class CPUConfig(BaseModel):
 class OSConfig(BaseModel):
     name: OSName = Field(description="OS", json_schema_extra={"is_numeric": False})
     version: str = Field(description="version", json_schema_extra={"is_numeric": False})
-    distribution: OSType = Field(default=OSType.linux, json_schema_extra={"is_numeric": False})
+    # distribution: OSType = Field(default=OSType.linux, json_schema_extra={"is_numeric": False})
 
 
 class DiskConfig(BaseModel):
