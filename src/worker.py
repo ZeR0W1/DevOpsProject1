@@ -110,8 +110,8 @@ def main():
         datefmt="%Y-%m-%d %H:%M:%S",
     )
 
-    logger.info("Worker API started on %s:%s", API_HOST, API_PORT)
-    uvicorn.run("worker:app", host=API_HOST, port=API_PORT, reload=False)
+    logger.info("Worker API started on %s:%s", "0.0.0.0", API_PORT)
+    uvicorn.run("worker:app", host="0.0.0.0", port=API_PORT, reload=False)
 
 
 if __name__ == "__main__":

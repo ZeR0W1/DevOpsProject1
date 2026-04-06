@@ -28,7 +28,7 @@ scripts/
 
 ## Setup Instructions
 
-1. Make sure Python is installed.
+1. Make sure Python 3.11+ and git are installed.
 2. Clone or update the project according to the role of the machine.
 
 ### Backend EC2 clone/update
