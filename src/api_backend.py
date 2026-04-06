@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from config import API_HOST, API_PORT
 from machine import Machine, MachineInput
 from provisioning import append_vm_to_instances_file, get_next_machine_id, load_instances
+from schema import CPUArchitecture, DiskType, OSName, OSType
 
 
 logger = logging.getLogger(__name__)
@@ -16,6 +17,48 @@ app = FastAPI(
 )
 
 
+def translate_machine_for_display(machine: dict) -> dict:
+    translated = dict(machine)
+
+    cpu = dict(translated.get("cpu", {}))
+    architecture = cpu.get("architecture")
+    if architecture is not None:
+        try:
+            cpu["architecture"] = CPUArchitecture(architecture).name
+        except ValueError:
+            pass
+    translated["cpu"] = cpu
+
+    os_config = dict(translated.get("os", {}))
+    os_name = os_config.get("name")
+    os_distribution = os_config.get("distribution")
+    if os_name is not None:
+        try:
+            os_config["name"] = OSName(os_name).name
+        except ValueError:
+            pass
+    if os_distribution is not None:
+        try:
+            os_config["distribution"] = OSType(os_distribution).name
+        except ValueError:
+            pass
+    translated["os"] = os_config
+
+    disks = []
+    for disk in translated.get("disks", []):
+        disk_copy = dict(disk)
+        disk_type = disk_copy.get("type")
+        if disk_type is not None:
+            try:
+                disk_copy["type"] = DiskType(disk_type).name
+            except ValueError:
+                pass
+        disks.append(disk_copy)
+    translated["disks"] = disks
+
+    return translated
+
+
 @app.get("/health")
 def healthcheck():
     return {"status": "ok", "service": "backend-api"}
@@ -23,7 +66,7 @@ def healthcheck():
 
 @app.get("/machines")
 def list_machines():
-    return load_instances()
+    return [translate_machine_for_display(machine) for machine in load_instances()]
 
 
 @app.post("/machines", response_model=Machine, status_code=201)

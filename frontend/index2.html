@@ -168,6 +168,60 @@
       padding: 22px;
     }
 
+    .machine-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 18px;
+      margin-top: 20px;
+    }
+
+    .machine-card {
+      padding: 20px;
+      border-radius: 18px;
+      background: rgba(17, 24, 39, 0.88);
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow);
+    }
+
+    .machine-card h3 {
+      margin-top: 0;
+      margin-bottom: 10px;
+      color: var(--text);
+    }
+
+    .machine-card p {
+      margin: 6px 0;
+      color: var(--muted);
+    }
+
+    .machine-card code {
+      color: #bfdbfe;
+      font-family: Consolas, monospace;
+    }
+
+    .tag-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .tag-badge {
+      display: inline-flex;
+      gap: 6px;
+      align-items: center;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: rgba(56, 189, 248, 0.12);
+      border: 1px solid rgba(56, 189, 248, 0.25);
+      color: #bae6fd;
+      font-size: 0.85rem;
+    }
+
+    .tag-badge strong {
+      color: #e0f2fe;
+    }
+
     .service-card h3 {
       margin-top: 0;
       margin-bottom: 10px;
@@ -304,6 +358,17 @@
       white-space: pre-line;
     }
 
+    .success-box {
+      display: none;
+      font-size: 0.92rem;
+      padding: 12px 14px;
+      border-radius: 12px;
+      background: rgba(34, 197, 94, 0.12);
+      border: 1px solid rgba(34, 197, 94, 0.35);
+      color: #bbf7d0;
+      white-space: pre-line;
+    }
+
     .status-box {
       padding: 18px;
       border-radius: 16px;
@@ -419,6 +484,18 @@
             </ul>
           </article>
         </div>
+      </section>
+
+      <section id="existing-machines">
+        <h2 class="section-title">Existing Machines</h2>
+        <p class="section-copy">
+          This section loads the currently saved machines from the backend API and displays them as cards.
+        </p>
+        <div class="form-actions">
+          <button class="btn btn-secondary" type="button" onclick="loadMachines()">Refresh Machines</button>
+        </div>
+        <div id="machines-error" class="error-box"></div>
+        <div id="machines-list" class="machine-list"></div>
       </section>
 
       <section class="form-layout" id="machine-form">
@@ -606,15 +683,21 @@
             </div>
 
             <div class="mock-note">
-              This form now builds the JSON payload expected by the backend API. When connected to nginx
-              and the backend service, it can submit directly to <code>POST /machines</code>.
+              This form now builds the JSON payload expected by the backend API and can submit it to
+              <code>POST /machines</code> through nginx.
             </div>
 
             <div id="form-errors" class="error-box"></div>
+            <div id="form-success" class="success-box"></div>
 
             <div>
               <label for="payload-preview">Generated JSON Payload</label>
               <textarea id="payload-preview" readonly placeholder="The generated request body will appear here."></textarea>
+            </div>
+
+            <div>
+              <label for="response-preview">Backend Response</label>
+              <textarea id="response-preview" readonly placeholder="The backend response will appear here after submission."></textarea>
             </div>
           </form>
         </div>
@@ -624,11 +707,6 @@
             <h4>Frontend Status</h4>
             <p>Nginx is serving the assignment landing page successfully.</p>
             <span class="badge">ACTIVE</span>
-          </div>
-
-          <div class="status-box">
-            <h4>Backend Integration</h4>
-            <p>Future step: connect form submission to a Python API endpoint on the backend EC2.</p>
           </div>
 
           <div class="status-box">
@@ -759,6 +837,88 @@
       errorBox.textContent = errors.join("\n");
     }
 
+    function showSuccess(message) {
+      const successBox = document.getElementById("form-success");
+      if (!message) {
+        successBox.style.display = "none";
+        successBox.textContent = "";
+        return;
+      }
+
+      successBox.style.display = "block";
+      successBox.textContent = message;
+    }
+
+    function showMachineListError(message) {
+      const errorBox = document.getElementById("machines-error");
+      if (!message) {
+        errorBox.style.display = "none";
+        errorBox.textContent = "";
+        return;
+      }
+
+      errorBox.style.display = "block";
+      errorBox.textContent = message;
+    }
+
+    function renderMachines(machines) {
+      const container = document.getElementById("machines-list");
+      container.innerHTML = "";
+
+      if (!machines.length) {
+        container.innerHTML = '<div class="machine-card"><p>No machines found yet.</p></div>';
+        return;
+      }
+
+      machines.forEach(machine => {
+        const tagEntries = machine.tags && typeof machine.tags === "object"
+          ? Object.entries(machine.tags)
+          : [];
+        const tagsHtml = tagEntries.length
+          ? `<div class="tag-list">${tagEntries
+              .map(([key, value]) => `<span class="tag-badge"><strong>${key}</strong><span>${value}</span></span>`)
+              .join("")}</div>`
+          : "<span>No tags</span>";
+
+        const card = document.createElement("article");
+        card.className = "machine-card";
+        card.innerHTML = `
+          <h3>${machine.name}</h3>
+          <p><strong>ID:</strong> ${machine.id}</p>
+          <p><strong>Status:</strong> ${machine.status}</p>
+          <p><strong>Memory:</strong> ${machine.memory_gb} GB</p>
+          <p><strong>OS:</strong> ${machine.os?.version ? `${machine.os.name} (${machine.os.version})` : "N/A"}</p>
+          <p><strong>Disks:</strong> ${Array.isArray(machine.disks) ? machine.disks.length : 0}</p>
+          <p><strong>Interfaces:</strong> ${Array.isArray(machine.network_interfaces) ? machine.network_interfaces.length : 0}</p>
+          <p><strong>Tags:</strong></p>
+          ${tagsHtml}
+        `;
+        container.appendChild(card);
+      });
+    }
+
+    async function loadMachines() {
+      try {
+        showMachineListError("");
+        const response = await fetch("/machines");
+        const body = await response.json();
+
+        if (!response.ok) {
+          const detail = Array.isArray(body.detail)
+            ? body.detail.map(item => `${item.loc?.join(" -> ") || "field"}: ${item.msg}`).join("\n")
+            : (body.detail || "Failed to load machines.");
+          showMachineListError(`Backend error (${response.status}): ${detail}`);
+          renderMachines([]);
+          return;
+        }
+
+        renderMachines(Array.isArray(body) ? body : []);
+      } catch (error) {
+        showMachineListError(`Request failed: ${error.message}`);
+        renderMachines([]);
+      }
+    }
+
     function validatePayload(payload) {
       const errors = [];
 
@@ -823,23 +983,51 @@
       return errors;
     }
 
-    function submitMachine() {
+    async function submitMachine() {
       try {
         const payload = buildMachinePayload();
         const errors = validatePayload(payload);
         showErrors(errors);
+        showSuccess("");
 
         if (errors.length) {
           document.getElementById("payload-preview").value = "";
+          document.getElementById("response-preview").value = "";
           return;
         }
 
         document.getElementById("payload-preview").value = JSON.stringify(payload, null, 2);
+
+        const response = await fetch("/machines", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify(payload)
+        });
+
+        const responseBody = await response.json();
+        document.getElementById("response-preview").value = JSON.stringify(responseBody, null, 2);
+
+        if (!response.ok) {
+          const detail = Array.isArray(responseBody.detail)
+            ? responseBody.detail.map(item => `${item.loc?.join(" -> ") || "field"}: ${item.msg}`).join("\n")
+            : (responseBody.detail || "Request failed.");
+          showErrors([`Backend error (${response.status}): ${detail}`]);
+          return;
+        }
+
+        showSuccess(`Machine submitted successfully. Assigned id: ${responseBody.id}`);
+        await loadMachines();
       } catch (error) {
-        showErrors([error.message]);
+        showErrors([`Request failed: ${error.message}`]);
+        showSuccess("");
         document.getElementById("payload-preview").value = "";
+        document.getElementById("response-preview").value = "";
       }
     }
+
+    loadMachines();
   </script>
 </body>
 </html>
