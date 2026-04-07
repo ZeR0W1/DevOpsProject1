@@ -61,6 +61,30 @@ def translate_machine_for_display(machine: dict) -> dict:
     return translated
 
 
+def fetch_worker_machines() -> list[dict]:
+    response = httpx.get(WORKER_MACHINES_URL, timeout=10.0)
+    response.raise_for_status()
+    machines = response.json()
+    if not isinstance(machines, list):
+        raise ValueError("Worker returned a non-list machines response")
+    return machines
+
+
+def get_next_machine_id_from_worker() -> int:
+    numeric_ids = []
+
+    for machine in fetch_worker_machines():
+        try:
+            machine_id = machine.get("id")
+            if machine_id is None:
+                continue
+            numeric_ids.append(int(machine_id))
+        except (TypeError, ValueError):
+            continue
+
+    return max(numeric_ids, default=0) + 1
+
+
 @app.get("/health")
 def healthcheck():
     return {"status": "ok", "service": "backend-api"}
@@ -69,11 +93,7 @@ def healthcheck():
 @app.get("/machines")
 def list_machines():
     try:
-        response = httpx.get(WORKER_MACHINES_URL, timeout=10.0)
-        response.raise_for_status()
-        machines = response.json()
-        if not isinstance(machines, list):
-            raise ValueError("Worker returned a non-list machines response")
+        machines = fetch_worker_machines()
         return [translate_machine_for_display(machine) for machine in machines]
     except Exception as exc:
         logger.exception("Failed to fetch machines from worker")
@@ -84,7 +104,7 @@ def list_machines():
 def create_machine(machine_input: MachineInput):
     machine = Machine.from_input_data(
         machine_input.model_dump(mode="json"),
-        get_next_machine_id(),
+        get_next_machine_id_from_worker(),
     )
 
     try:
@@ -105,7 +125,7 @@ def create_machine(machine_input: MachineInput):
 def reassign_machine(machine: Machine):
     reassigned_machine = Machine.from_input_data(
         machine.model_dump(mode="json", exclude={"id", "status", "metadata"}),
-        get_next_machine_id(),
+        get_next_machine_id_from_worker(),
     )
     reassigned_machine.status = machine.status
     reassigned_machine.metadata = machine.metadata
