@@ -114,6 +114,10 @@ def create_machine(machine_input: MachineInput):
             timeout=10.0,
         )
         response.raise_for_status()
+        worker_result = response.json()
+        reassigned_id = worker_result.get("machine_id") if isinstance(worker_result, dict) else None
+        if isinstance(reassigned_id, int):
+            machine.id = reassigned_id
     except Exception as exc:
         logger.exception("Failed to deliver machine %s to worker", machine.id)
         raise HTTPException(status_code=502, detail=f"Worker processing failed: {exc}")
@@ -141,7 +145,7 @@ def main():
     import uvicorn
 
     logger.info("Starting backend API on %s:%s", API_HOST, API_PORT)
-    uvicorn.run("api_backend:app", host=API_HOST, port=API_PORT, reload=False)
+    uvicorn.run("api_backend:app", host="0.0.0.0", port=API_PORT, reload=False)
 
 
 if __name__ == "__main__":
