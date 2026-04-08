@@ -5,7 +5,7 @@ import httpx
 
 from config import API_HOST, API_PORT, WORKER_HOST, WORKER_PORT
 from machine import Machine, MachineInput
-from schema import CPUArchitecture, DiskType, OSName  # , OSType
+from schema import CPUArchitecture, DiskType, OSName
 
 
 logger = logging.getLogger(__name__)
@@ -32,17 +32,11 @@ def translate_machine_for_display(machine: dict) -> dict:
 
     os_config = dict(translated.get("os", {}))
     os_name = os_config.get("name")
-    # os_distribution = os_config.get("distribution")
     if os_name is not None:
         try:
             os_config["name"] = OSName(os_name).name
         except ValueError:
             pass
-    # if os_distribution is not None:
-    #     try:
-    #         os_config["distribution"] = OSType(os_distribution).name
-    #     except ValueError:
-    #         pass
     translated["os"] = os_config
 
     disks = []
@@ -144,7 +138,7 @@ def main():
     import uvicorn
 
     logger.info("Starting backend API on %s:%s", API_HOST, API_PORT)
-    uvicorn.run("api_backend:app", host="0.0.0.0", port=API_PORT, reload=False)
+    uvicorn.run("api:app", host="0.0.0.0", port=API_PORT, reload=False)
 
 
 if __name__ == "__main__":

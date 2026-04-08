@@ -37,8 +37,9 @@ def main():
         logger.exception("Provisioning failed")
         raise
     run_setup_script()
-    
+
     logger.info("Exiting")
+
 
 def run_setup_script():
     run_install = input("Run service installation script? (y/N)").strip().lower()
@@ -56,7 +57,6 @@ def run_setup_script():
     except subprocess.CalledProcessError:
         logger.exception("Service installation script failed")
         raise
-
 
 
 if __name__ == "__main__":

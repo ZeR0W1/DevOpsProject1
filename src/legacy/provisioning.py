@@ -36,8 +36,6 @@ def get_next_machine_id(filepath=INSTANCES_FILEPATH):
     return max(numeric_ids, default=0) + 1
 
 
-
-
 def new_vm():
     """Build and validate one VM object from user input."""
     data = fill_model("Machine", MachineInput)

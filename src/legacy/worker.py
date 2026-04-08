@@ -10,6 +10,8 @@ from config import (
     BACKEND_HOST,
     BACKEND_PORT,
     BASE_DIR,
+    SNS_NOTIFICATIONS_ENABLED,
+    SNS_TOPIC_ARN,
     POSTGRES_DB,
     POSTGRES_DSN,
     POSTGRES_ENABLED,
@@ -80,6 +82,51 @@ def init_postgres_storage():
         logger.exception("Worker failed to initialize PostgreSQL backup storage")
 
 
+def load_instances_from_postgres():
+    if not POSTGRES_ENABLED:
+        return []
+
+    try:
+        init_postgres_storage()
+
+        with get_postgres_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    sql.SQL(
+                        """
+                    SELECT machine_data
+                    FROM {}
+                    ORDER BY id
+                    """
+                    ).format(sql.Identifier(POSTGRES_TABLE))
+                )
+                rows = cursor.fetchall()
+
+        machines = []
+        for row in rows:
+            machine_data = row[0]
+            if isinstance(machine_data, str):
+                machine_data = json.loads(machine_data)
+            if isinstance(machine_data, dict):
+                machines.append(machine_data)
+
+        return machines
+    except ImportError:
+        logger.warning("psycopg is not installed on the worker, falling back to local JSON storage")
+    except Exception:
+        logger.exception("Worker failed to read machines from PostgreSQL")
+
+    return []
+
+
+def load_authoritative_instances(filepath=WORKER_INSTANCES_FILEPATH):
+    postgres_instances = load_instances_from_postgres()
+    if postgres_instances:
+        return postgres_instances
+
+    return load_instances(filepath)
+
+
 def export_instances_to_json(instances, filepath=WORKER_INSTANCES_FILEPATH):
     filepath.parent.mkdir(parents=True, exist_ok=True)
     with open(filepath, "w", encoding="utf-8") as file:
@@ -102,6 +149,26 @@ def sync_instances_file_to_s3(filepath: str):
     except Exception:
         logger.exception("Worker failed to sync instances file to S3")
         raise
+
+
+def publish_sns_notification(subject: str, message: str):
+    if not SNS_NOTIFICATIONS_ENABLED or not SNS_TOPIC_ARN:
+        return
+
+    try:
+        import boto3
+
+        sns_client = boto3.client("sns")
+        sns_client.publish(
+            TopicArn=SNS_TOPIC_ARN,
+            Subject=subject[:100],
+            Message=message,
+        )
+        logger.info("Worker published SNS notification to %s", SNS_TOPIC_ARN)
+    except ImportError:
+        logger.warning("boto3 is not installed on the worker, skipping SNS notification")
+    except Exception:
+        logger.exception("Worker failed to publish SNS notification")
 
 
 def load_instances(filepath=WORKER_INSTANCES_FILEPATH):
@@ -139,14 +206,60 @@ def backup_machine_to_postgres(machine: Machine):
             connection.commit()
 
         logger.info("Worker backed up machine %s to PostgreSQL", machine.id)
+        publish_sns_notification(
+            subject=f"Machine {machine.id} stored in database",
+            message=(
+                f"A machine record was written to PostgreSQL.\n"
+                f"Machine ID: {machine.id}\n"
+                f"Machine Name: {machine.name}\n"
+                f"Table: {POSTGRES_TABLE}"
+            ),
+        )
     except ImportError:
         logger.warning("psycopg is not installed on the worker, skipping PostgreSQL backup")
     except Exception:
         logger.exception("Worker failed to back up machine %s to PostgreSQL", machine.id)
 
 
+def sync_json_instances_to_postgres(filepath=WORKER_INSTANCES_FILEPATH):
+    if not POSTGRES_ENABLED:
+        return
+
+    file_instances = load_instances(filepath)
+    if not file_instances:
+        return
+
+    postgres_instances = load_instances_from_postgres()
+    postgres_ids = {
+        instance.get("id")
+        for instance in postgres_instances
+        if isinstance(instance, dict) and instance.get("id") is not None
+    }
+
+    synced_count = 0
+
+    for instance in file_instances:
+        if not isinstance(instance, dict):
+            continue
+
+        instance_id = instance.get("id")
+        if instance_id in postgres_ids:
+            continue
+
+        try:
+            machine = Machine.model_validate(instance)
+            backup_machine_to_postgres(machine)
+            postgres_ids.add(machine.id)
+            synced_count += 1
+        except Exception:
+            logger.exception("Worker failed to sync machine %s from JSON into PostgreSQL", instance_id)
+
+    if synced_count:
+        logger.info("Worker synchronized %s machine(s) from JSON into PostgreSQL", synced_count)
+
+
 def append_vm_to_worker_instances_file(machine: Machine, filepath=WORKER_INSTANCES_FILEPATH):
-    instances = load_instances(filepath)
+    instances = load_authoritative_instances(filepath)
 
     existing_ids = {instance.get("id") for instance in instances}
     if machine.id in existing_ids:
@@ -174,13 +287,23 @@ def healthcheck():
 
 @app.get("/machines")
 def list_machines():
-    return load_instances()
+    return load_authoritative_instances()
 
 
 @app.post("/machines/process")
 def process_machine(machine: Machine):
     machine = append_vm_to_worker_instances_file(machine)
     sync_instances_file_to_s3(str(WORKER_INSTANCES_FILEPATH))
+    publish_sns_notification(
+        subject=f"Machine {machine.id} synced to S3",
+        message=(
+            f"The instances file was uploaded to S3 after processing a machine.\n"
+            f"Machine ID: {machine.id}\n"
+            f"Machine Name: {machine.name}\n"
+            f"Bucket: {S3_BUCKET_NAME}\n"
+            f"Object Key: {S3_INSTANCES_OBJECT_KEY}"
+        ),
+    )
     logger.info("Worker processed machine %s", machine.id)
     return {"status": "accepted", "machine_id": machine.id}
 
@@ -197,6 +320,7 @@ def main():
 
     if POSTGRES_ENABLED:
         init_postgres_storage()
+        sync_json_instances_to_postgres()
 
     logger.info("Worker API started on %s:%s", "0.0.0.0", API_PORT)
     uvicorn.run("worker:app", host="0.0.0.0", port=API_PORT, reload=False)

@@ -7,7 +7,7 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-BASE_DIR = Path(__file__).resolve().parent.parent
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 LOG_FILE = BASE_DIR / "logs" / "provisioning.log"
 SETUP_SCRIPT = BASE_DIR / "scripts" / "inst_service.sh"
 INSTANCES_FILEPATH = BASE_DIR / "configs" / "instances.json"
@@ -19,6 +19,8 @@ WORKER_HOST = os.getenv("WORKER_HOST", "10.0.157.192")
 WORKER_PORT = int(os.getenv("WORKER_PORT", "8000"))
 S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME", "quick-demo-058264247987-us-east-1-an")
 S3_INSTANCES_OBJECT_KEY = os.getenv("S3_INSTANCES_OBJECT_KEY", "instances.json")
+SNS_NOTIFICATIONS_ENABLED = os.getenv("SNS_NOTIFICATIONS_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}
+SNS_TOPIC_ARN = os.getenv("SNS_TOPIC_ARN", "")
 POSTGRES_ENABLED = os.getenv("POSTGRES_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}
 POSTGRES_DSN = os.getenv("POSTGRES_DSN", "")
 POSTGRES_HOST = os.getenv("POSTGRES_HOST", "127.0.0.1")

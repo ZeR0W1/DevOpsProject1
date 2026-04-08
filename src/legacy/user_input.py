@@ -9,7 +9,6 @@ logger = logging.getLogger(__name__)
 
 
 def validate_field(model_cls: type[BaseModel], field_name: str, raw_value):
-    """Validate a single field in a model"""
     field = model_cls.model_fields[field_name]
     field_definition = field.asdict()
 
@@ -24,7 +23,6 @@ def validate_field(model_cls: type[BaseModel], field_name: str, raw_value):
 
 
 def get_list_item_model(field_annotation):
-    """Given the annotation of a field in a model, if it's a list then return the type of model stored by the list"""
     origin = get_origin(field_annotation)
     if origin is not list:
         return None
@@ -53,7 +51,6 @@ def get_item_prompt_name(field_name: str) -> str:
 
 
 def fill_model(model_name: str, model: type[BaseModel]):
-    """Prompt the user for input of all the fields in a Pydantic model that have a description"""
     data = {}
     logger.debug(model_name + " nested")
 
@@ -62,7 +59,7 @@ def fill_model(model_name: str, model: type[BaseModel]):
             continue
 
         data[field_name] = get_field_input(field_name, field_info, model)
-        if model_name == "Machine" and data[field_name] == "done": # end user input if "done" is entered into the machine name
+        if model_name == "Machine" and data[field_name] == "done":
             return None
 
     return data
@@ -115,7 +112,6 @@ def get_dict_input(field_name: str):
 
 
 def get_scalar_input(field_name, field_info: fields.FieldInfo, parent_model: type[BaseModel]):
-    """Take and validate user input for a single item"""
     prompt = str(field_info.description) + ": "
     is_enum = isinstance(field_info.annotation, type) and issubclass(field_info.annotation, Enum)
 
@@ -141,7 +137,6 @@ def get_scalar_input(field_name, field_info: fields.FieldInfo, parent_model: typ
 
 
 def get_field_input(field_name: str, field_info: fields.FieldInfo, parent_model: type[BaseModel]):
-    """Determine a field's type and take user input accordingly"""
     annotation = field_info.annotation
     origin = get_origin(annotation)
 

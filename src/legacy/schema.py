@@ -5,10 +5,6 @@ from typing import Annotated, Optional
 from pydantic import BaseModel, Field, IPvAnyAddress, StringConstraints, ValidationError
 
 
-# -------------------------
-# Enums
-# -------------------------
-
 class VMStatus(str, Enum):
     running = "running"
     stopped = "stopped"
@@ -27,19 +23,10 @@ class DiskType(IntEnum):
     nvme = 3
 
 
-# class OSType(IntEnum):
-#     linux = 1
-#     windows = 2
-#     bsd = 3
-
 class OSName(IntEnum):
     ubuntu = 1
     centos = 2
 
-
-# -------------------------
-# Nested Models
-# -------------------------
 
 class CPUConfig(BaseModel):
     cores: int = Field(gt=0, description="number of cores", json_schema_extra={"is_numeric": True})
@@ -50,7 +37,6 @@ class CPUConfig(BaseModel):
 class OSConfig(BaseModel):
     name: OSName = Field(description="OS", json_schema_extra={"is_numeric": False})
     version: str = Field(description="version", json_schema_extra={"is_numeric": False})
-    # distribution: OSType = Field(default=OSType.linux, json_schema_extra={"is_numeric": False})
 
 
 class DiskConfig(BaseModel):
@@ -59,10 +45,12 @@ class DiskConfig(BaseModel):
     type: DiskType = Field(description="disk type", json_schema_extra={"is_numeric": False})
     boot: bool = Field(default=False, json_schema_extra={"is_numeric": False})
 
+
 MacAddress = Annotated[
     str,
     StringConstraints(pattern=r"^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$")
 ]
+
 
 class NetworkInterface(BaseModel):
     name: str = Field(description="network interface name", json_schema_extra={"is_numeric": False})
@@ -70,10 +58,6 @@ class NetworkInterface(BaseModel):
     mac_address: Optional[MacAddress] = Field(default=None, description="mac address", json_schema_extra={"is_numeric": False})
     public_ip: Optional[IPvAnyAddress] = Field(default=None, description="public ip", json_schema_extra={"is_numeric": False})
 
-
-# -------------------------
-# Validation Logic
-# -------------------------
 
 def validate_json_file(filepath: str):
     from machine import Machine
