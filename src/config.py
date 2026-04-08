@@ -19,6 +19,16 @@ WORKER_HOST = os.getenv("WORKER_HOST", "10.0.157.192")
 WORKER_PORT = int(os.getenv("WORKER_PORT", "8000"))
 S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME", "quick-demo-058264247987-us-east-1-an")
 S3_INSTANCES_OBJECT_KEY = os.getenv("S3_INSTANCES_OBJECT_KEY", "instances.json")
+POSTGRES_ENABLED = os.getenv("POSTGRES_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}
+POSTGRES_DSN = os.getenv("POSTGRES_DSN", "")
+POSTGRES_HOST = os.getenv("POSTGRES_HOST", "127.0.0.1")
+POSTGRES_PORT = int(os.getenv("POSTGRES_PORT", "5432"))
+POSTGRES_DB = os.getenv("POSTGRES_DB", "postgres")
+POSTGRES_USER = os.getenv("POSTGRES_USER", "postgres_master")
+POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "postgres")
+POSTGRES_TABLE = os.getenv("POSTGRES_TABLE", "machines")
+POSTGRES_SSLMODE = os.getenv("POSTGRES_SSLMODE", "verify-full")
+POSTGRES_SSLROOTCERT = os.getenv("POSTGRES_SSLROOTCERT", str(BASE_DIR / "global-bundle.pem"))
 MIN_PYTHON_VERSION = (3, 11)
 
 

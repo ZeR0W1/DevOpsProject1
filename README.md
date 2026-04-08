@@ -178,6 +178,7 @@ Current worker responsibility:
 
 - own the authoritative `instances.json`
 - update that file when the backend sends a verified machine
+- back up saved machines into PostgreSQL when enabled
 - sync the worker-owned `instances.json` to S3
 - detect machine ID overlap and ask the backend for reassignment when needed
 
@@ -185,6 +186,121 @@ Run the worker from the project root:
 
 ```bash
 python src/worker.py
+```
+
+If your worker is managed by `systemd`, apply the PostgreSQL environment variables to that service definition and restart the service instead of launching it manually.
+
+### Worker PostgreSQL backup with pgAdmin 4
+
+PostgreSQL is currently configured as a **backup target**, while `configs/instances.json` remains the worker's main storage and the file that is synced to S3.
+
+Current write flow on the worker:
+
+1. save the verified machine into `configs/instances.json`
+2. back up that machine into PostgreSQL when PostgreSQL is enabled
+3. sync `configs/instances.json` to S3
+
+If PostgreSQL is unavailable, the worker still keeps the primary JSON/S3 flow working and logs the PostgreSQL backup failure.
+
+#### Worker environment variables
+
+Set these on the worker host:
+
+```bash
+export POSTGRES_ENABLED=true
+export POSTGRES_HOST=<postgres-host>
+export POSTGRES_PORT=5432
+export POSTGRES_DB=<postgres-database>
+export POSTGRES_USER=<postgres-user>
+export POSTGRES_PASSWORD=<postgres-password>
+export POSTGRES_TABLE=machines
+export POSTGRES_SSLMODE=verify-full
+export POSTGRES_SSLROOTCERT=/path/to/ca-bundle.pem
+```
+
+You can also provide a single DSN instead:
+
+```bash
+export POSTGRES_DSN='postgresql://<postgres-user>:<postgres-password>@<postgres-host>:5432/<postgres-database>?sslmode=verify-full&sslrootcert=/path/to/ca-bundle.pem'
+```
+
+If your PostgreSQL provider requires TLS verification, download or place the provider CA bundle on the worker host and point `POSTGRES_SSLROOTCERT` at it.
+
+#### systemd example for the worker service
+
+If `worker.py` is started by `systemd`, add the PostgreSQL settings to the unit file, for example:
+
+```ini
+[Service]
+Environment="POSTGRES_ENABLED=true"
+Environment="POSTGRES_HOST=<postgres-host>"
+Environment="POSTGRES_PORT=5432"
+Environment="POSTGRES_DB=<postgres-database>"
+Environment="POSTGRES_USER=<postgres-user>"
+Environment="POSTGRES_PASSWORD=<postgres-password>"
+Environment="POSTGRES_TABLE=machines"
+Environment="POSTGRES_SSLMODE=verify-full"
+Environment="POSTGRES_SSLROOTCERT=/absolute/path/to/ca-bundle.pem"
+```
+
+Then reload and restart the service:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart <worker-service-name>
+sudo systemctl status <worker-service-name>
+```
+
+#### PostgreSQL connection test example
+
+You can validate the same connection outside the worker with `psql` before restarting the service:
+
+```bash
+psql "host=<postgres-host> port=5432 dbname=<postgres-database> user=<postgres-user> sslmode=verify-full sslrootcert=/path/to/ca-bundle.pem"
+```
+
+If the connection succeeds, use the same values in the worker service environment.
+
+#### PostgreSQL database setup example
+
+If you need a dedicated backup database:
+
+```sql
+CREATE DATABASE infra_automation;
+```
+
+If you want a dedicated login instead of the default user:
+
+```sql
+CREATE USER infra_worker WITH PASSWORD 'change-me';
+GRANT ALL PRIVILEGES ON DATABASE infra_automation TO infra_worker;
+```
+
+Then update the worker environment variables to match that user.
+
+#### Connect with pgAdmin 4
+
+In pgAdmin 4:
+
+1. Right-click **Servers** -> **Register** -> **Server**.
+2. Under **General**, enter a name such as `worker-postgres-backup`.
+3. Under **Connection**, set:
+   - **Host name/address**: your PostgreSQL host
+   - **Port**: `5432`
+   - **Maintenance database**: your PostgreSQL database
+   - **Username**: your PostgreSQL username
+   - **Password**: your PostgreSQL password
+   - **SSL mode**: set this to match your PostgreSQL provider requirements
+   - **Root certificate**: provide the CA bundle path if TLS verification is required
+4. Save the server.
+5. Browse to `Databases -> <your database> -> Schemas -> public -> Tables -> machines`.
+
+To inspect the backed-up machines in pgAdmin 4, open the query tool and run:
+
+```sql
+SELECT id, machine_data, created_at
+FROM machines
+ORDER BY id;
 ```
 
 ### API endpoints

@@ -5,7 +5,6 @@ import httpx
 
 from config import API_HOST, API_PORT, WORKER_HOST, WORKER_PORT
 from machine import Machine, MachineInput
-from provisioning import get_next_machine_id
 from schema import CPUArchitecture, DiskType, OSName  # , OSType
 
 
