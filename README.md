@@ -276,17 +276,10 @@ The deployed EC2 instances use systemd units for the backend and worker services
   - `http` allows inbound `80/tcp` from the internet
   - `backend-api` allows inbound `8000/tcp` from SG `http`
   - `worker-app` allows inbound `8000/tcp` from SG `backend-api`
-  - RDS SG `default` allows `5432/tcp` from SG `worker-app` and from the admin IP used for pgAdmin
+  - RDS SG `default` allows `5432/tcp` from SG `worker-app` and from the admin IP used for pgAdmin access
 
 ## Service documentation
 
 - Frontend: [src/frontend/README.md](src/frontend/README.md)
 - Backend: [src/backend/README.md](src/backend/README.md)
 - Worker: [src/worker/README.md](src/worker/README.md)
-
-
-## Manual evidence to capture
-
-- screenshots of running EC2 instances
-- screenshots of RDS, S3, SNS, and the nginx-exposed frontend
-- notes for any non-minimal IAM or security group rules
