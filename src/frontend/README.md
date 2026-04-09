@@ -21,6 +21,8 @@ src/frontend/
 
 Deploy the frontend page from `src/frontend/index2.html` and use the nginx configuration in `src/frontend/nginx.conf`.
 
+Because the frontend is static and nginx-based, it does not use a service-specific Python requirements file.
+
 Public entry point:
 
 ```text

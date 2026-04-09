@@ -26,13 +26,13 @@ src/backend/
 Install dependencies:
 
 ```bash
-pip install -r requirements-backend.txt
+pip install -r ./requirements.txt
 ```
 
 Run from the `src/backend/` directory:
 
 ```bash
-python api.py
+python ./api.py
 ```
 
 ### systemd setup

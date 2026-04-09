@@ -24,13 +24,13 @@ src/worker/
 Install dependencies:
 
 ```bash
-pip install -r requirements-worker.txt
+pip install -r ./requirements.txt
 ```
 
 Run from the `src/worker/` directory:
 
 ```bash
-python api.py
+python ./api.py
 ```
 
 ### systemd setup
