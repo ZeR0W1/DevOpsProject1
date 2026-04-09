@@ -72,3 +72,9 @@ API_PORT=8000
 WORKER_HOST=10.0.157.192
 WORKER_PORT=8000
 ```
+
+### Current AWS attachment notes
+
+- instance security group: `backend-api`
+- inbound application traffic: `8000/tcp` from security group `http`
+- backend forwards worker requests to `10.0.157.192:8000`

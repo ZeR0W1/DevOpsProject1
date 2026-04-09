@@ -94,3 +94,10 @@ POSTGRES_TABLE=machines
 POSTGRES_SSLMODE=verify-full
 POSTGRES_SSLROOTCERT=/home/ec2-user/infra-automation/src/worker/global-bundle.pem
 ```
+
+### Current AWS attachment notes
+
+- instance security group: `worker-app`
+- inbound application traffic: `8000/tcp` from security group `backend-api`
+- RDS access is allowed from `worker-app`
+- direct pgAdmin access is intentionally preserved through the RDS security group admin-IP rule

@@ -47,3 +47,9 @@ server_name 44.212.221.75
 backend upstream 10.0.149.9:8000
 frontend document root /home/ec2-user/infra-automation/src/frontend
 ```
+
+### Current AWS attachment notes
+
+- instance security group: `http`
+- inbound public traffic: `80/tcp` from the internet
+- nginx proxies requests to the backend at `10.0.149.9:8000`

@@ -33,42 +33,66 @@ src/
 
 ```mermaid
 flowchart TD
-    Internet[Internet] --> IGW[Internet Gateway\nigw-0e11e3dc4d7a73914]
+    Internet((Internet)) --> IGW[Internet Gateway]
 
-    subgraph VPC[VPC vpc-0661ad9886c7d135f]
-        subgraph SubnetB[Subnet linkless-subnet-private2-us-east-1b\nsubnet-02084b58d14d91ea7\n10.0.144.0/20]
-            Front[Frontend EC2\nName: Front\nPrivate: 10.0.154.173\nPublic: 44.212.221.75\nIAM: bucket-muncher]
-            Back[Backend EC2\nName: Back\nPrivate: 10.0.149.9\nPublic: 54.236.240.185\nIAM: bucket-muncher]
-            Worker[Worker EC2\nName: Worker\nPrivate: 10.0.157.192\nPublic: 44.197.188.137\nIAM: bucket-muncher]
+    subgraph VPC[ ]
+        direction TB
+        VPCTitle[VPC:<br/>vpc-0661ad9886c7d135f]
+        VPCPadLeft[ ]
+        VPCPadRight[ ]
+
+        subgraph Net1[ ]
+            direction LR
+            Net1Title[Subnet: us-east-1b<br/>10.0.144.0/20 public routing]
+            Net1PadLeft[ ]
+            Front[Frontend EC2:<br/>role: nginx entrypoint]
+            nginx((nginx))
+            Back[Backend EC2:<br/>role: validation API]
+            Worker[Worker EC2:<br/>role: persistence and integration]
+            Net1PadRight[ ]
+            Net1PadFarRight[ ]
         end
 
-        subgraph SubnetA[Subnet linkless-subnet-private1-us-east-1a\nsubnet-009f8ce8c5da4bd1c\n10.0.128.0/20]
-            RDS[(RDS PostgreSQL\nIdentifier: dodb2\nEndpoint: dodb2.celu8oms0zc2.us-east-1.rds.amazonaws.com\nPort: 5432\nPublicly accessible: true)]
+        subgraph Net2[ ]
+            direction LR
+            Net2Title[Subnet: us-east-1a<br/>10.0.128.0/20]
+            Net2PadLeft[ ]
+            RDS[(RDS: PostgreSQL<br/>dodb2)]
+            Net2PadRight[ ]
         end
+
+        VPCPadBottom[ ]
     end
 
-    S3[S3 Bucket\nquick-demo-058264247987-us-east-1-an]
-    SNS[SNS Topic\nDOAworker]
+    S3[S3:<br/>quick-demo-058264247987-us-east-1-an]
+    SNS[SNS:<br/>DOAworker]
+    Email[Email]
+    SGHttp[SG: http]
+    SGBack[SG: backend-api]
+    SGWorker[SG: worker-app]
+    SGRds[SG: default]
 
-    Internet -->|HTTP/80| Front
-    Front -->|nginx proxy -> backend| Back
-    Back -->|HTTP/8000| Worker
-    Worker -->|PostgreSQL/5432| RDS
-    Worker -->|Upload instances.json| S3
-    Worker -->|Publish notifications| SNS
+    IGW --> Front
+    Front -.runs.- nginx
+    nginx -->|proxy| Back
+    Back -->|API| Worker
+    Worker -->|DB| RDS
+    Worker -->|upload| S3
+    Worker -->|notify| SNS
+    SNS --> Email
 
-    SG1[SG cetem-sg-01\nssh 22 from 109.67.153.215/32\negres all]
-    SG2[SG http\nhttp 80 from 0.0.0.0/0\negres all]
-    SG3[SG worker-listen\n8000 from 10.0.157.192/32]
-    SG4[SG worker-perms\n5432 from 0.0.0.0/0\n8000 from 10.0.149.9/32\negres all]
+    SGHttp -.attached.- Front
+    SGBack -.attached.- Back
+    SGWorker -.attached.- Worker
+    SGRds -.attached.- RDS
 
-    SG1 -.attached.- Front
-    SG2 -.attached.- Front
-    SG1 -.attached.- Back
-    SG2 -.attached.- Back
-    SG3 -.attached.- Back
-    SG1 -.attached.- Worker
-    SG4 -.attached.- Worker
+    classDef invis fill:none,stroke:none,color:transparent;
+    classDef label fill:none,stroke:none,color:#ffffff,font-weight:bold,font-size:20px;
+    class VPCPadLeft,VPCPadRight,VPCPadBottom,Net1PadLeft,Net1PadRight,Net1PadFarRight,Net2PadLeft,Net2PadRight invis;
+    class VPCTitle,Net1Title,Net2Title label;
+    style VPCTitle fill:none,stroke:none,color:#ffffff,font-size:28px,font-weight:bold;
+    style Net1Title fill:none,stroke:none,color:#ffffff,font-size:24px,font-weight:bold;
+    style Net2Title fill:none,stroke:none,color:#ffffff,font-size:24px,font-weight:bold;
 ```
 
 ## Deployment notes
@@ -78,6 +102,16 @@ flowchart TD
 - Backend validation lives in `src/backend/`
 - Worker persistence/integration logic lives in `src/worker/`
 - PostgreSQL CA bundle is expected at `src/worker/global-bundle.pem`
+- Active EC2 security groups:
+  - Front: `http`
+  - Back: `backend-api`
+  - Worker: `worker-app`
+- Active security-group flow:
+  - `http` allows inbound `80/tcp` from the internet
+  - `backend-api` allows inbound `8000/tcp` from SG `http`
+  - `worker-app` allows inbound `8000/tcp` from SG `backend-api`
+  - RDS SG `default` allows `5432/tcp` from SG `worker-app` and from the admin IP used for pgAdmin
+- RDS remains publicly accessible intentionally so direct pgAdmin access continues to work.
 
 ## Local development
 
