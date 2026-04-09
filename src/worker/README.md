@@ -101,3 +101,11 @@ POSTGRES_SSLROOTCERT=/home/ec2-user/infra-automation/src/worker/global-bundle.pe
 - inbound application traffic: `8000/tcp` from security group `backend-api`
 - RDS access is allowed from `worker-app`
 - direct pgAdmin access is intentionally preserved through the RDS security group admin-IP rule
+
+### Maintenance endpoint
+
+- `POST /machines/recatalogue` renumbers the existing machine catalog so IDs become sequential starting from `1`
+- the recatalogue process updates:
+  - the worker JSON catalog
+  - the PostgreSQL `machines` table
+  - the S3 copy of the catalog

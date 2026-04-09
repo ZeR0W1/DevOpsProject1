@@ -129,6 +129,17 @@ def reassign_machine(machine: Machine):
     return reassigned_machine
 
 
+@app.post("/machines/recatalogue")
+def recatalogue_machines():
+    try:
+        response = httpx.post(f"{WORKER_MACHINES_URL}/recatalogue", timeout=30.0)
+        response.raise_for_status()
+        return response.json()
+    except Exception as exc:
+        logger.exception("Failed to recatalogue machines through worker")
+        raise HTTPException(status_code=502, detail=f"Worker recatalogue failed: {exc}")
+
+
 @app.get("/schema/machine")
 def machine_schema():
     return Machine.model_json_schema()

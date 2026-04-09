@@ -241,6 +241,58 @@ def append_machine(machine: dict, filepath: Path = WORKER_INSTANCES_FILEPATH):
     return machine
 
 
+def replace_all_postgres_instances(instances: list[dict]):
+    if not POSTGRES_ENABLED:
+        return
+
+    init_postgres_storage()
+    with get_postgres_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                sql.SQL("DELETE FROM {}").format(sql.Identifier(POSTGRES_TABLE))
+            )
+            for instance in instances:
+                cursor.execute(
+                    sql.SQL(
+                        "INSERT INTO {} (id, machine_data) VALUES (%s, %s::jsonb)"
+                    ).format(sql.Identifier(POSTGRES_TABLE)),
+                    (instance["id"], json.dumps(instance)),
+                )
+        connection.commit()
+
+
+def recatalogue_instances(filepath: Path = WORKER_INSTANCES_FILEPATH):
+    instances = load_authoritative_instances(filepath)
+    recatalogued = []
+
+    for index, instance in enumerate(instances, start=1):
+        if not isinstance(instance, dict):
+            continue
+        updated = dict(instance)
+        updated["id"] = index
+        recatalogued.append(updated)
+
+    export_instances_to_json(recatalogued, filepath)
+    replace_all_postgres_instances(recatalogued)
+    sync_instances_file_to_s3(str(filepath))
+
+    publish_sns_notification(
+        subject="Machine catalog recatalogued",
+        message=(
+            f"The machine catalog was renumbered starting from 1.\n"
+            f"Total machines: {len(recatalogued)}\n"
+            f"Bucket: {S3_BUCKET_NAME}\n"
+            f"Object Key: {S3_INSTANCES_OBJECT_KEY}"
+        ),
+    )
+
+    return {
+        "status": "recatalogued",
+        "count": len(recatalogued),
+        "ids": [instance["id"] for instance in recatalogued],
+    }
+
+
 @app.get("/health")
 def healthcheck():
     return {"status": "ok", "service": "worker-api"}
@@ -266,6 +318,11 @@ def process_machine(machine: dict):
         ),
     )
     return {"status": "accepted", "machine_id": saved.get("id")}
+
+
+@app.post("/machines/recatalogue")
+def recatalogue_machines():
+    return recatalogue_instances()
 
 
 def main():

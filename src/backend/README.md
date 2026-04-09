@@ -78,3 +78,8 @@ WORKER_PORT=8000
 - instance security group: `backend-api`
 - inbound application traffic: `8000/tcp` from security group `http`
 - backend forwards worker requests to `10.0.157.192:8000`
+
+### Maintenance endpoint
+
+- `POST /machines/recatalogue` is exposed through the backend and forwarded to the worker
+- use it when you need to renumber the existing machine catalog so IDs start from `1`
