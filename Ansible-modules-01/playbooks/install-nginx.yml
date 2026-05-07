@@ -1,0 +1,13 @@
+- name: Install nginx, then configure nginx
+  hosts: web
+  become: true
+
+  vars:
+    nginx_config_status_enable: true
+    nginx_config_status_port: 8080
+
+  roles:
+    - role: nginx
+      tags: ["nginx_install"]
+    - role: nginx_config
+      tags: ["nginx_config", "nginx"]
