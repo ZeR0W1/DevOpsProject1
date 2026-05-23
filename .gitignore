@@ -15,3 +15,13 @@ logs/
 
 frontend/
 github.txt
+
+misc/
+
+**/.terraform/
+
+*.tfstate
+*.tfstate.*
+*.tfplan
+
+*.pem

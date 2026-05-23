@@ -1,0 +1,6 @@
+---
+# Encrypt this file with ansible-vault before committing real values.
+# Example:
+# ansible-vault encrypt Ansible-modules-01/vault/staging.yml
+
+vault_ssh_private_key_path: "secrets/cetemPair.pem"

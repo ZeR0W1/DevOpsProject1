@@ -1,0 +1,79 @@
+---
+# tasks file for python_pip
+- name: Check if python3.11 EXTERNALLY-MANAGED file exists
+  ansible.builtin.stat:
+    path: /usr/lib/python3.11/EXTERNALLY-MANAGED
+  register: externally_managed_file_py311
+
+- name: Rename python3.11 EXTERNALLY-MANAGED file if it exists
+  ansible.builtin.command:
+    cmd: mv /usr/lib/python3.11/EXTERNALLY-MANAGED /usr/lib/python3.11/EXTERNALLY-MANAGED.old
+  when: externally_managed_file_py311.stat.exists
+  args:
+    creates: /usr/lib/python3.11/EXTERNALLY-MANAGED.old
+
+- name: Check if python3.12 EXTERNALLY-MANAGED file exists
+  ansible.builtin.stat:
+    path: /usr/lib/python3.12/EXTERNALLY-MANAGED
+  register: externally_managed_file_py312
+
+- name: Rename python3.12 EXTERNALLY-MANAGED file if it exists
+  ansible.builtin.command:
+    cmd: mv /usr/lib/python3.12/EXTERNALLY-MANAGED /usr/lib/python3.12/EXTERNALLY-MANAGED.old
+  when: externally_managed_file_py312.stat.exists
+  args:
+    creates: /usr/lib/python3.12/EXTERNALLY-MANAGED.old
+
+- name: Import assert.yml
+  ansible.builtin.import_tasks:
+    file: assert.yml
+  run_once: true
+  delegate_to: localhost
+
+- name: Install python pip
+  ansible.builtin.package:
+    name: "{{ python_pip_packages }}"
+    state: present
+
+- name: Configure pip proxy
+  community.general.ini_file:
+    path: /etc/pip.conf
+    section: global
+    option: index-url
+    value: "{{ python_pip_proxy }}"
+    mode: "0644"
+  when:
+    - python_pip_proxy is defined
+
+- name: Trust hosts
+  community.general.ini_file:
+    path: /etc/pip.conf
+    section: global
+    option: trusted-host
+    value: "{{ python_pip_trusted_host }}"
+    mode: "0644"
+  when:
+    - python_pip_trusted_host is defined
+
+- name: Update pip.
+  ansible.builtin.pip:
+    name: "{{ python_pip_pip_package }}"
+    state: "{{ python_pip_pip_state }}"  # noqa package-latest
+    executable: "{{ python_pip_executable | default(omit) }}"
+  when:
+    - python_pip_update
+    - ansible_distribution_release not in [ "bookworm", "noble" ]
+    - ansible_os_family != "Alpine"
+
+- name: Install requested modules
+  ansible.builtin.pip:
+    name: "{{ item.name }}"
+    state: "{{ item.state | default('present') }}"
+    version: "{{ item.version | default(omit) }}"
+    executable: "{{ python_pip_executable | default(omit) }}"
+  loop: "{{ python_pip_modules }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when:
+    - ansible_distribution_release not in [ "bookworm", "noble" ]
+    - ansible_os_family != "Alpine"

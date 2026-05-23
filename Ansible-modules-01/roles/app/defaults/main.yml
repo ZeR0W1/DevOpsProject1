@@ -1,0 +1,26 @@
+---
+# Application identity
+app_user: example-user
+app_group: "{{ app_user }}"
+app_service_name: myapp
+
+# Filesystem paths
+app_dir: /opt/myapp
+app_src_dir: "{{ app_dir }}/src"
+app_venv_dir: "{{ app_dir }}/venv"
+
+# Runtime command
+# Default backend entrypoint (override per group/host)
+app_entrypoint: src/backend/api.py
+app_exec_start: "{{ app_venv_dir }}/bin/python {{ app_src_dir }}/{{ app_entrypoint }}"
+
+# Dependency installation (override per group/host)
+app_requirements_files:
+  - "{{ app_src_dir }}/src/shared/requirements.txt"
+
+# Optional runtime environment variables for the systemd unit.
+# Override per group/host as needed.
+app_environment: {}
+
+# Python/pip role variables (used by buluma.python_pip)
+python_pip_package_pip: python3-pip

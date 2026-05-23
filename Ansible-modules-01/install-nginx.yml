@@ -2,7 +2,11 @@
   hosts: web
   become: true
 
+  vars_files:
+    - vault/staging.yml
+
   vars:
+    ansible_ssh_private_key_file: "{{ vault_ssh_private_key_path }}"
     nginx_config_status_enable: true
     nginx_config_status_port: 8080
 

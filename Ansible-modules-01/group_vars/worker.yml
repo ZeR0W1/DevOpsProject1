@@ -1,0 +1,16 @@
+---
+# Worker node runtime
+app_service_name: myapp-worker
+app_entrypoint: src/worker/api.py
+app_exec_start: "{{ app_venv_dir }}/bin/uvicorn api:app --host 0.0.0.0 --port 8000 --app-dir {{ app_src_dir }}/src/worker"
+
+# Shared + worker-specific dependencies
+app_requirements_files:
+  - "{{ app_src_dir }}/src/shared/requirements.txt"
+  - "{{ app_src_dir }}/src/worker/requirements.txt"
+
+# Runtime environment for worker service
+app_environment:
+  API_PORT: "8000"
+  BACKEND_HOST: "{{ hostvars[groups['backend'][0]].ansible_host }}"
+  BACKEND_PORT: "8000"
