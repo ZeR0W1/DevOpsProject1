@@ -54,6 +54,7 @@
             API_PORT: "8000"
             WORKER_HOST: "{{ tf.worker_private_ip.value }}"
             WORKER_PORT: "8000"
+      when: not (lookup('ansible.builtin.env', 'SKIP_GROUP_VARS_WRITE') | default('false') | bool)
 
     - name: Update worker group vars from Terraform outputs
       ansible.builtin.copy:
@@ -84,6 +85,7 @@
             POSTGRES_PASSWORD_SECRET_NAME: "{{ tf.db_password_secret_name.value }}"
             S3_BUCKET_NAME: "{{ tf.s3_bucket_name.value }}"
             SNS_TOPIC_ARN: "{{ tf.sns_topic_arn.value }}"
+      when: not (lookup('ansible.builtin.env', 'SKIP_GROUP_VARS_WRITE') | default('false') | bool)
 
     - name: Update web group vars for frontend nginx + S3 bootstrap
       ansible.builtin.copy:
@@ -123,3 +125,4 @@
                 location / {
                     try_files $uri $uri/ /index.html;
                 }
+      when: not (lookup('ansible.builtin.env', 'SKIP_GROUP_VARS_WRITE') | default('false') | bool)

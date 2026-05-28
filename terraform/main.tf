@@ -51,12 +51,12 @@ module "iam" {
   source = "./modules/iam"
 
   # Instance profile permissions for EC2 access to S3 and SNS.
-  bucket_name   = module.s3_bucket.bucket_name
-  sns_topic_arn = module.sns_topic.topic_arn
+  bucket_name             = module.s3_bucket.bucket_name
+  sns_topic_arn           = module.sns_topic.topic_arn
   db_password_secret_name = var.db_password_secret_name
-  name_prefix   = var.name_prefix
-  environment   = var.environment
-  common_tags   = var.common_tags
+  name_prefix             = var.name_prefix
+  environment             = var.environment
+  common_tags             = var.common_tags
 }
 
 module "rds_postgresql" {
