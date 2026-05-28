@@ -25,3 +25,21 @@ misc/
 *.tfplan
 
 *.pem
+
+# Merged from Ansible app-level .gitignore
+configs/instances.json
+src/legacy/
+*.key
+*.retry
+*.retry.json
+*.vault
+vault_pass.txt
+ansible.log
+
+# Ignore sensitive Ansible var overrides while keeping examples
+**/group_vars/*.yml
+!**/group_vars/*.example.yml
+!**/group_vars/*.sample.yml
+**/host_vars/*.yml
+!**/host_vars/*.example.yml
+!**/host_vars/*.sample.yml

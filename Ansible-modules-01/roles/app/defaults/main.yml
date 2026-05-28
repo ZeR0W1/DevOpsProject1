@@ -18,6 +18,18 @@ app_exec_start: "{{ app_venv_dir }}/bin/python {{ app_src_dir }}/{{ app_entrypoi
 app_requirements_files:
   - "{{ app_src_dir }}/src/shared/requirements.txt"
 
+# Copy only runtime-relevant content by default.
+# These can be overridden in group_vars if needed.
+app_runtime_sync_paths_common:
+  - src/shared/
+
+app_runtime_sync_paths_backend:
+  - src/backend/
+
+app_runtime_sync_paths_worker:
+  - src/worker/
+  - configs/
+
 # Optional runtime environment variables for the systemd unit.
 # Override per group/host as needed.
 app_environment: {}

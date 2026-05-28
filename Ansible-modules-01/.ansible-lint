@@ -1,0 +1,4 @@
+exclude_paths:
+  - roles/buluma.python_pip/
+  - roles/nginx/
+  - roles/nginx_config/

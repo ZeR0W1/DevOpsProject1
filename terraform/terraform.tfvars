@@ -6,10 +6,10 @@ common_tags = {
   ManagedBy = "Terraform"
 }
 
-vpc_id                     = "vpc-0661ad9886c7d135f"
-public_subnet_id           = "subnet-02084b58d14d91ea7"
-db_subnet_id               = "subnet-009f8ce8c5da4bd1c"
-public_availability_zone   = "us-east-1b"
+enable_ssh_ingress = true
+
+vpc_cidr                   = "10.0.0.0/16"
+availability_zones         = ["us-east-1b", "us-east-1a"]
 ami_id                     = "ami-02dfbd4ff395f2a1b"
 instance_type              = "t3.micro"
 key_name                   = "cetemPair"

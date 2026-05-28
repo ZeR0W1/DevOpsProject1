@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+aws s3 cp "s3://{{ frontend_s3_bucket }}/{{ frontend_s3_object_key }}" "{{ frontend_web_root }}/{{ frontend_web_index_file }}"

@@ -1,11 +1,15 @@
 ---
 # Dev/testing orchestrator for control-node execution.
 # This file runs the full provisioning flow end-to-end:
-# 1) sync Terraform outputs
-# 2) configure frontend nginx
-# 3) deploy backend/worker app services
+# 1) apply Terraform infrastructure
+# 2) sync Terraform outputs
+# 3) configure frontend nginx
+# 4) deploy backend/worker app services
 #
 # It is not intended to run *on* EC2 instances themselves.
+- name: Apply Terraform infrastructure
+  ansible.builtin.import_playbook: apply_terraform.yml
+
 - name: Sync dynamic infra values from Terraform outputs
   ansible.builtin.import_playbook: sync_from_terraform.yml
 

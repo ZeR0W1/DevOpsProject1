@@ -1,9 +1,12 @@
 ---
-- name: reload systemd
+# TODO: Revisit handler naming later; keeping `listen` aliases for backward-compatible notify strings.
+- name: Reload systemd
+  listen: reload systemd
   ansible.builtin.systemd:
     daemon_reload: true
 
-- name: restart app
+- name: Restart app
+  listen: restart app
   ansible.builtin.systemd:
     name: "{{ app_service_name }}"
     state: restarted

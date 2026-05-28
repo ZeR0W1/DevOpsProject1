@@ -33,6 +33,12 @@ variable "worker_security_group_id" {
   type        = string
 }
 
+variable "ssh_admin_security_group_id" {
+  description = "Optional shared SSH admin security group ID"
+  type        = string
+  default     = null
+}
+
 variable "instance_profile_name" {
   description = "IAM instance profile name for the EC2 instances"
   type        = string

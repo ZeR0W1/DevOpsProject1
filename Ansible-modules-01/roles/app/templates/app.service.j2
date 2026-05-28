@@ -8,7 +8,7 @@ User={{ app_user }}
 Group={{ app_group }}
 WorkingDirectory={{ app_src_dir }}
 ExecStart={{ app_exec_start }}
-{% for env_key, env_val in app_environment.items() %}
+{% for env_key, env_val in (app_environment_effective | default(app_environment)).items() %}
 Environment="{{ env_key }}={{ env_val }}"
 {% endfor %}
 Restart=always

@@ -1,5 +1,5 @@
-variable "vpc_id" {
-  description = "VPC ID for the project security groups"
+variable "vpc_cidr" {
+  description = "CIDR block for the project VPC"
   type        = string
 }
 
@@ -8,19 +8,33 @@ variable "admin_cidr" {
   type        = string
 }
 
-variable "public_subnet_id" {
-  description = "Subnet ID used by the EC2 instances"
-  type        = string
+variable "enable_ssh_ingress" {
+  description = "Whether to allow SSH ingress (22/tcp) from admin_cidr to app instances"
+  type        = bool
+  default     = false
 }
 
-variable "db_subnet_id" {
-  description = "Additional subnet used in the DB subnet group"
-  type        = string
+variable "availability_zones" {
+  description = "Availability zones used for app and DB subnets (first = app, second = db)"
+  type        = list(string)
 }
 
-variable "public_availability_zone" {
-  description = "Availability zone of the public subnet"
-  type        = string
+variable "subnet_newbits" {
+  description = "Additional prefix bits used by cidrsubnet when deriving subnet CIDRs from vpc_cidr"
+  type        = number
+  default     = 8
+}
+
+variable "app_subnet_netnum" {
+  description = "Netnum index for app subnet CIDR derivation"
+  type        = number
+  default     = 1
+}
+
+variable "db_subnet_netnum" {
+  description = "Netnum index for db subnet CIDR derivation"
+  type        = number
+  default     = 2
 }
 
 variable "name_prefix" {

@@ -1,5 +1,5 @@
 ---
-# Backend node runtime
+# Backend node runtime (example template)
 app_service_name: myapp-backend
 app_entrypoint: src/backend/api.py
 app_exec_start: "{{ app_venv_dir }}/bin/uvicorn api:app --host 0.0.0.0 --port 8000 --app-dir {{ app_src_dir }}/src/backend"
@@ -13,5 +13,5 @@ app_requirements_files:
 app_environment:
   API_HOST: "0.0.0.0"
   API_PORT: "8000"
-  WORKER_HOST: "{{ hostvars[groups['worker'][0]].ansible_host }}"
+  WORKER_HOST: "<worker-private-ip>"
   WORKER_PORT: "8000"

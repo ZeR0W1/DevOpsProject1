@@ -1,0 +1,56 @@
+---
+- name: Ensure awscli is installed
+  ansible.builtin.package:
+    name: awscli
+    state: present
+
+- name: Ensure frontend web root exists
+  ansible.builtin.file:
+    path: "{{ frontend_web_root }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install frontend S3 sync script
+  ansible.builtin.template:
+    src: sync-frontend-index.sh.j2
+    dest: /usr/local/bin/sync-frontend-index.sh
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install frontend index sync systemd service
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/frontend-index-sync.service
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      [Unit]
+      Description=Sync frontend index.html from S3
+      Wants=network-online.target
+      After=network-online.target
+
+      [Service]
+      Type=oneshot
+      ExecStart=/usr/local/bin/sync-frontend-index.sh
+
+      [Install]
+      WantedBy=multi-user.target
+
+- name: Enable frontend index sync service
+  ansible.builtin.systemd:
+    name: frontend-index-sync.service
+    enabled: true
+    daemon_reload: true
+
+- name: Run frontend index sync now
+  ansible.builtin.systemd:
+    name: frontend-index-sync.service
+    state: started
+
+- name: Reload nginx after frontend index sync
+  ansible.builtin.service:
+    name: nginx
+    state: reloaded

@@ -26,13 +26,26 @@
     - "{{ app_src_dir }}"
   tags: [app, deploy]
 
-- name: Copy application source files
+- name: Build runtime sync path list for backend host
+  ansible.builtin.set_fact:
+    app_runtime_sync_paths: "{{ app_runtime_sync_paths_common + app_runtime_sync_paths_backend }}"
+  when: "'backend' in group_names"
+  tags: [app, deploy]
+
+- name: Build runtime sync path list for worker host
+  ansible.builtin.set_fact:
+    app_runtime_sync_paths: "{{ app_runtime_sync_paths_common + app_runtime_sync_paths_worker }}"
+  when: "'worker' in group_names"
+  tags: [app, deploy]
+
+- name: Copy runtime application files
   ansible.builtin.copy:
-    src: app/
-    dest: "{{ app_src_dir }}/"
+    src: "app/{{ item }}"
+    dest: "{{ app_src_dir }}/{{ item }}"
     owner: "{{ app_user }}"
     group: "{{ app_group }}"
     mode: "0644"
+  loop: "{{ app_runtime_sync_paths }}"
   notify: restart app
   tags: [app, deploy]
 
@@ -41,10 +54,24 @@
     requirements: "{{ item }}"
     virtualenv: "{{ app_venv_dir }}"
     virtualenv_command: python3 -m venv
+  become: true
   become_user: "{{ app_user }}"
   loop: "{{ app_requirements_files }}"
   notify: restart app
   tags: [app, deploy]
+
+- name: Build effective runtime environment from group/host vars
+  ansible.builtin.set_fact:
+    app_environment_effective: "{{ app_environment | default({}) }}"
+  tags: [app, service, deploy]
+
+- name: Inject worker DB password from vault at deploy time
+  ansible.builtin.set_fact:
+    app_environment_effective: "{{ app_environment_effective | combine({'POSTGRES_PASSWORD': vault_postgres_password}) }}"
+  when:
+    - "'worker' in group_names"
+    - vault_postgres_password is defined
+  tags: [app, service, deploy]
 
 - name: Deploy systemd service unit
   ansible.builtin.template:

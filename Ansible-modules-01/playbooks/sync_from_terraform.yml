@@ -27,10 +27,10 @@
           Front ansible_host={{ tf.frontend_public_ip.value }} ansible_user=ec2-user
 
           [backend]
-          Back ansible_host={{ tf.backend_private_ip.value }} ansible_user=ec2-user
+          Back ansible_host={{ tf.backend_public_ip.value }} ansible_user=ec2-user
 
           [worker]
-          Worker ansible_host={{ tf.worker_private_ip.value }} ansible_user=ec2-user
+          Worker ansible_host={{ tf.worker_public_ip.value }} ansible_user=ec2-user
 
     - name: Update backend group vars from Terraform outputs
       ansible.builtin.copy:
@@ -77,5 +77,45 @@
             BACKEND_HOST: "{{ tf.backend_private_ip.value }}"
             BACKEND_PORT: "8000"
             POSTGRES_HOST: "{{ tf.rds_endpoint.value.split(':')[0] }}"
+            POSTGRES_USER: "postgres_master"
             S3_BUCKET_NAME: "{{ tf.s3_bucket_name.value }}"
             SNS_TOPIC_ARN: "{{ tf.sns_topic_arn.value }}"
+
+    - name: Update web group vars for frontend nginx + S3 bootstrap
+      ansible.builtin.copy:
+        dest: "{{ playbook_dir }}/../group_vars/web.yml"
+        mode: "0644"
+        content: |
+          ---
+          # keep using a permanent, pre-existing bucket
+          # so that frontend content is stable across environment rebuilds.
+          frontend_s3_bucket: "quick-demo-058264247987-us-east-1-an"
+          frontend_s3_object_key: "index2.html"
+
+          nginx_remove_default_vhost: true
+          nginx_vhosts:
+            - listen: "80"
+              server_name: "_"
+              filename: "myapp_frontend.conf"
+              root: "/usr/share/nginx/html"
+              index: "index.html"
+              extra_parameters: |
+                location /health {
+                    proxy_pass http://{{ tf.backend_private_ip.value }}:8000/health;
+                    proxy_set_header Host $host;
+                    proxy_set_header X-Real-IP $remote_addr;
+                    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                    proxy_set_header X-Forwarded-Proto $scheme;
+                }
+
+                location /machines {
+                    proxy_pass http://{{ tf.backend_private_ip.value }}:8000/machines;
+                    proxy_set_header Host $host;
+                    proxy_set_header X-Real-IP $remote_addr;
+                    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                    proxy_set_header X-Forwarded-Proto $scheme;
+                }
+
+                location / {
+                    try_files $uri $uri/ /index.html;
+                }

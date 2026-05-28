@@ -1,0 +1,26 @@
+---
+- name: Apply Terraform infrastructure from Ansible
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    terraform_dir: "{{ playbook_dir }}/../../terraform"
+    run_terraform: "{{ run_terraform | default(true) }}"
+
+  tasks:
+    - name: Ensure Terraform working directory is initialized
+      ansible.builtin.command:
+        cmd: terraform -chdir={{ terraform_dir }} init -input=false
+      changed_when: false
+      when: run_terraform | bool
+
+    - name: Apply Terraform infrastructure
+      ansible.builtin.command:
+        cmd: terraform -chdir={{ terraform_dir }} apply -auto-approve -input=false
+      when: run_terraform | bool
+
+    - name: Terraform apply skipped by operator choice
+      ansible.builtin.debug:
+        msg: "Skipping Terraform because run_terraform=false"
+      when: not (run_terraform | bool)

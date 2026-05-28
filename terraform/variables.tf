@@ -4,24 +4,33 @@ variable "aws_region" {
   default     = "us-east-1"
 }
 
-variable "vpc_id" {
-  description = "Project VPC ID"
+variable "vpc_cidr" {
+  description = "CIDR block for the Terraform-managed project VPC"
   type        = string
+  default     = "10.0.0.0/16"
 }
 
-variable "public_subnet_id" {
-  description = "Subnet ID currently used by the EC2 instances"
-  type        = string
+variable "availability_zones" {
+  description = "Availability zones used for app/db subnet placement (index 0 = app, index 1 = db)"
+  type        = list(string)
 }
 
-variable "db_subnet_id" {
-  description = "Additional subnet used in the DB subnet group"
-  type        = string
+variable "subnet_newbits" {
+  description = "Additional prefix bits used by cidrsubnet when deriving subnet CIDRs from vpc_cidr"
+  type        = number
+  default     = 8
 }
 
-variable "public_availability_zone" {
-  description = "Availability zone of the public subnet"
-  type        = string
+variable "app_subnet_netnum" {
+  description = "Netnum index for app subnet CIDR derivation"
+  type        = number
+  default     = 1
+}
+
+variable "db_subnet_netnum" {
+  description = "Netnum index for db subnet CIDR derivation"
+  type        = number
+  default     = 2
 }
 
 variable "ami_id" {
@@ -143,4 +152,10 @@ variable "common_tags" {
   description = "Base tags applied to managed resources"
   type        = map(string)
   default     = {}
+}
+
+variable "enable_ssh_ingress" {
+  description = "Enable a shared SSH admin security group and attach it to app instances"
+  type        = bool
+  default     = false
 }

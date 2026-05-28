@@ -3,7 +3,7 @@ resource "aws_instance" "frontend" {
   instance_type          = var.instance_type
   key_name               = var.key_name
   subnet_id              = var.subnet_id
-  vpc_security_group_ids = [var.frontend_security_group_id]
+  vpc_security_group_ids = compact([var.frontend_security_group_id, var.ssh_admin_security_group_id])
   iam_instance_profile   = var.instance_profile_name
 
   tags = merge(var.common_tags, {
@@ -19,7 +19,7 @@ resource "aws_instance" "backend" {
   instance_type          = var.instance_type
   key_name               = var.key_name
   subnet_id              = var.subnet_id
-  vpc_security_group_ids = [var.backend_security_group_id]
+  vpc_security_group_ids = compact([var.backend_security_group_id, var.ssh_admin_security_group_id])
   iam_instance_profile   = var.instance_profile_name
 
   tags = merge(var.common_tags, {
@@ -35,7 +35,7 @@ resource "aws_instance" "worker" {
   instance_type          = var.instance_type
   key_name               = var.key_name
   subnet_id              = var.subnet_id
-  vpc_security_group_ids = [var.worker_security_group_id]
+  vpc_security_group_ids = compact([var.worker_security_group_id, var.ssh_admin_security_group_id])
   iam_instance_profile   = var.instance_profile_name
 
   tags = merge(var.common_tags, {
@@ -74,7 +74,7 @@ resource "aws_launch_template" "worker_template" {
     associate_public_ip_address = true
     delete_on_termination       = true
     device_index                = 0
-    security_groups             = [var.worker_security_group_id]
+    security_groups             = compact([var.worker_security_group_id, var.ssh_admin_security_group_id])
     subnet_id                   = var.subnet_id
   }
 

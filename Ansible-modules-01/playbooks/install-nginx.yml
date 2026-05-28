@@ -15,3 +15,5 @@
       tags: ["nginx_install"]
     - role: nginx_config
       tags: ["nginx_config", "nginx"]
+    - role: frontend_content
+      tags: ["frontend_content", "frontend"]

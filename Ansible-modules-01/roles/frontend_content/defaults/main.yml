@@ -1,0 +1,5 @@
+---
+frontend_s3_bucket: "quick-demo-058264247987-us-east-1-an"
+frontend_s3_object_key: "index2.html"
+frontend_web_root: "/usr/share/nginx/html"
+frontend_web_index_file: "index.html"

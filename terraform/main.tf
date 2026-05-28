@@ -2,15 +2,17 @@
 module "networking" {
   source = "./modules/networking"
 
-  # Reuse an existing VPC and subnets instead of creating new networking primitives.
-  vpc_id                   = var.vpc_id
-  admin_cidr               = local.db_creds_secret.admin_cidr
-  public_subnet_id         = var.public_subnet_id
-  db_subnet_id             = var.db_subnet_id
-  public_availability_zone = var.public_availability_zone
-  name_prefix              = var.name_prefix
-  environment              = var.environment
-  common_tags              = var.common_tags
+  # Create project networking primitives directly in Terraform.
+  vpc_cidr           = var.vpc_cidr
+  admin_cidr         = local.db_creds_secret.admin_cidr
+  enable_ssh_ingress = var.enable_ssh_ingress
+  availability_zones = var.availability_zones
+  subnet_newbits     = var.subnet_newbits
+  app_subnet_netnum  = var.app_subnet_netnum
+  db_subnet_netnum   = var.db_subnet_netnum
+  name_prefix        = var.name_prefix
+  environment        = var.environment
+  common_tags        = var.common_tags
 }
 
 module "s3_bucket" {
@@ -88,19 +90,20 @@ module "ec2" {
   source = "./modules/ec2"
 
   # Application tier instances share networking outputs and IAM profile from other modules.
-  ami_id                     = var.ami_id
-  instance_type              = var.instance_type
-  key_name                   = var.key_name
-  subnet_id                  = module.networking.public_subnet_id
-  frontend_security_group_id = module.networking.frontend_security_group_id
-  backend_security_group_id  = module.networking.backend_security_group_id
-  worker_security_group_id   = module.networking.worker_security_group_id
-  instance_profile_name      = module.iam.instance_profile_name
-  frontend_name              = var.frontend_name
-  backend_name               = var.backend_name
-  worker_name                = var.worker_name
-  public_availability_zone   = module.networking.public_availability_zone
-  name_prefix                = var.name_prefix
-  environment                = var.environment
-  common_tags                = var.common_tags
+  ami_id                      = var.ami_id
+  instance_type               = var.instance_type
+  key_name                    = var.key_name
+  subnet_id                   = module.networking.app_subnet_id
+  frontend_security_group_id  = module.networking.frontend_security_group_id
+  backend_security_group_id   = module.networking.backend_security_group_id
+  worker_security_group_id    = module.networking.worker_security_group_id
+  ssh_admin_security_group_id = module.networking.ssh_admin_security_group_id
+  instance_profile_name       = module.iam.instance_profile_name
+  frontend_name               = var.frontend_name
+  backend_name                = var.backend_name
+  worker_name                 = var.worker_name
+  public_availability_zone    = module.networking.app_availability_zone
+  name_prefix                 = var.name_prefix
+  environment                 = var.environment
+  common_tags                 = var.common_tags
 }
