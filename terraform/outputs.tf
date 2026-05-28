@@ -34,6 +34,14 @@ output "sns_topic_arn" {
   value = module.sns_topic.topic_arn
 }
 
+output "db_password_secret_name" {
+  value = var.db_password_secret_name
+}
+
+output "aws_region" {
+  value = var.aws_region
+}
+
 output "worker_launch_template_id" {
   value = module.ec2.worker_launch_template_id
 }

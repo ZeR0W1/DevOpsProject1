@@ -8,6 +8,11 @@ variable "sns_topic_arn" {
   type        = string
 }
 
+variable "db_password_secret_name" {
+  description = "Secrets Manager secret name that stores the PostgreSQL master password"
+  type        = string
+}
+
 variable "name_prefix" {
   description = "Prefix used to namespace IAM resource names"
   type        = string

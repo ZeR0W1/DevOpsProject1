@@ -77,7 +77,11 @@
             BACKEND_HOST: "{{ tf.backend_private_ip.value }}"
             BACKEND_PORT: "8000"
             POSTGRES_HOST: "{{ tf.rds_endpoint.value.split(':')[0] }}"
+            POSTGRES_PORT: "5432"
+            POSTGRES_DB: "postgres"
             POSTGRES_USER: "postgres_master"
+            AWS_REGION: "{{ tf.aws_region.value }}"
+            POSTGRES_PASSWORD_SECRET_NAME: "{{ tf.db_password_secret_name.value }}"
             S3_BUCKET_NAME: "{{ tf.s3_bucket_name.value }}"
             SNS_TOPIC_ARN: "{{ tf.sns_topic_arn.value }}"
 

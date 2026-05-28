@@ -65,14 +65,6 @@
     app_environment_effective: "{{ app_environment | default({}) }}"
   tags: [app, service, deploy]
 
-- name: Inject worker DB password from vault at deploy time
-  ansible.builtin.set_fact:
-    app_environment_effective: "{{ app_environment_effective | combine({'POSTGRES_PASSWORD': vault_postgres_password}) }}"
-  when:
-    - "'worker' in group_names"
-    - vault_postgres_password is defined
-  tags: [app, service, deploy]
-
 - name: Deploy systemd service unit
   ansible.builtin.template:
     src: app.service.j2

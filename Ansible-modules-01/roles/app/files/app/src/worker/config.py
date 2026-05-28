@@ -17,6 +17,8 @@ POSTGRES_PORT = int(os.getenv("POSTGRES_PORT", "5432"))
 POSTGRES_DB = os.getenv("POSTGRES_DB", "postgres")
 POSTGRES_USER = os.getenv("POSTGRES_USER")
 POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD")
+POSTGRES_PASSWORD_SECRET_NAME = os.getenv("POSTGRES_PASSWORD_SECRET_NAME")
+AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
 POSTGRES_TABLE = os.getenv("POSTGRES_TABLE", "machines")
 POSTGRES_SSLMODE = os.getenv("POSTGRES_SSLMODE", "verify-full")
 POSTGRES_SSLROOTCERT = os.getenv("POSTGRES_SSLROOTCERT", str(BASE_DIR / "src" / "worker" / "global-bundle.pem"))
@@ -30,7 +32,7 @@ if not S3_BUCKET_NAME:
 if SNS_NOTIFICATIONS_ENABLED and not SNS_TOPIC_ARN:
     raise RuntimeError("SNS_TOPIC_ARN must be provided when SNS_NOTIFICATIONS_ENABLED=true")
 
-if POSTGRES_ENABLED and not POSTGRES_DSN and not all([POSTGRES_HOST, POSTGRES_USER, POSTGRES_PASSWORD]):
+if POSTGRES_ENABLED and not POSTGRES_DSN and not all([POSTGRES_HOST, POSTGRES_USER, POSTGRES_PASSWORD_SECRET_NAME]):
     raise RuntimeError(
-        "POSTGRES_HOST/POSTGRES_USER/POSTGRES_PASSWORD must be provided by Ansible app_environment when POSTGRES is enabled (or set POSTGRES_DSN)"
+        "POSTGRES_HOST/POSTGRES_USER/POSTGRES_PASSWORD_SECRET_NAME must be provided by Ansible app_environment when POSTGRES is enabled (or set POSTGRES_DSN)"
     )

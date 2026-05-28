@@ -88,3 +88,22 @@ resource "aws_iam_role_policy" "s3_write_instances" {
     ]
   })
 }
+
+resource "aws_iam_role_policy" "secretsmanager_read_db_password" {
+  name = "${var.name_prefix}-${var.environment}-secretsmanager-read-db-password"
+  role = aws_iam_role.instance_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "secretsmanager:GetSecretValue",
+          "secretsmanager:DescribeSecret"
+        ]
+        Resource = "arn:aws:secretsmanager:*:*:secret:${var.db_password_secret_name}*"
+      }
+    ]
+  })
+}

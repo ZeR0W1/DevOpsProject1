@@ -5,9 +5,11 @@ from pathlib import Path
 from fastapi import FastAPI
 import httpx
 from psycopg import sql
+import boto3
 
 from config import (
     API_PORT,
+    AWS_REGION,
     BACKEND_HOST,
     BACKEND_PORT,
     BASE_DIR,
@@ -15,7 +17,7 @@ from config import (
     POSTGRES_DSN,
     POSTGRES_ENABLED,
     POSTGRES_HOST,
-    POSTGRES_PASSWORD,
+    POSTGRES_PASSWORD_SECRET_NAME,
     POSTGRES_PORT,
     POSTGRES_SSLMODE,
     POSTGRES_SSLROOTCERT,
@@ -55,12 +57,16 @@ def get_postgres_connection():
     if POSTGRES_DSN:
         return psycopg.connect(POSTGRES_DSN)
 
+    secret_client = boto3.client("secretsmanager", region_name=AWS_REGION)
+    secret_value = secret_client.get_secret_value(SecretId=POSTGRES_PASSWORD_SECRET_NAME)
+    postgres_password = secret_value.get("SecretString", "")
+
     return psycopg.connect(
         host=POSTGRES_HOST,
         port=POSTGRES_PORT,
         dbname=POSTGRES_DB,
         user=POSTGRES_USER,
-        password=POSTGRES_PASSWORD,
+        password=postgres_password,
         sslmode=POSTGRES_SSLMODE,
         sslrootcert=POSTGRES_SSLROOTCERT,
     )
