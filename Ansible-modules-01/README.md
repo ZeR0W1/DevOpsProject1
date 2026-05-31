@@ -2,6 +2,8 @@
 
 This directory contains the Ansible control-node automation used to configure instances provisioned by Terraform.
 
+Main project documentation: [../README.md](../README.md)
+
 ## Assumptions
 
 - control node is Linux-based (commands/examples are Linux-first)

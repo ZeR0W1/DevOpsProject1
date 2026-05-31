@@ -11,7 +11,7 @@ resource "aws_vpc" "project" {
 }
 
 resource "aws_subnet" "public" {
-  vpc_id                  = aws_vpc.project.id
+  vpc_id = aws_vpc.project.id
   # public subnet split from VPC CIDR to keep envs reproducible.
   cidr_block              = cidrsubnet(var.vpc_cidr, var.subnet_newbits, var.app_subnet_netnum)
   availability_zone       = var.availability_zones[0]
@@ -26,7 +26,7 @@ resource "aws_subnet" "public" {
 }
 
 resource "aws_subnet" "db" {
-  vpc_id                  = aws_vpc.project.id
+  vpc_id = aws_vpc.project.id
   # Separate DB subnet carved from same VPC with different subnet index.
   cidr_block              = cidrsubnet(var.vpc_cidr, var.subnet_newbits, var.db_subnet_netnum)
   availability_zone       = var.availability_zones[1]

@@ -53,6 +53,12 @@ variable "bucket_name" {
   type        = string
 }
 
+variable "create_s3_bucket" {
+  description = "Whether Terraform should create/manage the S3 bucket resource"
+  type        = bool
+  default     = false
+}
+
 variable "worker_topic_name" {
   description = "SNS topic name used by the worker"
   type        = string

@@ -27,7 +27,7 @@ output "rds_endpoint" {
 }
 
 output "s3_bucket_name" {
-  value = module.s3_bucket.bucket_name
+  value = var.bucket_name
 }
 
 output "sns_topic_arn" {

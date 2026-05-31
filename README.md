@@ -44,7 +44,7 @@ User traffic enters through nginx on the frontend EC2. nginx proxies API request
 
 - public entry point of the application
 - runs **nginx**
-- serves `src/frontend/index2.html`
+- serves `Ansible-modules-01/roles/frontend_content/files/index2.html` (synced from S3)
 - proxies API requests such as `/health`, `/machines`, and `/schema/` to the backend
 
 ### Backend EC2
@@ -88,21 +88,24 @@ User traffic enters through nginx on the frontend EC2. nginx proxies API request
 ## Project structure
 
 ```text
-configs/
-scripts/
-src/
-  backend/
-  worker/
-  frontend/
-  shared/
+Ansible-modules-01/
+  playbooks/
+  roles/
+    app/files/app/src/
+      frontend/
+      backend/
+      worker/
+      shared/
+terraform/
+  modules/
 ```
 
-The active application layout is:
+Application source used by deployment lives in:
 
-- `src/backend/`
-- `src/worker/`
-- `src/frontend/`
-- `src/shared/`
+- `Ansible-modules-01/roles/app/files/app/src/backend/`
+- `Ansible-modules-01/roles/app/files/app/src/worker/`
+- `Ansible-modules-01/roles/app/files/app/src/frontend/`
+- `Ansible-modules-01/roles/app/files/app/src/shared/`
 
 ## Architecture diagram
 
@@ -352,36 +355,6 @@ Both are used, but for different scopes:
 - This is acceptable for coursework/demo workflows on a single control node.
 - For team/production use, migrate state to a remote backend (for locking/history/access control).
 
-## Known issues
-
-### pip self-update under Ansible become(root)
-
-- In this project, `buluma.python_pip` is executed from `playbooks/deploy_app.yml` with:
-  - `python_pip_update: false`
-- This is intentional for stability on the current Amazon Linux-based target hosts.
-
-Observed behavior:
-- Enabling pip self-update has previously failed with errors indicating missing Python module context (for example `packaging`) when tasks run under `become: true`.
-- The failure is caused by interpreter/site-package context mismatch during root-executed pip operations.
-
-Current workaround:
-- Keep `python_pip_update: false` in deploy playbooks.
-- `buluma.python_pip` still installs pip packages with `state: present`, so hosts without pip are bootstrapped.
-- Continue installing app dependencies in the application virtual environment (`app` role), which remains the supported deployment path.
-
-If pip self-update must be re-enabled in future:
-- ensure required Python tooling is present in the exact interpreter context used by Ansible pip tasks, and
-- test on the same Amazon Linux image family used by Terraform before changing defaults.
-
-## Validation evidence checklist (for submission)
-
-- `terraform plan` output
-- `terraform apply` output
-- `terraform output` output
-- `ansible-playbook -i inventory.ini playbooks/site.yml` output
-- HTTP proof:
-  - `GET /health`
-  - `GET /machines`
 
 ## Destroy / teardown
 
@@ -405,3 +378,28 @@ terraform destroy -var-file=terraform.fresh.tfvars
 - Frontend: [Ansible-modules-01/roles/app/files/app/src/frontend/README.md](Ansible-modules-01/roles/app/files/app/src/frontend/README.md)
 - Backend: [Ansible-modules-01/roles/app/files/app/src/backend/README.md](Ansible-modules-01/roles/app/files/app/src/backend/README.md)
 - Worker: [Ansible-modules-01/roles/app/files/app/src/worker/README.md](Ansible-modules-01/roles/app/files/app/src/worker/README.md)
+
+## Known issues
+
+### pip self-update under Ansible become(root)
+
+- In this project, `buluma.python_pip` is executed from `playbooks/deploy_app.yml` with:
+  - `python_pip_update: false`
+- This is intentional for stability on the current Amazon Linux-based target hosts.
+
+Observed behavior:
+- Enabling pip self-update has previously failed with errors indicating missing Python module context (for example `packaging`) when tasks run under `become: true`.
+- The failure is caused by interpreter/site-package context mismatch during root-executed pip operations.
+
+Current workaround:
+- Keep `python_pip_update: false` in deploy playbooks.
+- `buluma.python_pip` still installs pip packages with `state: present`, so hosts without pip are bootstrapped.
+- Continue installing app dependencies in the application virtual environment (`app` role), which remains the supported deployment path.
+
+If pip self-update must be re-enabled in future:
+- ensure required Python tooling is present in the exact interpreter context used by Ansible pip tasks, and
+- test on the same Amazon Linux image family used by Terraform before changing defaults.
+
+Notes:
+- `sync_from_terraform.yml` refreshes generated files (`inventory.ini`, `group_vars`) and also refreshes in-memory host vars for `Front`, `Back`, and `Worker` in the same run.
+- To reuse an existing S3 bucket without attempting bucket creation during apply, set `create_s3_bucket = false` and keep `bucket_name` set to that existing bucket.

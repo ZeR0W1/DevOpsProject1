@@ -38,6 +38,18 @@
           Worker ansible_host={{ tf.worker_public_ip.value }} ansible_user=ec2-user
       # This file is generated from live Terraform outputs each run.
 
+    - name: Refresh in-memory host vars for current playbook run (web/backend/worker)
+      ansible.builtin.add_host:
+        name: "{{ item.name }}"
+        groups: "{{ item.group }}"
+        ansible_host: "{{ item.host }}"
+        ansible_user: ec2-user
+      loop:
+        - { name: "Front",  group: "web",     host: "{{ tf.frontend_public_ip.value }}" }
+        - { name: "Back",   group: "backend", host: "{{ tf.backend_public_ip.value }}" }
+        - { name: "Worker", group: "worker",  host: "{{ tf.worker_public_ip.value }}" }
+      changed_when: false
+
     - name: Update backend group vars from Terraform outputs
       ansible.builtin.copy:
         dest: "{{ playbook_dir }}/../group_vars/backend.yml"

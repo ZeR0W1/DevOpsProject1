@@ -17,6 +17,7 @@ module "networking" {
 
 module "s3_bucket" {
   source = "./modules/s3_bucket"
+  count  = var.create_s3_bucket ? 1 : 0
 
   # Shared bucket used by the application workflow.
   bucket_name = var.bucket_name
@@ -51,7 +52,7 @@ module "iam" {
   source = "./modules/iam"
 
   # Instance profile permissions for EC2 access to S3 and SNS.
-  bucket_name             = module.s3_bucket.bucket_name
+  bucket_name             = var.bucket_name
   sns_topic_arn           = module.sns_topic.topic_arn
   db_password_secret_name = var.db_password_secret_name
   name_prefix             = var.name_prefix

@@ -2,6 +2,8 @@
 
 This directory defines the AWS infrastructure for the project using Terraform modules.
 
+Main project documentation: [../README.md](../README.md)
+
 ## Scope (what Terraform creates)
 
 - VPC, subnets, route tables, internet gateway
@@ -29,6 +31,10 @@ This directory defines the AWS infrastructure for the project using Terraform mo
 - Active environment values go in local `terraform.tfvars` (intentionally not tracked)
 - Example values are provided in `terraform.tfvars.example`. Rename to terraform.tfvars after replacing example values.
 - Useful outputs are exposed in `outputs.tf` (IPs, endpoints, ARNs, etc.)
+
+S3 toggle:
+- `create_s3_bucket = true`: Terraform creates/manages the S3 bucket module.
+- `create_s3_bucket = false` (recommended when reusing an existing bucket): Terraform skips bucket creation, but still uses `bucket_name` for app/IAM wiring.
 
 ## State management
 
