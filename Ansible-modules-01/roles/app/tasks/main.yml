@@ -28,12 +28,14 @@
 
 - name: Build runtime sync path list for backend host
   ansible.builtin.set_fact:
+    # Backend receives shared files + backend-specific source paths.
     app_runtime_sync_paths: "{{ app_runtime_sync_paths_common + app_runtime_sync_paths_backend }}"
   when: "'backend' in group_names"
   tags: [app, deploy]
 
 - name: Build runtime sync path list for worker host
   ansible.builtin.set_fact:
+    # Worker receives shared files + worker-specific source paths.
     app_runtime_sync_paths: "{{ app_runtime_sync_paths_common + app_runtime_sync_paths_worker }}"
   when: "'worker' in group_names"
   tags: [app, deploy]
@@ -62,6 +64,7 @@
 
 - name: Build effective runtime environment from group/host vars
   ansible.builtin.set_fact:
+    # Service template consumes this merged map for Environment= entries.
     app_environment_effective: "{{ app_environment | default({}) }}"
   tags: [app, service, deploy]
 

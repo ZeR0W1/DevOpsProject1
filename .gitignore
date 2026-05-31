@@ -23,6 +23,7 @@ misc/
 *.tfstate
 *.tfstate.*
 *.tfplan
+terraform/terraform.tfvars
 
 *.pem
 
@@ -35,6 +36,7 @@ src/legacy/
 *.vault
 vault_pass.txt
 ansible.log
+Ansible-modules-01/inventory.ini
 
 # Ignore sensitive Ansible var overrides while keeping examples
 **/group_vars/*.yml

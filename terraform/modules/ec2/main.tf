@@ -1,4 +1,5 @@
 resource "aws_instance" "frontend" {
+  # Frontend host: nginx and static UI entry point.
   ami                    = var.ami_id
   instance_type          = var.instance_type
   key_name               = var.key_name
@@ -15,6 +16,7 @@ resource "aws_instance" "frontend" {
 }
 
 resource "aws_instance" "backend" {
+  # Backend API host.
   ami                    = var.ami_id
   instance_type          = var.instance_type
   key_name               = var.key_name
@@ -31,6 +33,7 @@ resource "aws_instance" "backend" {
 }
 
 resource "aws_instance" "worker" {
+  # Worker API host for persistence/integration tasks.
   ami                    = var.ami_id
   instance_type          = var.instance_type
   key_name               = var.key_name

@@ -12,6 +12,7 @@ resource "aws_vpc" "project" {
 
 resource "aws_subnet" "public" {
   vpc_id                  = aws_vpc.project.id
+  # public subnet split from VPC CIDR to keep envs reproducible.
   cidr_block              = cidrsubnet(var.vpc_cidr, var.subnet_newbits, var.app_subnet_netnum)
   availability_zone       = var.availability_zones[0]
   map_public_ip_on_launch = true
@@ -26,6 +27,7 @@ resource "aws_subnet" "public" {
 
 resource "aws_subnet" "db" {
   vpc_id                  = aws_vpc.project.id
+  # Separate DB subnet carved from same VPC with different subnet index.
   cidr_block              = cidrsubnet(var.vpc_cidr, var.subnet_newbits, var.db_subnet_netnum)
   availability_zone       = var.availability_zones[1]
   map_public_ip_on_launch = false
@@ -114,6 +116,7 @@ resource "aws_security_group" "frontend_http" {
 }
 
 resource "aws_security_group" "ssh_admin" {
+  # Optional admin SSH SG so ingress can be disabled entirely when not needed.
   count       = var.enable_ssh_ingress ? 1 : 0
   name        = "${var.name_prefix}-${var.environment}-ssh-admin"
   description = "SSH admin access"
@@ -148,6 +151,7 @@ resource "aws_security_group" "backend_api" {
   vpc_id      = aws_vpc.project.id
 
   ingress {
+    # Restrict backend API access to frontend SG only.
     from_port       = 8000
     to_port         = 8000
     protocol        = "tcp"
@@ -176,6 +180,7 @@ resource "aws_security_group" "worker_app" {
   vpc_id      = aws_vpc.project.id
 
   ingress {
+    # Restrict worker API access to backend SG only.
     from_port       = 8000
     to_port         = 8000
     protocol        = "tcp"
@@ -204,6 +209,7 @@ resource "aws_security_group" "db" {
   vpc_id      = aws_vpc.project.id
 
   ingress {
+    # App-path DB access: worker service to PostgreSQL.
     from_port       = 5432
     to_port         = 5432
     protocol        = "tcp"
@@ -212,6 +218,7 @@ resource "aws_security_group" "db" {
   }
 
   ingress {
+    # Admin-path DB access (e.g., pgAdmin) from approved CIDR only.
     from_port   = 5432
     to_port     = 5432
     protocol    = "tcp"

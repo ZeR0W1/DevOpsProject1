@@ -1,60 +1,79 @@
-## Terraform infrastructure
+## Terraform infrastructure layer
 
-This directory contains a Terraform starting point for expressing the AWS side of the project as code.
+This directory defines the AWS infrastructure for the project using Terraform modules.
 
-## Module structure
+## Scope (what Terraform creates)
 
-The root `main.tf` wires together the following modules:
+- VPC, subnets, route tables, internet gateway
+- Security groups for frontend, backend, worker, DB, and admin SSH access
+- EC2 instances for frontend/backend/worker
+- RDS PostgreSQL instance + DB subnet group
+- S3 bucket for catalog/object storage
+- SNS topic + email subscription
+- IAM role + instance profile + policies for EC2 runtime access
+- CloudWatch billing alarm
 
-- `modules/networking` – project security groups
-- `modules/iam` – IAM role, inline policies, and instance profile
-- `modules/s3_bucket` – S3 bucket for the machine catalog
-- `modules/sns_topic` – SNS topic, email subscription, and billing alarm
-- `modules/rds_postgresql` – PostgreSQL instance and DB subnet group
-- `modules/ec2` – frontend, backend, worker instances, and worker launch template
+## Module map
 
-## What is modeled
+- `modules/networking` → network primitives + security groups
+- `modules/iam` → IAM role/profile/policies
+- `modules/ec2` → compute instances + launch template
+- `modules/rds_postgresql` → PostgreSQL database resources
+- `modules/s3_bucket` → object storage
+- `modules/sns_topic` → notifications
+- `modules/services` → operational monitoring resources
 
-- VPC-aligned project security groups
-- frontend, backend, and worker EC2 instances
-- worker launch template `DOT1`
-- RDS PostgreSQL instance `dodb2`
-- DB subnet group
-- S3 bucket
-- SNS topic and email subscription
-- IAM role and instance profile for the EC2 instances
-- CloudWatch billing alarm over 20 USD
+## Inputs and outputs
 
-### Important note
+- Inputs are defined in `variables.tf`
+- Active environment values go in local `terraform.tfvars` (intentionally not tracked)
+- Example values are provided in `terraform.tfvars.example`. Rename to terraform.tfvars after replacing example values.
+- Useful outputs are exposed in `outputs.tf` (IPs, endpoints, ARNs, etc.)
 
-This Terraform was written from the **current live AWS setup** as observed in the account. Some values are intentionally kept because they reflect the current environment, including:
+## State management
 
-- public RDS access for pgAdmin
-- admin PostgreSQL access via `admin_cidr`
-- EC2 instances placed in the currently used public subnet
+Current mode: **local state** (`terraform/terraform.tfstate`).
 
-### Before using
+Reasoning for this decision:
+- single operator workflow from one control machine
+- easier offline demonstration
+- no additional backend bootstrap complexity
 
-Create a `terraform.tfvars` file in this directory, for example:
+Production/team recommendation:
+- migrate to remote backend (for example S3 + DynamoDB locking)
+- enforce access control and state versioning
 
-```hcl
-aws_region = "us-east-1"
-admin_cidr = "109.67.153.215/32"
-db_password = "postgres"
-```
+## Prerequisites
 
-### Usage
+- Terraform installed
+- AWS credentials configured (`aws configure` or environment-based auth)
+- Region/account permissions for VPC, EC2, IAM, RDS, S3, SNS, CloudWatch, Secrets Manager
+
+## Standard workflow
 
 ```bash
 cd terraform
 terraform init
-terraform fmt
+terraform fmt -recursive
 terraform validate
 terraform plan
+terraform apply
+terraform output
 ```
 
-If you want to import the already existing infrastructure instead of recreating it, import commands will need to be added per resource.
+## Destroy workflow
 
-### Caution
+```bash
+cd terraform
+terraform destroy
+```
 
-This is a first Terraform representation of the current AWS estate. Do **not** apply it blindly against the live account before reviewing imports, lifecycle rules, and drift between manually created resources and Terraform-managed resources.
+If using a custom var file:
+
+```bash
+terraform destroy -var-file=terraform.fresh.tfvars
+```
+
+## Security notes
+
+- Never commit secrets, private keys, or state files.

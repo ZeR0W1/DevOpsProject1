@@ -5,6 +5,7 @@
   gather_facts: false
 
   vars:
+    # Terraform root directory for this repository layout.
     terraform_dir: "{{ playbook_dir }}/../../terraform"
 
   tasks:
@@ -12,11 +13,13 @@
       ansible.builtin.command:
         cmd: terraform -chdir={{ terraform_dir }} init -input=false
       changed_when: false
+      # Allows dry-run style playbook execution when infra is already present.
       when: (run_terraform | default(true) | bool)
 
     - name: Apply Terraform infrastructure
       ansible.builtin.command:
         cmd: terraform -chdir={{ terraform_dir }} apply -auto-approve -input=false
+      # Controlled by run_terraform so site.yml can skip infra changes if needed.
       when: (run_terraform | default(true) | bool)
 
     - name: Terraform apply skipped by operator choice

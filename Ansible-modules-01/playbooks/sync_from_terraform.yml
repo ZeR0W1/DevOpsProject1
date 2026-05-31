@@ -1,10 +1,15 @@
 ---
+# Control-node utility playbook:
+# - reads Terraform outputs
+# - rewrites inventory.ini with current host IPs
+# - rewrites runtime group_vars unless SKIP_GROUP_VARS_WRITE=true
 - name: Sync Ansible inventory and runtime vars from Terraform outputs
   hosts: localhost
   connection: local
   gather_facts: false
 
   vars:
+    # Terraform working directory relative to this playbook.
     terraform_dir: "{{ playbook_dir }}/../../terraform"
 
   tasks:
@@ -31,6 +36,7 @@
 
           [worker]
           Worker ansible_host={{ tf.worker_public_ip.value }} ansible_user=ec2-user
+      # This file is generated from live Terraform outputs each run.
 
     - name: Update backend group vars from Terraform outputs
       ansible.builtin.copy:
@@ -54,6 +60,8 @@
             API_PORT: "8000"
             WORKER_HOST: "{{ tf.worker_private_ip.value }}"
             WORKER_PORT: "8000"
+      # Set SKIP_GROUP_VARS_WRITE=true to skip rewriting group_vars/*.yml files.
+      # This is useful when you only want to refresh inventory.ini.
       when: not (lookup('ansible.builtin.env', 'SKIP_GROUP_VARS_WRITE') | default('false') | bool)
 
     - name: Update worker group vars from Terraform outputs

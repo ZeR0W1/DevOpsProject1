@@ -33,6 +33,7 @@ resource "aws_iam_instance_profile" "instance_profile" {
 }
 
 resource "aws_iam_role_policy_attachment" "ssm_core" {
+  # Enables AWS Systems Manager Session Manager access without opening SSH.
   role       = aws_iam_role.instance_role.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
 }
@@ -45,6 +46,7 @@ resource "aws_iam_role_policy" "allow_s3_read" {
     Version = "2012-10-17"
     Statement = [
       {
+        # Read-only access for objects inside the project bucket.
         Sid    = "Statement1"
         Effect = "Allow"
         Action = ["s3:GetObject"]
@@ -81,6 +83,7 @@ resource "aws_iam_role_policy" "s3_write_instances" {
     Version = "2012-10-17"
     Statement = [
       {
+        # Restrict write permission to the generated catalog object only.
         Effect   = "Allow"
         Action   = "s3:PutObject"
         Resource = "arn:aws:s3:::${var.bucket_name}/instances.json"
@@ -102,6 +105,7 @@ resource "aws_iam_role_policy" "secretsmanager_read_db_password" {
           "secretsmanager:GetSecretValue",
           "secretsmanager:DescribeSecret"
         ]
+        # Suffix wildcard supports AWS-added random secret suffixes.
         Resource = "arn:aws:secretsmanager:*:*:secret:${var.db_password_secret_name}*"
       }
     ]

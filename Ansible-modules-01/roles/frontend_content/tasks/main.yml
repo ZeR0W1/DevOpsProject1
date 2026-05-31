@@ -21,6 +21,7 @@
     mode: "0755"
 
 - name: Install frontend index sync systemd service
+  # One-shot unit pulls latest index from S3 and can be safely re-run on deploy.
   ansible.builtin.copy:
     dest: /etc/systemd/system/frontend-index-sync.service
     owner: root
@@ -49,8 +50,10 @@
   ansible.builtin.systemd:
     name: frontend-index-sync.service
     state: started
+  # Ensures first deploy serves latest index immediately (no reboot required).
 
 - name: Reload nginx after frontend index sync
+  # Reload to pick up the newly synced index without restarting the service.
   ansible.builtin.service:
     name: nginx
     state: reloaded
