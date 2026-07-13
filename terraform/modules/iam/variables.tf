@@ -28,3 +28,27 @@ variable "common_tags" {
   type        = map(string)
   default     = {}
 }
+
+variable "eks_oidc_provider_arn" {
+  description = "OIDC provider ARN for the EKS cluster, used for IRSA trust relationships"
+  type        = string
+  default     = ""
+}
+
+variable "eks_oidc_issuer_url" {
+  description = "OIDC issuer URL for the EKS cluster, used when building IRSA trust conditions"
+  type        = string
+  default     = ""
+}
+
+variable "worker_irsa_namespace" {
+  description = "Kubernetes namespace of the worker service account for IRSA"
+  type        = string
+  default     = "devops-app"
+}
+
+variable "worker_irsa_service_account_name" {
+  description = "Kubernetes service account name used by the worker for IRSA"
+  type        = string
+  default     = "worker-sa"
+}

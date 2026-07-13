@@ -1,0 +1,69 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "worker.fullname" . }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "worker.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "worker.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "worker.selectorLabels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ .Values.serviceAccount.name }}
+      containers:
+        - name: worker
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: {{ .Values.service.targetPort }}
+              name: http
+          env:
+            - name: API_PORT
+              value: {{ .Values.env.API_PORT | quote }}
+            - name: BACKEND_HOST
+              value: {{ .Values.env.BACKEND_HOST | quote }}
+            - name: BACKEND_PORT
+              value: {{ .Values.env.BACKEND_PORT | quote }}
+            - name: POSTGRES_ENABLED
+              value: {{ .Values.env.POSTGRES_ENABLED | quote }}
+            - name: POSTGRES_HOST
+              value: {{ .Values.database.host | quote }}
+            - name: POSTGRES_PORT
+              value: {{ .Values.database.port | quote }}
+            - name: POSTGRES_DB
+              value: {{ .Values.database.name | quote }}
+            - name: POSTGRES_USER
+              value: {{ .Values.database.user | quote }}
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.existingSecretName | quote }}
+                  key: {{ .Values.database.passwordSecretKey | quote }}
+            - name: POSTGRES_TABLE
+              value: {{ .Values.env.POSTGRES_TABLE | quote }}
+            - name: POSTGRES_SSLMODE
+              value: {{ .Values.database.sslMode | quote }}
+            - name: AWS_REGION
+              value: {{ .Values.aws.region | quote }}
+            - name: S3_BUCKET_NAME
+              value: {{ .Values.aws.s3BucketName | quote }}
+            - name: S3_INSTANCES_OBJECT_KEY
+              value: {{ .Values.aws.s3InstancesObjectKey | quote }}
+            - name: SNS_NOTIFICATIONS_ENABLED
+              value: {{ .Values.env.SNS_NOTIFICATIONS_ENABLED | quote }}
+            - name: SNS_TOPIC_ARN
+              value: {{ .Values.aws.snsTopicArn | quote }}
+          livenessProbe:
+            {{- toYaml .Values.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.readinessProbe | nindent 12 }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}

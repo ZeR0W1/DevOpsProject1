@@ -26,6 +26,22 @@ output "rds_endpoint" {
   value = module.rds_postgresql.endpoint
 }
 
+output "rds_hostname" {
+  value = split(":", module.rds_postgresql.endpoint)[0]
+}
+
+output "db_name" {
+  value = var.db_name
+}
+
+output "db_username" {
+  value = local.db_creds_secret.db_username
+}
+
+output "db_port" {
+  value = 5432
+}
+
 output "s3_bucket_name" {
   value = var.bucket_name
 }

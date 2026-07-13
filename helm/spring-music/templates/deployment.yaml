@@ -1,0 +1,22 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "spring-music.name" . }}
+  labels:
+     {{ include "spring.labels" . | indent 4 }}
+spec:
+  selector:
+    matchLabels:
+      app: music
+  replicas: {{ .Values.replicas}}  #from values
+  template:
+    metadata:
+      labels:
+        app: music
+        {{ include "spring.labels" . | indent 8 }}
+    spec:
+      containers:
+      - name: {{ .Values.image}} #from values
+        image: {{ .Values.image}} #from values
+        ports:
+        - containerPort: 8080

@@ -4,7 +4,7 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 API_PORT = int(os.getenv("API_PORT", "8000"))
-BACKEND_HOST = os.getenv("BACKEND_HOST")
+BACKEND_HOST = os.getenv("BACKEND_HOST", "backend")
 BACKEND_PORT = int(os.getenv("BACKEND_PORT", "8000"))
 S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME")
 S3_INSTANCES_OBJECT_KEY = os.getenv("S3_INSTANCES_OBJECT_KEY", "instances.json")
@@ -32,7 +32,7 @@ if not S3_BUCKET_NAME:
 if SNS_NOTIFICATIONS_ENABLED and not SNS_TOPIC_ARN:
     raise RuntimeError("SNS_TOPIC_ARN must be provided when SNS_NOTIFICATIONS_ENABLED=true")
 
-if POSTGRES_ENABLED and not POSTGRES_DSN and not all([POSTGRES_HOST, POSTGRES_USER, POSTGRES_PASSWORD_SECRET_NAME]):
+if POSTGRES_ENABLED and not POSTGRES_DSN and not all([POSTGRES_HOST, POSTGRES_USER, POSTGRES_PASSWORD]):
     raise RuntimeError(
-        "POSTGRES_HOST/POSTGRES_USER/POSTGRES_PASSWORD_SECRET_NAME must be provided by Ansible app_environment when POSTGRES is enabled (or set POSTGRES_DSN)"
+        "POSTGRES_HOST/POSTGRES_USER/POSTGRES_PASSWORD must be provided when POSTGRES is enabled (or set POSTGRES_DSN)"
     )

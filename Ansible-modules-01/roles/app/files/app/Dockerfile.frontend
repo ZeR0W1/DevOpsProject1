@@ -1,0 +1,16 @@
+FROM nginx:1.27-alpine
+
+# Prepare writable runtime paths for nginx while still running as a non-root user.
+RUN addgroup -S app && adduser -S -G app app \
+    && mkdir -p /etc/nginx/templates /var/cache/nginx /tmp/nginx /usr/share/nginx/html \
+    && chown -R app:app /var/cache/nginx /tmp/nginx /usr/share/nginx/html /etc/nginx/templates
+
+# Copy only the nginx config template.
+COPY src/frontend/nginx/default.conf.template /etc/nginx/templates/default.conf.template
+
+USER app
+
+EXPOSE 8080
+
+# Render backend service coordinates at container start so the same image works across environments.
+CMD ["/bin/sh", "-c", "envsubst '$BACKEND_SERVICE_HOST $BACKEND_SERVICE_PORT' < /etc/nginx/templates/default.conf.template > /tmp/nginx/default.conf && nginx -g 'daemon off;' -c /tmp/nginx/default.conf"]

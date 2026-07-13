@@ -1,0 +1,24 @@
+FROM python:3.11-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+WORKDIR /app
+
+RUN groupadd --system app && useradd --system --gid app --create-home --home-dir /home/app app
+
+COPY src/shared/requirements.txt /app/src/shared/requirements.txt
+COPY src/worker/requirements.txt /app/src/worker/requirements.txt
+
+RUN pip install --no-cache-dir -r /app/src/worker/requirements.txt
+
+COPY src/worker /app/src/worker
+
+RUN chown -R app:app /app /home/app
+
+USER app
+WORKDIR /app/src/worker
+
+EXPOSE 8000
+
+CMD ["uvicorn", "api:app", "--host", "0.0.0.0", "--port", "8000"]

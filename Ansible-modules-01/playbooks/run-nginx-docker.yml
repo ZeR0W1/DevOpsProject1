@@ -1,0 +1,48 @@
+---
+- name: Run nginx in a Docker container on localhost
+  hosts: localhost
+  become: true
+
+  vars:
+    nginx_container_name: nginx
+    nginx_container_image: nginx:latest
+    nginx_network_name: nginx_bridge
+    nginx_host_port: "8000"
+    nginx_container_port: "80"
+    nginx_content_file: "{{ playbook_dir }}/../roles/app/files/app/src/frontend/index2.html"
+    nginx_container_index_file: "/usr/share/nginx/html/index.html"
+
+  tasks:
+    - name: Pull nginx image
+      community.docker.docker_image:
+        name: "{{ nginx_container_image }}"
+        source: pull
+
+    - name: Create nginx bridge network
+      community.docker.docker_network:
+        name: "{{ nginx_network_name }}"
+        driver: bridge
+        state: present
+
+    - name: Ensure local nginx content file exists
+      ansible.builtin.stat:
+        path: "{{ nginx_content_file }}"
+      register: nginx_content_file_stat
+
+    - name: Fail if nginx content file is missing
+      ansible.builtin.fail:
+        msg: "Expected nginx content file was not found at {{ nginx_content_file }}"
+      when: not nginx_content_file_stat.stat.exists
+
+    - name: Ensure nginx container is running
+      community.docker.docker_container:
+        name: "{{ nginx_container_name }}"
+        image: "{{ nginx_container_image }}"
+        state: started
+        restart_policy: unless-stopped
+        published_ports:
+          - "{{ nginx_host_port }}:{{ nginx_container_port }}"
+        volumes:
+          - "{{ nginx_content_file }}:{{ nginx_container_index_file }}:ro"
+        networks:
+          - name: "{{ nginx_network_name }}"

@@ -1,0 +1,11 @@
+#food:
+#  drink: Beer
+#  eat: Peanut Butter and Jelly Sandwhich
+nameOverride: ""
+replicas: 2
+image: yanivomc/spring-music:latest
+containerImage: spring-music
+service:
+  type: LoadBalancer
+  port: 80
+  targetPort: 8000

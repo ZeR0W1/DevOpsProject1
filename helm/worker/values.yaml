@@ -1,0 +1,77 @@
+nameOverride: ""
+fullnameOverride: ""
+
+namespace: devops-app
+
+image:
+  repository: yourdockerhubuser/devops-app-worker # replace with your real Docker Hub worker repository
+  tag: "1.0.0"
+  pullPolicy: IfNotPresent
+
+replicaCount: 2
+
+service:
+  type: ClusterIP
+  port: 8000
+  targetPort: 8000
+
+backendService:
+  host: backend
+  port: 8000
+
+aws:
+  region: us-east-1
+  s3BucketName: your-bucket-name # replace with your real S3 bucket name
+  s3InstancesObjectKey: instances.json
+  snsTopicArn: your-sns-topic-arn # replace with your real SNS topic ARN
+
+database:
+  postgresEnabled: true
+  host: your-rds-endpoint # CI/CD should inject the Terraform rds_hostname output here
+  port: 5432 # CI/CD may override this from the Terraform db_port output if needed
+  name: postgres # CI/CD should inject the Terraform db_name output here
+  user: postgres_master # CI/CD should inject the Terraform db_username output here
+  existingSecretName: worker-db-secret # CI/CD should create this Kubernetes Secret and keep the name consistent with Helm values
+  passwordSecretKey: password
+  table: machines
+  sslMode: verify-full
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+livenessProbe:
+  httpGet:
+    path: /health
+    port: 8000
+  initialDelaySeconds: 20
+  periodSeconds: 20
+
+readinessProbe:
+  httpGet:
+    path: /health
+    port: 8000
+  initialDelaySeconds: 10
+  periodSeconds: 10
+
+securityContext:
+  runAsNonRoot: true
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: false
+
+serviceAccount:
+  create: true
+  name: worker-sa
+  annotations: {}
+
+env:
+  API_PORT: "8000"
+  BACKEND_HOST: backend
+  BACKEND_PORT: "8000"
+  POSTGRES_ENABLED: "true"
+  POSTGRES_TABLE: machines
+  SNS_NOTIFICATIONS_ENABLED: "true"
