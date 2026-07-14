@@ -17,7 +17,7 @@ from config import (
     POSTGRES_DSN,
     POSTGRES_ENABLED,
     POSTGRES_HOST,
-    POSTGRES_PASSWORD_SECRET_NAME,
+    POSTGRES_PASSWORD,
     POSTGRES_PORT,
     POSTGRES_SSLMODE,
     POSTGRES_SSLROOTCERT,
@@ -57,16 +57,12 @@ def get_postgres_connection():
     if POSTGRES_DSN:
         return psycopg.connect(POSTGRES_DSN)
 
-    secret_client = boto3.client("secretsmanager", region_name=AWS_REGION)
-    secret_value = secret_client.get_secret_value(SecretId=POSTGRES_PASSWORD_SECRET_NAME)
-    postgres_password = secret_value.get("SecretString", "")
-
     return psycopg.connect(
         host=POSTGRES_HOST,
         port=POSTGRES_PORT,
         dbname=POSTGRES_DB,
         user=POSTGRES_USER,
-        password=postgres_password,
+        password=POSTGRES_PASSWORD,
         sslmode=POSTGRES_SSLMODE,
         sslrootcert=POSTGRES_SSLROOTCERT,
     )
@@ -150,7 +146,7 @@ def publish_sns_notification(subject: str, message: str):
     try:
         import boto3
 
-        boto3.client("sns").publish(
+        boto3.client("sns", region_name=AWS_REGION).publish(
             TopicArn=SNS_TOPIC_ARN,
             Subject=subject[:100],
             Message=message,
@@ -201,7 +197,7 @@ def sync_instances_file_to_s3(filepath: str):
     try:
         import boto3
 
-        boto3.client("s3").upload_file(filepath, S3_BUCKET_NAME, S3_INSTANCES_OBJECT_KEY)
+        boto3.client("s3", region_name=AWS_REGION).upload_file(filepath, S3_BUCKET_NAME, S3_INSTANCES_OBJECT_KEY)
     except Exception:
         logger.exception("Worker failed to sync instances file to S3")
         raise

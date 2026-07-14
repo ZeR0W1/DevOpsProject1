@@ -4,7 +4,7 @@ fullnameOverride: ""
 namespace: devops-app
 
 image:
-  repository: yourdockerhubuser/devops-app-backend # replace with your real Docker Hub backend repository
+  repository: zer0w1/devops-app-backend
   tag: "1.0.0"
   pullPolicy: IfNotPresent
 

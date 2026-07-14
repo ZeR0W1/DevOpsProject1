@@ -1,6 +1,8 @@
 
 ## Overview
 
+> **Kubernetes/EKS assignment checklist:** see [`K8S_EKS_PROGRESS.md`](K8S_EKS_PROGRESS.md) for the current recovery notes, completed/planned changes, frontend exposure decision, and assignment PDF compliance checklist.
+
 This project provisions and deploys a 3-tier AWS application using **Terraform + Ansible**:
 
 - **Frontend EC2**: nginx + static UI (served from S3-synced `index2.html`)
@@ -263,6 +265,47 @@ This orchestrates:
 2. Terraform→Ansible sync (`playbooks/sync_from_terraform.yml`)
 3. Frontend nginx and content setup (`playbooks/install-nginx.yml`)
 4. Backend/worker app deploy (`playbooks/deploy_app.yml`)
+
+### Kubernetes / EKS deployment workflow in progress
+
+The Kubernetes assignment work is being tracked separately in [`K8S_EKS_PROGRESS.md`](K8S_EKS_PROGRESS.md). That file is the current recovery/context checklist for future work sessions.
+
+Current script-based flow:
+
+```bash
+# 1. Apply Terraform-managed AWS app infrastructure and outputs.
+bash scripts/apply_terraform.sh
+
+# 2. Create or reuse the EKS cluster and update kubeconfig.
+bash scripts/create_eks.sh
+
+# 3. Deploy the frontend/backend/worker Helm charts.
+bash scripts/deploy_k8s.sh
+```
+
+Or run the non-destroy orchestration script:
+
+```bash
+bash scripts/deploy_all_k8s.sh
+```
+
+For a less interactive run:
+
+```bash
+bash scripts/deploy_all_k8s.sh --auto-approve --yes
+```
+
+Destroying EKS is intentionally separate from deployment:
+
+```bash
+bash scripts/destroy_eks.sh
+```
+
+Notes:
+- `deploy_all_k8s.sh` sequences Terraform → EKS → Helm; it does not destroy anything.
+- `destroy_eks.sh` deletes only the EKS cluster and does not destroy Terraform-managed app infrastructure.
+- The frontend exposure method is still pending final decision: Ingress vs Service type `LoadBalancer` vs another EKS-supported route.
+- Final assignment compliance should be checked against the PDF in the project root before submission.
 
 ### Validation checks
 
