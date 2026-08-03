@@ -140,8 +140,11 @@ spec:
                                 set -eu
                                 mkdir -p rendered-manifests
                                 for component in frontend backend worker; do
-                                  repository_variable="$(printf '%s_IMAGE_REPOSITORY' "$component" | tr '[:lower:]' '[:upper:]')"
-                                  eval "repository=\${$repository_variable}"
+                                  case "$component" in
+                                    frontend) repository="$FRONTEND_IMAGE_REPOSITORY" ;;
+                                    backend) repository="$BACKEND_IMAGE_REPOSITORY" ;;
+                                    worker) repository="$WORKER_IMAGE_REPOSITORY" ;;
+                                  esac
                                   extra_args=''
                                   if [ "$component" = worker ]; then
                                     extra_args='--set database.postgresEnabled=false --set env.POSTGRES_ENABLED=false --set env.S3_SYNC_ENABLED=false --set env.SNS_NOTIFICATIONS_ENABLED=false'
@@ -174,8 +177,11 @@ spec:
                                     printf '{"auths":{"https://index.docker.io/v1/":{"auth":"%s"}}}' "$auth" > /kaniko/.docker/config.json
                                     mkdir -p "${WORKSPACE}/image-digests"
                                     for component in frontend backend worker; do
-                                      repository_variable="$(printf '%s_IMAGE_REPOSITORY' "$component" | tr '[:lower:]' '[:upper:]')"
-                                      eval "repository=\${$repository_variable}"
+                                      case "$component" in
+                                        frontend) repository="$FRONTEND_IMAGE_REPOSITORY" ;;
+                                        backend) repository="$BACKEND_IMAGE_REPOSITORY" ;;
+                                        worker) repository="$WORKER_IMAGE_REPOSITORY" ;;
+                                      esac
                                       /kaniko/executor \
                                         --context "dir://${WORKSPACE}/${APP_DIR_RESOLVED}" \
                                         --dockerfile "${WORKSPACE}/${APP_DIR_RESOLVED}/Dockerfile.${component}" \
