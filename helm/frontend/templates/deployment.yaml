@@ -1,0 +1,46 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "frontend.fullname" . }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "frontend.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "frontend.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "frontend.selectorLabels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ .Values.serviceAccount.name }}
+      containers:
+        - name: frontend
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: {{ .Values.service.targetPort }}
+              name: http
+          env:
+            - name: BACKEND_SERVICE_HOST
+              value: {{ .Values.backendService.host | quote }}
+            - name: BACKEND_SERVICE_PORT
+              value: {{ .Values.backendService.port | quote }}
+          livenessProbe:
+            {{- toYaml .Values.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.readinessProbe | nindent 12 }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          volumeMounts:
+            - name: frontend-content
+              mountPath: {{ .Values.frontendContent.mountPath }}
+              subPath: {{ .Values.frontendContent.subPath }}
+      volumes:
+        - name: frontend-content
+          configMap:
+            name: frontend-content

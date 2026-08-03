@@ -1,0 +1,67 @@
+# Values for the official Jenkins Helm chart. The chart version is pinned by
+# scripts/deploy_jenkins_eks.sh; keep chart-specific configuration here.
+
+controller:
+  # Do not run build executors in the controller. The Kubernetes plugin creates
+  # short-lived agent pods for workloads that are migrated to Kubernetes.
+  numExecutors: 0
+  serviceType: ClusterIP
+  javaOpts: "-Xms256m -Xmx512m"
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+
+  # Plugins in Jenkins/plugins.txt are baked into the matching pinned image.
+  # Do not perform plugin downloads during EKS pod startup.
+  image:
+    registry: docker.io
+    repository: zer0w1/devops-project1-jenkins-controller
+    tag: 2.528.3-jdk21-plugins-v2
+    pullPolicy: Always
+  installPlugins: false
+  additionalPlugins: []
+  overwritePluginsFromImage: false
+  initializeOnce: true
+  JCasC:
+    defaultConfig: true
+    configScripts:
+      controller-message: |
+        jenkins:
+          systemMessage: "Jenkins controller managed by Helm on the temporary devops-app-eks cluster."
+
+# Kubernetes plugin agents are ephemeral. The current Docker-socket inbound
+# agent is intentionally not configured here; migrate its build strategy before
+# executing the existing image-building pipeline from this controller.
+agent:
+  enabled: true
+  namespace: jenkins
+  websocket: true
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+persistence:
+  enabled: true
+  storageClass: gp2
+  accessMode: ReadWriteOnce
+  size: 8Gi
+
+# Jenkins is initially private to the cluster. Use the helper's port-forward
+# command rather than creating a public AWS load balancer for this temporary lab.
+networkPolicy:
+  enabled: false
+
+serviceAccount:
+  create: true
+  automountServiceAccountToken: true
+
+serviceAccountAgent:
+  create: true

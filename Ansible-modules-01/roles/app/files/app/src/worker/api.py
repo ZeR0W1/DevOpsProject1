@@ -25,6 +25,7 @@ from config import (
     POSTGRES_USER,
     S3_BUCKET_NAME,
     S3_INSTANCES_OBJECT_KEY,
+    S3_SYNC_ENABLED,
     SNS_NOTIFICATIONS_ENABLED,
     SNS_TOPIC_ARN,
 )
@@ -194,6 +195,9 @@ def backup_machine_to_postgres(machine: dict):
 
 
 def sync_instances_file_to_s3(filepath: str):
+    if not S3_SYNC_ENABLED:
+        return
+
     try:
         import boto3
 

@@ -7,6 +7,7 @@ API_PORT = int(os.getenv("API_PORT", "8000"))
 BACKEND_HOST = os.getenv("BACKEND_HOST", "backend")
 BACKEND_PORT = int(os.getenv("BACKEND_PORT", "8000"))
 S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME")
+S3_SYNC_ENABLED = os.getenv("S3_SYNC_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}
 S3_INSTANCES_OBJECT_KEY = os.getenv("S3_INSTANCES_OBJECT_KEY", "instances.json")
 SNS_NOTIFICATIONS_ENABLED = os.getenv("SNS_NOTIFICATIONS_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}
 SNS_TOPIC_ARN = os.getenv("SNS_TOPIC_ARN")
@@ -25,8 +26,8 @@ POSTGRES_SSLROOTCERT = os.getenv("POSTGRES_SSLROOTCERT", str(BASE_DIR / "src" / 
 if not BACKEND_HOST:
     raise RuntimeError("BACKEND_HOST must be provided by Ansible app_environment")
 
-if not S3_BUCKET_NAME:
-    raise RuntimeError("S3_BUCKET_NAME must be provided by Ansible app_environment")
+if S3_SYNC_ENABLED and not S3_BUCKET_NAME:
+    raise RuntimeError("S3_BUCKET_NAME must be provided when S3_SYNC_ENABLED=true")
 
 if SNS_NOTIFICATIONS_ENABLED and not SNS_TOPIC_ARN:
     raise RuntimeError("SNS_TOPIC_ARN must be provided when SNS_NOTIFICATIONS_ENABLED=true")

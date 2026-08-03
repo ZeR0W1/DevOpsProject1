@@ -32,6 +32,7 @@ spec:
               value: {{ .Values.env.BACKEND_PORT | quote }}
             - name: POSTGRES_ENABLED
               value: {{ .Values.env.POSTGRES_ENABLED | quote }}
+            {{- if .Values.database.postgresEnabled }}
             - name: POSTGRES_HOST
               value: {{ .Values.database.host | quote }}
             - name: POSTGRES_PORT
@@ -49,10 +50,13 @@ spec:
               value: {{ .Values.env.POSTGRES_TABLE | quote }}
             - name: POSTGRES_SSLMODE
               value: {{ .Values.database.sslMode | quote }}
+            {{- end }}
             - name: AWS_REGION
               value: {{ .Values.aws.region | quote }}
             - name: S3_BUCKET_NAME
               value: {{ .Values.aws.s3BucketName | quote }}
+            - name: S3_SYNC_ENABLED
+              value: {{ .Values.env.S3_SYNC_ENABLED | quote }}
             - name: S3_INSTANCES_OBJECT_KEY
               value: {{ .Values.aws.s3InstancesObjectKey | quote }}
             - name: SNS_NOTIFICATIONS_ENABLED

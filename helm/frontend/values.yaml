@@ -1,0 +1,77 @@
+nameOverride: ""
+fullnameOverride: ""
+
+namespace: devops-app
+
+image:
+  repository: zer0w1/devops-app-frontend
+  tag: "1.0.0"
+  pullPolicy: IfNotPresent
+
+replicaCount: 2
+
+service:
+  # Temporary assignment-friendly exposure method: EKS will provision one public
+  # AWS load balancer for the frontend only. Backend and worker stay internal.
+  # Later, this can change back to ClusterIP when an Ingress controller is added.
+  type: LoadBalancer
+  port: 80
+  targetPort: 8080
+
+backendService:
+  host: backend
+  port: 8000
+
+ingress:
+  # Disabled for now because frontend Service type LoadBalancer is the temporary
+  # external entry point. Re-enable this when moving to AWS Load Balancer
+  # Controller or nginx ingress controller.
+  enabled: false
+  className: nginx
+  annotations: {}
+  host: devops-app.local # replace with your real frontend hostname if you use DNS/Ingress host routing
+  path: /
+  pathType: Prefix
+  tls:
+    enabled: false
+    secretName: ""
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 250m
+    memory: 256Mi
+
+livenessProbe:
+  httpGet:
+    path: /
+    port: 8080
+  initialDelaySeconds: 15
+  periodSeconds: 20
+
+readinessProbe:
+  httpGet:
+    path: /
+    port: 8080
+  initialDelaySeconds: 5
+  periodSeconds: 10
+
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 100
+  runAsGroup: 102
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: false
+
+serviceAccount:
+  create: true
+  name: frontend-sa
+  annotations: {}
+
+frontendContent:
+  enabled: true
+  mountPath: /usr/share/nginx/html/index.html
+  subPath: index.html
+  sourceFile: Ansible-modules-01/roles/app/files/app/src/frontend/index2.html # temporary local source file; replace later with your final repo/chart-managed file flow

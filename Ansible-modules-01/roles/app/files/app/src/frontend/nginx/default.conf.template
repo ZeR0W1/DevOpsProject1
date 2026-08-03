@@ -1,16 +1,14 @@
-worker_processes  1;
+worker_processes 1;
 pid /tmp/nginx/nginx.pid;
 
 events {
-  worker_connections  1024;
+  worker_connections 1024;
 }
 
 http {
-  # Load MIME type mappings so nginx can return correct Content-Type headers for known file types.
-  include       /etc/nginx/mime.types;
-  # Fallback content type for files whose type nginx cannot determine from the MIME map.
-  default_type  application/octet-stream;
-  sendfile      on;
+  include /etc/nginx/mime.types;
+  default_type application/octet-stream;
+  sendfile on;
 
   server {
     listen 8080;

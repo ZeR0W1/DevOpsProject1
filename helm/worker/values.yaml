@@ -60,6 +60,8 @@ readinessProbe:
 
 securityContext:
   runAsNonRoot: true
+  runAsUser: 999
+  runAsGroup: 999
   allowPrivilegeEscalation: false
   readOnlyRootFilesystem: false
 
@@ -74,4 +76,5 @@ env:
   BACKEND_PORT: "8000"
   POSTGRES_ENABLED: "true"
   POSTGRES_TABLE: machines
+  S3_SYNC_ENABLED: "true"
   SNS_NOTIFICATIONS_ENABLED: "true"

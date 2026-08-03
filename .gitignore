@@ -17,9 +17,7 @@ logs/
 *.pyc
 *$py.class
 
-frontend/
-!Ansible-modules-01/roles/app/files/app/src/frontend/
-!Ansible-modules-01/roles/app/files/app/src/frontend/**
+/frontend/
 github.txt
 
 misc/

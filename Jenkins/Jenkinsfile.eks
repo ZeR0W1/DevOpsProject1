@@ -1,0 +1,216 @@
+// EKS-native CI pipeline for all three application services. The standalone
+// CD job remains responsible for Helm deployment.
+pipeline {
+    agent none
+
+    options {
+        buildDiscarder(logRotator(numToKeepStr: '20'))
+        disableConcurrentBuilds()
+        skipDefaultCheckout(true)
+    }
+
+    parameters {
+        string(name: 'REPO_URL', defaultValue: 'https://github.com/ZeR0W1/DevOpsProject1.git', description: 'Git repository URL.')
+        string(name: 'REPO_BRANCH', defaultValue: 'aws3-containerized', description: 'Git branch, tag, or ref to build.')
+        string(name: 'GIT_CREDENTIALS_ID', defaultValue: '', description: 'Optional Jenkins Git credential ID.')
+        string(name: 'APP_DIR', defaultValue: 'Ansible-modules-01/roles/app/files/app', description: 'Application path in the checked-out repository.')
+        string(name: 'IMAGE_TAG', defaultValue: '', description: 'Optional shared image tag; default is BUILD_NUMBER-shortSHA.')
+        string(name: 'DOCKERHUB_CREDENTIALS_ID', defaultValue: 'dockerhub-creds', description: 'Jenkins username/password Docker Hub credential ID.')
+        booleanParam(name: 'RUN_TRIVY_SCAN', defaultValue: false, description: 'Run opt-in Trivy filesystem scan before image push.')
+        booleanParam(name: 'DEPLOY_TO_EKS', defaultValue: false, description: 'Trigger the standalone three-service CD job after all images are pushed.')
+        string(name: 'CD_JOB_NAME', defaultValue: 'devops-project1-eks-deploy', description: 'Standalone Jenkins CD job to trigger.')
+        string(name: 'DEPLOY_NAMESPACE', defaultValue: 'devops-app', description: 'Namespace containing application Helm releases.')
+    }
+
+    stages {
+        stage('Kubernetes Build and Deploy') {
+            agent {
+                kubernetes {
+                    defaultContainer 'python'
+                    yaml '''
+apiVersion: v1
+kind: Pod
+metadata:
+  labels:
+    app.kubernetes.io/part-of: devops-project1-ci
+spec:
+  serviceAccountName: jenkins-agent
+  restartPolicy: Never
+  securityContext:
+    fsGroup: 1000
+    seccompProfile:
+      type: RuntimeDefault
+  volumes:
+    - name: docker-config
+      emptyDir: {}
+  containers:
+    - name: python
+      image: zer0w1/devops-project1-jenkins-agent:eks-python-v1
+      command: ['cat']
+      tty: true
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities: {drop: ['ALL']}
+    - name: kaniko
+      image: zer0w1/devops-project1-jenkins-kaniko-agent:eks-v2
+      command: ['cat']
+      tty: true
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: ['ALL']
+          add: ['CHOWN', 'DAC_OVERRIDE', 'FOWNER']
+      volumeMounts:
+        - name: docker-config
+          mountPath: /kaniko/.docker
+    - name: helm
+      image: alpine/helm:3.16.4
+      command: ['cat']
+      tty: true
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities: {drop: ['ALL']}
+    - name: trivy
+      image: aquasec/trivy:0.57.1
+      command: ['cat']
+      tty: true
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities: {drop: ['ALL']}
+'''
+                }
+            }
+            stages {
+                stage('Checkout and Resolve Images') {
+                    steps {
+                        script {
+                            env.APP_DIR_RESOLVED = params.APP_DIR
+                            if (params.GIT_CREDENTIALS_ID?.trim()) {
+                                checkout([$class: 'GitSCM', branches: [[name: params.REPO_BRANCH]], userRemoteConfigs: [[url: params.REPO_URL, credentialsId: params.GIT_CREDENTIALS_ID]]])
+                            } else {
+                                git branch: params.REPO_BRANCH, url: params.REPO_URL
+                            }
+                            env.GIT_SHORT_SHA = sh(script: 'git rev-parse --short=12 HEAD', returnStdout: true).trim()
+                            env.IMAGE_TAG_RESOLVED = params.IMAGE_TAG?.trim() ? params.IMAGE_TAG.trim() : "${env.BUILD_NUMBER}-${env.GIT_SHORT_SHA}"
+                            env.FRONTEND_IMAGE_REPOSITORY = 'zer0w1/devops-project1-frontend'
+                            env.BACKEND_IMAGE_REPOSITORY = 'zer0w1/devops-project1-backend'
+                            env.WORKER_IMAGE_REPOSITORY = 'zer0w1/devops-project1-worker'
+                            currentBuild.displayName = "#${env.BUILD_NUMBER} app:${env.IMAGE_TAG_RESOLVED}"
+                            echo "Building frontend, backend, and worker with tag ${env.IMAGE_TAG_RESOLVED}"
+                        }
+                    }
+                }
+
+                stage('Python Checks') {
+                    steps {
+                        dir(params.APP_DIR) {
+                            sh '''#!/bin/sh
+                                set -eu
+                                python3 -m venv .venv-jenkins
+                                . .venv-jenkins/bin/activate
+                                pip install --quiet --upgrade pip pytest flake8 bandit
+                                [ ! -f requirements.txt ] || pip install --quiet -r requirements.txt
+                                [ ! -f src/backend/requirements.txt ] || pip install --quiet -r src/backend/requirements.txt
+                                [ ! -f src/worker/requirements.txt ] || pip install --quiet -r src/worker/requirements.txt
+                                bandit -r src/backend src/worker --severity-level low --confidence-level medium -f json -o "${WORKSPACE}/bandit.json" || test $? -eq 1
+                                flake8 src/backend src/worker --count --statistics || test $? -eq 1
+                                if find src/backend src/worker -type f -name '*test*.py' | grep -q .; then pytest -q; fi
+                            '''
+                        }
+                    }
+                    post { always { archiveArtifacts artifacts: 'bandit.json', allowEmptyArchive: true } }
+                }
+
+                stage('Trivy Filesystem Scan') {
+                    when { expression { params.RUN_TRIVY_SCAN } }
+                    steps {
+                        container('trivy') {
+                            sh '''#!/bin/sh
+                                set -eu
+                                trivy fs --scanners vuln,secret --severity HIGH,CRITICAL --exit-code 1 "${APP_DIR}"
+                            '''
+                        }
+                    }
+                }
+
+                stage('Validate All Helm Charts') {
+                    steps {
+                        container('helm') {
+                            sh '''#!/bin/sh
+                                set -eu
+                                mkdir -p rendered-manifests
+                                for component in frontend backend worker; do
+                                  repository_variable="$(printf '%s_IMAGE_REPOSITORY' "$component" | tr '[:lower:]' '[:upper:]')"
+                                  eval "repository=\${$repository_variable}"
+                                  extra_args=''
+                                  if [ "$component" = worker ]; then
+                                    extra_args='--set database.postgresEnabled=false --set env.POSTGRES_ENABLED=false --set env.S3_SYNC_ENABLED=false --set env.SNS_NOTIFICATIONS_ENABLED=false'
+                                  fi
+                                  helm lint "helm/${component}" \
+                                    --set namespace="${DEPLOY_NAMESPACE}" \
+                                    --set image.repository="$repository" \
+                                    --set image.tag="${IMAGE_TAG_RESOLVED}" \
+                                    $extra_args
+                                  helm template "$component" "helm/${component}" \
+                                    --namespace "${DEPLOY_NAMESPACE}" \
+                                    --set namespace="${DEPLOY_NAMESPACE}" \
+                                    --set image.repository="$repository" \
+                                    --set image.tag="${IMAGE_TAG_RESOLVED}" \
+                                    $extra_args > "rendered-manifests/${component}.yaml"
+                                done
+                            '''
+                        }
+                        archiveArtifacts artifacts: 'rendered-manifests/*.yaml', fingerprint: true
+                    }
+                }
+
+                stage('Kaniko Build and Push All Images') {
+                    steps {
+                        withCredentials([usernamePassword(credentialsId: params.DOCKERHUB_CREDENTIALS_ID, usernameVariable: 'DOCKERHUB_USERNAME', passwordVariable: 'DOCKERHUB_TOKEN')]) {
+                            container('kaniko') {
+                                sh '''#!/bin/sh
+                                    set -eu
+                                    auth="$(printf '%s:%s' "$DOCKERHUB_USERNAME" "$DOCKERHUB_TOKEN" | base64 | tr -d '\\n')"
+                                    printf '{"auths":{"https://index.docker.io/v1/":{"auth":"%s"}}}' "$auth" > /kaniko/.docker/config.json
+                                    mkdir -p "${WORKSPACE}/image-digests"
+                                    for component in frontend backend worker; do
+                                      repository_variable="$(printf '%s_IMAGE_REPOSITORY' "$component" | tr '[:lower:]' '[:upper:]')"
+                                      eval "repository=\${$repository_variable}"
+                                      /kaniko/executor \
+                                        --context "dir://${WORKSPACE}/${APP_DIR_RESOLVED}" \
+                                        --dockerfile "${WORKSPACE}/${APP_DIR_RESOLVED}/Dockerfile.${component}" \
+                                        --destination "${repository}:${IMAGE_TAG_RESOLVED}" \
+                                        --digest-file "${WORKSPACE}/image-digests/${component}.txt" \
+                                        --snapshot-mode=redo \
+                                        --cleanup
+                                    done
+                                    rm -f /kaniko/.docker/config.json
+                                '''
+                            }
+                        }
+                        archiveArtifacts artifacts: 'image-digests/*.txt', fingerprint: true
+                    }
+                }
+
+                stage('Trigger Three-Service CD') {
+                    when { expression { params.DEPLOY_TO_EKS } }
+                    steps {
+                        script {
+                            build job: params.CD_JOB_NAME, wait: true, propagate: true, parameters: [
+                                string(name: 'REPO_URL', value: params.REPO_URL),
+                                string(name: 'REPO_REF', value: env.GIT_COMMIT),
+                                string(name: 'GIT_CREDENTIALS_ID', value: params.GIT_CREDENTIALS_ID),
+                                string(name: 'FRONTEND_IMAGE_REPOSITORY', value: env.FRONTEND_IMAGE_REPOSITORY),
+                                string(name: 'BACKEND_IMAGE_REPOSITORY', value: env.BACKEND_IMAGE_REPOSITORY),
+                                string(name: 'WORKER_IMAGE_REPOSITORY', value: env.WORKER_IMAGE_REPOSITORY),
+                                string(name: 'IMAGE_TAG', value: env.IMAGE_TAG_RESOLVED),
+                                string(name: 'DEPLOY_NAMESPACE', value: params.DEPLOY_NAMESPACE),
+                                booleanParam(name: 'CONFIRM_DEPLOY', value: true)
+                            ]
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

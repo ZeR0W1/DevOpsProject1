@@ -1,0 +1,249 @@
+// Standalone CD pipeline. The CI orchestrator passes one immutable image tag
+// shared by the frontend, backend, and worker images after all builds succeed.
+pipeline {
+    agent {
+        kubernetes {
+            defaultContainer 'deploy'
+            yaml '''
+apiVersion: v1
+kind: Pod
+metadata:
+  labels:
+    app.kubernetes.io/part-of: devops-project1-cd
+spec:
+  serviceAccountName: jenkins-deployer
+  restartPolicy: Never
+  securityContext:
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: deploy
+      image: alpine/k8s:1.34.3
+      command: ['cat']
+      tty: true
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities: {drop: ['ALL']}
+'''
+        }
+    }
+
+    options {
+        buildDiscarder(logRotator(numToKeepStr: '20'))
+        disableConcurrentBuilds()
+        skipDefaultCheckout(true)
+        timeout(time: 15, unit: 'MINUTES')
+    }
+
+    parameters {
+        string(name: 'REPO_URL', defaultValue: 'https://github.com/ZeR0W1/DevOpsProject1.git', description: 'Repository containing the three application Helm charts.')
+        string(name: 'REPO_REF', defaultValue: 'aws3-containerized', description: 'Branch, tag, or commit containing the chart to deploy.')
+        string(name: 'GIT_CREDENTIALS_ID', defaultValue: '', description: 'Optional Jenkins Git credential ID.')
+        string(name: 'AWS_REGION', defaultValue: 'us-east-1', description: 'AWS region containing EKS.')
+        string(name: 'EKS_CLUSTER_NAME', defaultValue: 'devops-app-eks', description: 'Target EKS cluster name.')
+        string(name: 'FRONTEND_IMAGE_REPOSITORY', defaultValue: 'zer0w1/devops-project1-frontend', description: 'Frontend image repository produced by CI.')
+        string(name: 'BACKEND_IMAGE_REPOSITORY', defaultValue: 'zer0w1/devops-project1-backend', description: 'Backend image repository produced by CI.')
+        string(name: 'WORKER_IMAGE_REPOSITORY', defaultValue: 'zer0w1/devops-project1-worker', description: 'Worker image repository produced by CI.')
+        string(name: 'IMAGE_TAG', defaultValue: '', description: 'Required immutable tag shared by all three CI images; latest is rejected.')
+        string(name: 'DEPLOY_NAMESPACE', defaultValue: 'devops-app', description: 'Existing application namespace.')
+        booleanParam(name: 'CONFIRM_DEPLOY', defaultValue: false, description: 'Required confirmation that this run may change EKS resources.')
+    }
+
+    environment {
+        FRONTEND_CHART_DIR = 'helm/frontend'
+        BACKEND_CHART_DIR = 'helm/backend'
+        WORKER_CHART_DIR = 'helm/worker'
+        KUBECONFIG = "${WORKSPACE}/.kube/config"
+    }
+
+    stages {
+        stage('Validate Inputs') {
+            steps {
+                script {
+                    def tag = params.IMAGE_TAG?.trim()
+                    def namespace = params.DEPLOY_NAMESPACE?.trim()
+                    def repositories = [
+                        frontend: params.FRONTEND_IMAGE_REPOSITORY?.trim(),
+                        backend: params.BACKEND_IMAGE_REPOSITORY?.trim(),
+                        worker: params.WORKER_IMAGE_REPOSITORY?.trim()
+                    ]
+
+                    if (!params.CONFIRM_DEPLOY) {
+                        error('CONFIRM_DEPLOY=true is required before changing EKS resources.')
+                    }
+                    repositories.each { component, repository ->
+                        if (!repository || !(repository ==~ /[a-z0-9]+(?:[._-][a-z0-9]+)*(\/[a-z0-9]+(?:[._-][a-z0-9]+)*)+/)) {
+                            error("${component.toUpperCase()}_IMAGE_REPOSITORY must be a lowercase repository such as zer0w1/devops-project1-${component}.")
+                        }
+                    }
+                    if (!tag || tag == 'latest' || !(tag ==~ /[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}/)) {
+                        error('IMAGE_TAG is required, must be immutable, and cannot be latest.')
+                    }
+                    if (namespace != 'devops-app') {
+                        error('This CD pipeline is restricted to the devops-app namespace.')
+                    }
+                    env.FRONTEND_IMAGE_REPOSITORY_RESOLVED = repositories.frontend
+                    env.BACKEND_IMAGE_REPOSITORY_RESOLVED = repositories.backend
+                    env.WORKER_IMAGE_REPOSITORY_RESOLVED = repositories.worker
+                    env.IMAGE_TAG_RESOLVED = tag
+                    env.DEPLOY_NAMESPACE_RESOLVED = namespace
+                    currentBuild.displayName = "#${env.BUILD_NUMBER} app:${tag}"
+                }
+            }
+        }
+
+        stage('Checkout') {
+            steps {
+                script {
+                    if (params.GIT_CREDENTIALS_ID?.trim()) {
+                        checkout([$class: 'GitSCM', branches: [[name: params.REPO_REF]], userRemoteConfigs: [[url: params.REPO_URL, credentialsId: params.GIT_CREDENTIALS_ID]]])
+                    } else {
+                        git branch: params.REPO_REF, url: params.REPO_URL
+                    }
+                    env.DEPLOY_GIT_SHA = sh(script: 'git rev-parse HEAD', returnStdout: true).trim()
+                }
+            }
+        }
+
+        stage('Configure kubectl') {
+            steps {
+                sh '''#!/bin/sh
+                    set -eu
+                    aws sts get-caller-identity
+                    mkdir -p "$(dirname "$KUBECONFIG")"
+                    aws eks update-kubeconfig \
+                      --name "${EKS_CLUSTER_NAME}" \
+                      --region "${AWS_REGION}" \
+                      --kubeconfig "${KUBECONFIG}" \
+                      --alias "${EKS_CLUSTER_NAME}"
+                    kubectl config current-context
+                    kubectl get deployments --namespace "${DEPLOY_NAMESPACE_RESOLVED}"
+                '''
+            }
+        }
+
+        stage('Namespace Precheck') {
+            steps {
+                sh '''#!/bin/sh
+                    set -eu
+                    kubectl get deployments --namespace "${DEPLOY_NAMESPACE_RESOLVED}"
+                    kubectl auth can-i get deployments --namespace "${DEPLOY_NAMESPACE_RESOLVED}" | grep -qx yes
+                    kubectl auth can-i patch deployments --namespace "${DEPLOY_NAMESPACE_RESOLVED}" | grep -qx yes
+                    kubectl auth can-i create secrets --namespace "${DEPLOY_NAMESPACE_RESOLVED}" | grep -qx yes
+                '''
+            }
+        }
+
+        stage('Deploy All Services with Helm') {
+            steps {
+                sh '''#!/bin/sh
+                    set -eu
+                    helm lint "${WORKER_CHART_DIR}" \
+                      --set namespace="${DEPLOY_NAMESPACE_RESOLVED}" \
+                      --set image.repository="${WORKER_IMAGE_REPOSITORY_RESOLVED}" \
+                      --set image.tag="${IMAGE_TAG_RESOLVED}" \
+                      --set database.postgresEnabled=false \
+                      --set env.POSTGRES_ENABLED=false \
+                      --set env.S3_SYNC_ENABLED=false \
+                      --set env.SNS_NOTIFICATIONS_ENABLED=false
+                    helm lint "${BACKEND_CHART_DIR}" \
+                      --set namespace="${DEPLOY_NAMESPACE_RESOLVED}" \
+                      --set image.repository="${BACKEND_IMAGE_REPOSITORY_RESOLVED}" \
+                      --set image.tag="${IMAGE_TAG_RESOLVED}"
+                    helm lint "${FRONTEND_CHART_DIR}" \
+                      --set namespace="${DEPLOY_NAMESPACE_RESOLVED}" \
+                      --set image.repository="${FRONTEND_IMAGE_REPOSITORY_RESOLVED}" \
+                      --set image.tag="${IMAGE_TAG_RESOLVED}"
+
+                    helm template worker "${WORKER_CHART_DIR}" \
+                      --namespace "${DEPLOY_NAMESPACE_RESOLVED}" \
+                      --set namespace="${DEPLOY_NAMESPACE_RESOLVED}" \
+                      --set image.repository="${WORKER_IMAGE_REPOSITORY_RESOLVED}" \
+                      --set image.tag="${IMAGE_TAG_RESOLVED}" \
+                      --set database.postgresEnabled=false \
+                      --set env.POSTGRES_ENABLED=false \
+                      --set env.S3_SYNC_ENABLED=false \
+                      --set env.SNS_NOTIFICATIONS_ENABLED=false \
+                      > rendered-worker.yaml
+                    helm template backend "${BACKEND_CHART_DIR}" \
+                      --namespace "${DEPLOY_NAMESPACE_RESOLVED}" \
+                      --set namespace="${DEPLOY_NAMESPACE_RESOLVED}" \
+                      --set image.repository="${BACKEND_IMAGE_REPOSITORY_RESOLVED}" \
+                      --set image.tag="${IMAGE_TAG_RESOLVED}" \
+                      --set securityContext.runAsUser=999 \
+                      --set securityContext.runAsGroup=999 \
+                      > rendered-backend.yaml
+                    helm template frontend "${FRONTEND_CHART_DIR}" \
+                      --namespace "${DEPLOY_NAMESPACE_RESOLVED}" \
+                      --set namespace="${DEPLOY_NAMESPACE_RESOLVED}" \
+                      --set image.repository="${FRONTEND_IMAGE_REPOSITORY_RESOLVED}" \
+                      --set image.tag="${IMAGE_TAG_RESOLVED}" \
+                      > rendered-frontend.yaml
+
+                    helm upgrade --install worker "${WORKER_CHART_DIR}" \
+                      --namespace "${DEPLOY_NAMESPACE_RESOLVED}" \
+                      --set namespace="${DEPLOY_NAMESPACE_RESOLVED}" \
+                      --set image.repository="${WORKER_IMAGE_REPOSITORY_RESOLVED}" \
+                      --set image.tag="${IMAGE_TAG_RESOLVED}" \
+                      --set database.postgresEnabled=false \
+                      --set env.POSTGRES_ENABLED=false \
+                      --set env.S3_SYNC_ENABLED=false \
+                      --set env.SNS_NOTIFICATIONS_ENABLED=false \
+                      --atomic --wait --timeout 5m --history-max 10
+                    helm upgrade --install backend "${BACKEND_CHART_DIR}" \
+                      --namespace "${DEPLOY_NAMESPACE_RESOLVED}" \
+                      --set namespace="${DEPLOY_NAMESPACE_RESOLVED}" \
+                      --set image.repository="${BACKEND_IMAGE_REPOSITORY_RESOLVED}" \
+                      --set image.tag="${IMAGE_TAG_RESOLVED}" \
+                      --set securityContext.runAsUser=999 \
+                      --set securityContext.runAsGroup=999 \
+                      --atomic --wait --timeout 5m --history-max 10
+                    helm upgrade --install frontend "${FRONTEND_CHART_DIR}" \
+                      --namespace "${DEPLOY_NAMESPACE_RESOLVED}" \
+                      --set namespace="${DEPLOY_NAMESPACE_RESOLVED}" \
+                      --set image.repository="${FRONTEND_IMAGE_REPOSITORY_RESOLVED}" \
+                      --set image.tag="${IMAGE_TAG_RESOLVED}" \
+                      --atomic --wait --timeout 5m --history-max 10
+                '''
+            }
+        }
+
+        stage('Verify Deployment') {
+            steps {
+                sh '''#!/bin/sh
+                    set -eu
+                    for component in worker backend frontend; do
+                      kubectl rollout status "deployment/${component}" --namespace "${DEPLOY_NAMESPACE_RESOLVED}" --timeout=3m
+                      actual_image="$(kubectl get deployment "$component" --namespace "${DEPLOY_NAMESPACE_RESOLVED}" -o "jsonpath={.spec.template.spec.containers[?(@.name=='${component}')].image}")"
+                      case "$component" in
+                        frontend) expected_repository="$FRONTEND_IMAGE_REPOSITORY_RESOLVED" ;;
+                        backend) expected_repository="$BACKEND_IMAGE_REPOSITORY_RESOLVED" ;;
+                        worker) expected_repository="$WORKER_IMAGE_REPOSITORY_RESOLVED" ;;
+                      esac
+                      test "$actual_image" = "${expected_repository}:${IMAGE_TAG_RESOLVED}"
+                      helm status "$component" --namespace "${DEPLOY_NAMESPACE_RESOLVED}"
+                      helm get values "$component" --namespace "${DEPLOY_NAMESPACE_RESOLVED}" --all > "deployed-values-${component}.yaml"
+                    done
+                    kubectl get deployment,pods,service --namespace "${DEPLOY_NAMESPACE_RESOLVED}" -o wide
+                '''
+            }
+        }
+    }
+
+    post {
+        success {
+            echo "CD succeeded: frontend, backend, and worker tag ${env.IMAGE_TAG_RESOLVED} are active in ${env.DEPLOY_NAMESPACE_RESOLVED}."
+        }
+        failure {
+            echo 'CD failed. Helm --atomic rolls a failed release back automatically.'
+        }
+        always {
+            archiveArtifacts artifacts: 'rendered-*.yaml,deployed-values-*.yaml', allowEmptyArchive: true, fingerprint: true
+            sh 'rm -f "${KUBECONFIG}"'
+            deleteDir()
+        }
+    }
+}

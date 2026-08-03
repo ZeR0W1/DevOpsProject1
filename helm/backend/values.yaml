@@ -43,6 +43,8 @@ readinessProbe:
 
 securityContext:
   runAsNonRoot: true
+  runAsUser: 999
+  runAsGroup: 999
   allowPrivilegeEscalation: false
   readOnlyRootFilesystem: false
 

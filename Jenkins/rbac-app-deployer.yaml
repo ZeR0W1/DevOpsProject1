@@ -1,0 +1,48 @@
+# Narrow namespace permissions for the dedicated Jenkins CD identity.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: jenkins-deployer
+  namespace: jenkins
+automountServiceAccountToken: true
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: devops-app
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: jenkins-app-deployer
+  namespace: devops-app
+rules:
+  # Helm stores release records as Secrets; worker uses an existing DB Secret.
+  - apiGroups: [""]
+    resources: ["configmaps", "secrets", "services", "serviceaccounts"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # Helm's --wait checks Pods but this CI identity must not create or delete them.
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: jenkins-app-deployer
+  namespace: devops-app
+subjects:
+  # The EKS access entry maps the Pod Identity IAM role to this group.
+  - kind: Group
+    name: jenkins-deployer
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: jenkins-app-deployer
