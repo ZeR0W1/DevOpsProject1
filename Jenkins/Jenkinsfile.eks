@@ -16,6 +16,7 @@ pipeline {
         string(name: 'APP_DIR', defaultValue: 'Ansible-modules-01/roles/app/files/app', description: 'Application path in the checked-out repository.')
         string(name: 'IMAGE_TAG', defaultValue: '', description: 'Optional shared image tag; default is BUILD_NUMBER-shortSHA.')
         string(name: 'DOCKERHUB_CREDENTIALS_ID', defaultValue: 'dockerhub-creds', description: 'Jenkins username/password Docker Hub credential ID.')
+        booleanParam(name: 'VALIDATE_ONLY', defaultValue: false, description: 'Stop after source checks and Helm validation; do not build, push, or deploy images.')
         booleanParam(name: 'RUN_TRIVY_SCAN', defaultValue: false, description: 'Run opt-in Trivy filesystem scan before image push.')
         booleanParam(name: 'DEPLOY_TO_EKS', defaultValue: false, description: 'Trigger the standalone three-service CD job after all images are pushed.')
         string(name: 'CD_JOB_NAME', defaultValue: 'devops-project1-eks-deploy', description: 'Standalone Jenkins CD job to trigger.')
@@ -168,6 +169,7 @@ spec:
                 }
 
                 stage('Kaniko Build and Push All Images') {
+                    when { expression { !params.VALIDATE_ONLY } }
                     steps {
                         withCredentials([usernamePassword(credentialsId: params.DOCKERHUB_CREDENTIALS_ID, usernameVariable: 'DOCKERHUB_USERNAME', passwordVariable: 'DOCKERHUB_TOKEN')]) {
                             container('kaniko') {
@@ -199,7 +201,7 @@ spec:
                 }
 
                 stage('Trigger Three-Service CD') {
-                    when { expression { params.DEPLOY_TO_EKS } }
+                    when { expression { !params.VALIDATE_ONLY && params.DEPLOY_TO_EKS } }
                     steps {
                         script {
                             build job: params.CD_JOB_NAME, wait: true, propagate: true, parameters: [
