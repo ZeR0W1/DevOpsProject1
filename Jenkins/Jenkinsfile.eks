@@ -65,7 +65,10 @@ spec:
         - name: docker-config
           mountPath: /kaniko/.docker
     - name: helm
-      image: alpine/helm:3.16.4
+      # Jenkins durable-task does not reliably launch scripts in the
+      # alpine/helm image. This image is already proven by the CD pipeline and
+      # still runs the same helm lint/template commands below.
+      image: alpine/k8s:1.34.3
       command: ['cat']
       tty: true
       securityContext:
