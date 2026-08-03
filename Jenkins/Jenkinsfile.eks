@@ -20,6 +20,8 @@ pipeline {
         booleanParam(name: 'RUN_TRIVY_SCAN', defaultValue: false, description: 'Run opt-in Trivy filesystem scan before image push.')
         booleanParam(name: 'DEPLOY_TO_EKS', defaultValue: false, description: 'Trigger the standalone three-service CD job after all images are pushed.')
         string(name: 'CD_JOB_NAME', defaultValue: 'devops-project1-eks-deploy', description: 'Standalone Jenkins CD job to trigger.')
+        string(name: 'AWS_REGION', defaultValue: 'us-east-1', description: 'AWS region containing the target EKS cluster.')
+        string(name: 'EKS_CLUSTER_NAME', defaultValue: 'devops-app-eks', description: 'Target EKS cluster name.')
         string(name: 'DEPLOY_NAMESPACE', defaultValue: 'devops-app', description: 'Namespace containing application Helm releases.')
     }
 
@@ -106,7 +108,8 @@ spec:
                             } else {
                                 git branch: params.REPO_BRANCH, url: params.REPO_URL
                             }
-                            env.GIT_SHORT_SHA = sh(script: 'git rev-parse --short=12 HEAD', returnStdout: true).trim()
+                            env.GIT_FULL_SHA = sh(script: 'git rev-parse HEAD', returnStdout: true).trim()
+                            env.GIT_SHORT_SHA = env.GIT_FULL_SHA.take(12)
                             env.IMAGE_TAG_RESOLVED = params.IMAGE_TAG?.trim() ? params.IMAGE_TAG.trim() : "${env.BUILD_NUMBER}-${env.GIT_SHORT_SHA}"
                             env.FRONTEND_IMAGE_REPOSITORY = 'zer0w1/devops-project1-frontend'
                             env.BACKEND_IMAGE_REPOSITORY = 'zer0w1/devops-project1-backend'
@@ -219,15 +222,42 @@ spec:
                     when { expression { !params.VALIDATE_ONLY && params.DEPLOY_TO_EKS } }
                     steps {
                         script {
-                            build job: params.CD_JOB_NAME, wait: true, propagate: true, parameters: [
-                                string(name: 'REPO_URL', value: params.REPO_URL),
-                                string(name: 'REPO_REF', value: env.GIT_COMMIT),
-                                string(name: 'GIT_CREDENTIALS_ID', value: params.GIT_CREDENTIALS_ID),
-                                string(name: 'FRONTEND_IMAGE_REPOSITORY', value: env.FRONTEND_IMAGE_REPOSITORY),
-                                string(name: 'BACKEND_IMAGE_REPOSITORY', value: env.BACKEND_IMAGE_REPOSITORY),
-                                string(name: 'WORKER_IMAGE_REPOSITORY', value: env.WORKER_IMAGE_REPOSITORY),
-                                string(name: 'IMAGE_TAG', value: env.IMAGE_TAG_RESOLVED),
-                                string(name: 'DEPLOY_NAMESPACE', value: params.DEPLOY_NAMESPACE),
+                            def cdJobName = params.CD_JOB_NAME?.trim()
+                            if (!cdJobName) {
+                                error('Cannot trigger CD: CD_JOB_NAME is empty.')
+                            }
+                            def handoff = [
+                                REPO_URL: params.REPO_URL?.trim(),
+                                REPO_REF: env.GIT_FULL_SHA?.trim(),
+                                GIT_CREDENTIALS_ID: params.GIT_CREDENTIALS_ID?.trim() ?: '',
+                                FRONTEND_IMAGE_REPOSITORY: env.FRONTEND_IMAGE_REPOSITORY?.trim(),
+                                BACKEND_IMAGE_REPOSITORY: env.BACKEND_IMAGE_REPOSITORY?.trim(),
+                                WORKER_IMAGE_REPOSITORY: env.WORKER_IMAGE_REPOSITORY?.trim(),
+                                IMAGE_TAG: env.IMAGE_TAG_RESOLVED?.trim(),
+                                AWS_REGION: params.AWS_REGION?.trim(),
+                                EKS_CLUSTER_NAME: params.EKS_CLUSTER_NAME?.trim(),
+                                DEPLOY_NAMESPACE: params.DEPLOY_NAMESPACE?.trim()
+                            ]
+                            handoff.each { name, value ->
+                                if (name != 'GIT_CREDENTIALS_ID' && !value) {
+                                    error("Cannot trigger CD: resolved ${name} is empty.")
+                                }
+                            }
+                            if (!(handoff.REPO_REF ==~ /[0-9a-f]{40}/)) {
+                                error('Cannot trigger CD: REPO_REF is not a full Git commit SHA.')
+                            }
+                            echo "CD handoff: ref=${handoff.REPO_REF.take(12)}, tag=${handoff.IMAGE_TAG}, namespace=${handoff.DEPLOY_NAMESPACE}, services=frontend,backend,worker"
+                            build job: cdJobName, wait: true, propagate: true, parameters: [
+                                string(name: 'REPO_URL', value: handoff.REPO_URL),
+                                string(name: 'REPO_REF', value: handoff.REPO_REF),
+                                string(name: 'GIT_CREDENTIALS_ID', value: handoff.GIT_CREDENTIALS_ID),
+                                string(name: 'FRONTEND_IMAGE_REPOSITORY', value: handoff.FRONTEND_IMAGE_REPOSITORY),
+                                string(name: 'BACKEND_IMAGE_REPOSITORY', value: handoff.BACKEND_IMAGE_REPOSITORY),
+                                string(name: 'WORKER_IMAGE_REPOSITORY', value: handoff.WORKER_IMAGE_REPOSITORY),
+                                string(name: 'IMAGE_TAG', value: handoff.IMAGE_TAG),
+                                string(name: 'AWS_REGION', value: handoff.AWS_REGION),
+                                string(name: 'EKS_CLUSTER_NAME', value: handoff.EKS_CLUSTER_NAME),
+                                string(name: 'DEPLOY_NAMESPACE', value: handoff.DEPLOY_NAMESPACE),
                                 booleanParam(name: 'CONFIRM_DEPLOY', value: true)
                             ]
                         }

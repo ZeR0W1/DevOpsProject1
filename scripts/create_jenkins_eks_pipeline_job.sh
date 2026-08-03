@@ -19,5 +19,7 @@ exec bash "$PROJECT_ROOT/scripts/create_jenkins_job.sh" \
   --boolean-param RUN_TRIVY_SCAN false "Run opt-in Trivy filesystem scan before image push." \
   --boolean-param DEPLOY_TO_EKS false "Trigger the standalone three-service CD job after all images are pushed." \
   --string-param CD_JOB_NAME "devops-project1-eks-deploy" "Standalone Jenkins CD job to trigger." \
+  --string-param AWS_REGION "us-east-1" "AWS region containing the target EKS cluster." \
+  --string-param EKS_CLUSTER_NAME "devops-app-eks" "Target EKS cluster name." \
   --string-param DEPLOY_NAMESPACE "devops-app" "Namespace containing application Helm releases." \
   "$@"

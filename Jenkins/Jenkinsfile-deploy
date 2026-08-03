@@ -65,6 +65,10 @@ spec:
                 script {
                     def tag = params.IMAGE_TAG?.trim()
                     def namespace = params.DEPLOY_NAMESPACE?.trim()
+                    def repoUrl = params.REPO_URL?.trim()
+                    def repoRef = params.REPO_REF?.trim()
+                    def awsRegion = params.AWS_REGION?.trim()
+                    def clusterName = params.EKS_CLUSTER_NAME?.trim()
                     def repositories = [
                         frontend: params.FRONTEND_IMAGE_REPOSITORY?.trim(),
                         backend: params.BACKEND_IMAGE_REPOSITORY?.trim(),
@@ -73,6 +77,18 @@ spec:
 
                     if (!params.CONFIRM_DEPLOY) {
                         error('CONFIRM_DEPLOY=true is required before changing EKS resources.')
+                    }
+                    if (!repoUrl || !(repoUrl ==~ /https:\/\/[A-Za-z0-9._-]+\/[A-Za-z0-9._\/-]+(?:\.git)?/)) {
+                        error('REPO_URL must be a non-empty HTTPS Git repository URL.')
+                    }
+                    if (!repoRef || !(repoRef ==~ /[0-9a-f]{40}|[A-Za-z0-9._\/-]+/)) {
+                        error('REPO_REF must be a full Git SHA, branch, or tag.')
+                    }
+                    if (!awsRegion || !(awsRegion ==~ /[a-z]{2}(?:-gov)?-[a-z]+-\d/)) {
+                        error('AWS_REGION must be a valid AWS region such as us-east-1.')
+                    }
+                    if (!clusterName || !(clusterName ==~ /[A-Za-z0-9][A-Za-z0-9_-]{0,99}/)) {
+                        error('EKS_CLUSTER_NAME must be a valid non-empty EKS cluster name.')
                     }
                     repositories.each { component, repository ->
                         if (!repository || !(repository ==~ /[a-z0-9]+(?:[._-][a-z0-9]+)*(\/[a-z0-9]+(?:[._-][a-z0-9]+)*)+/)) {
@@ -90,7 +106,12 @@ spec:
                     env.WORKER_IMAGE_REPOSITORY_RESOLVED = repositories.worker
                     env.IMAGE_TAG_RESOLVED = tag
                     env.DEPLOY_NAMESPACE_RESOLVED = namespace
+                    env.REPO_URL_RESOLVED = repoUrl
+                    env.REPO_REF_RESOLVED = repoRef
+                    env.AWS_REGION_RESOLVED = awsRegion
+                    env.EKS_CLUSTER_NAME_RESOLVED = clusterName
                     currentBuild.displayName = "#${env.BUILD_NUMBER} app:${tag}"
+                    echo "Validated CD inputs: ref=${repoRef.take(12)}, tag=${tag}, namespace=${namespace}, cluster=${clusterName}, services=frontend,backend,worker"
                 }
             }
         }
@@ -98,11 +119,15 @@ spec:
         stage('Checkout') {
             steps {
                 script {
+                    def remote = [url: env.REPO_URL_RESOLVED]
                     if (params.GIT_CREDENTIALS_ID?.trim()) {
-                        checkout([$class: 'GitSCM', branches: [[name: params.REPO_REF]], userRemoteConfigs: [[url: params.REPO_URL, credentialsId: params.GIT_CREDENTIALS_ID]]])
-                    } else {
-                        git branch: params.REPO_REF, url: params.REPO_URL
+                        remote.credentialsId = params.GIT_CREDENTIALS_ID.trim()
                     }
+                    checkout([
+                        $class: 'GitSCM',
+                        branches: [[name: env.REPO_REF_RESOLVED]],
+                        userRemoteConfigs: [remote]
+                    ])
                     env.DEPLOY_GIT_SHA = sh(script: 'git rev-parse HEAD', returnStdout: true).trim()
                 }
             }
