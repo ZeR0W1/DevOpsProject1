@@ -1,220 +1,212 @@
-# Kubernetes / EKS Assignment Progress Context
+# Kubernetes / EKS Assignment Progress
 
-This file is a recovery and continuity note for future Cline sessions. It summarizes the previous Cline conversation, the current restructuring, what has already been changed, and what is planned next.
+Concise recovery note for the next session. Full recovered history is preserved in
+`K8S_EKS_PROGRESS.md.full-backup-20260730T234556Z`.
 
-## Source of recovered context
+## Working rules
 
-- Previous Cline task storage inspected safely from:
-  - `/home/geeta/.vscode-server/data/User/globalStorage/saoudrizwan.claude-dev/tasks/1783609704851`
-- Main files found there:
-  - `ui_messages.json`
-  - `api_conversation_history.json`
-  - `focus_chain_taskid_1783609704851.md`
-  - `task_metadata.json`
-- The previous task eventually got stuck in an automated tool-use error loop after the user asked:
-  > don't we want the terraform stuff to be in the respective script?
+- Edit one workspace file per patch/tool call.
+- Run only short, single-line terminal commands directly.
+- For longer Python, shell, AWS, Terraform, or diagnostic logic, first create a
+  readable script file through the integrated editor, then invoke it with a
+  short command such as `python3 scripts/.task_check.py`.
+- Do not paste heredocs, inline Python, or compound multi-line shell programs
+  into terminal execution requests.
+- The assignment PDF, `DevOps_on_AWS_-_-_k8s__Docker.pdf`, is in the project
+  root. Read/extract it before making implementation or final-compliance
+  decisions; do not rely only on this recovery note for assignment requirements.
+- High-volume output and normal long-running script files worked. A silent,
+  long-running command may return an explicit fallback saying output was not
+  captured despite successful execution; treat that as completed execution,
+  but do not assume output is available.
+- Never assume `localhost:8080` is EKS Jenkins. Verify the owning process and
+  Jenkins response headers; use `18080` for an EKS controller port-forward.
 
-## Important working rules from the conversation
+## Verified AWS state — `us-east-1`, 2026-07-30
 
-- Make file edits one file at a time.
-- Explain concepts in chat, not as excessive comments in files.
-- File comments should document intent, placeholders, or operational details, not replace study explanations.
-- When checking remote Docker image manifests, run checks one by one to avoid hanging/unclear output.
+- No active EKS clusters, non-terminated EC2 instances, active NAT gateways,
+  or allocated Elastic IPs.
+- No RDS, ELB/ALB/NLB, ECS, ECR, Lambda, EFS, FSx, VPC endpoints, DynamoDB,
+  ElastiCache, OpenSearch, Redshift, or owned EBS snapshots were found in the
+  final inventory.
+- S3 bucket `quick-demo-058264247987-us-east-1-an` exists and is explicitly
+  out of scope: **do not alter it**.
+- Four user-approved unattached EBS volumes were deleted and individually
+  verified absent: `vol-09628b7392b379ed1`, `vol-00c19c0672838004f`,
+  `vol-0199765fefda92c48`, and `vol-00224ea73bd71c0b0` (former Jenkins PVC).
+  Total removed capacity: **53 GiB**.
+- `eksctl-learn-eks-cluster` CloudFormation stack remains `CREATE_COMPLETE`
+  with termination protection. Its NAT/EIP are gone. Do not delete the stack
+  without explicit approval; it can retain VPC, subnet, route, security-group,
+  and IAM resources.
 
-## Assignment direction
+## Architecture direction
 
-The assignment is to move the previous EC2-based three-service application into Kubernetes/EKS:
+- Services: frontend, backend, worker; external dependencies: RDS PostgreSQL,
+  S3, SNS, and secrets handling.
+- Docker builds images; Helm deploys them via `helm/frontend`, `helm/backend`,
+  and `helm/worker`.
+- Terraform should own AWS infrastructure, including future EKS.
+- Ansible should become the official lifecycle orchestrator: Terraform apply →
+  kubeconfig → Kubernetes secrets → Helm deploy → intentional teardown.
+- Future EKS target: private nodes with NAT; recreating EKS/NAT incurs cost and
+  requires explicit approval.
+- Frontend currently uses temporary `LoadBalancer`; revisit ingress only after
+  controller and cost requirements are decided.
 
-- frontend service
-- backend service
-- worker service
-- external AWS dependencies remain relevant:
-  - RDS PostgreSQL
-  - S3
-  - SNS
-  - credentials/secrets handling
+## Jenkins status
 
-The chosen practical direction evolved as follows:
+### Current Jenkins-on-EKS lab — 2026-08-03
 
-1. Initially target AWS EKS.
-2. Use the existing EKS cluster temporarily.
-3. Later, the existing EKS cluster was deleted because it was costing money.
-4. Current recommendation: use shell scripts for now to sequence Terraform, EKS creation, and Helm deployment.
-5. AWS-side idle cleanup was discussed as desirable later, but not implemented yet.
+- An EKS Jenkins lab is currently active (this supersedes the historical
+  2026-07-30 inventory statement below). Jenkins is privately accessed with:
+  `kubectl -n jenkins port-forward svc/jenkins 18080:8080`. Occasional
+  `broken pipe` / `connection reset` messages are normal client disconnects
+  while the port-forward remains active.
+- Job `devops-project1-eks-pipeline` is sourced from `Jenkins/Jenkinsfile.eks`.
+  Its build Pod uses a Python agent, Helm, Trivy, and a Jenkins-compatible
+  Kaniko image. Application deployment is opt-in and was disabled for the
+  verified build.
+- Added `Jenkins/Dockerfile.kaniko-agent`: a small compatibility layer over
+  `gcr.io/kaniko-project/executor:v1.23.2-debug` that supplies the conventional
+  `/bin/sh`, `cp`, `mv`, `touch`, and `nohup` paths Jenkins durable tasks need.
+  Published image: `zer0w1/devops-project1-jenkins-kaniko-agent:eks-v2`
+  (`sha256:04535c17ff326ea234bf722fe447bb46613a5595adb9eb2adf5587f1a930b1e4`).
+- Kaniko runs as root only because image construction must preserve ownership
+  metadata from `python:3.11-slim`. The Pod is still non-privileged with
+  `allowPrivilegeEscalation: false`, `RuntimeDefault` seccomp, and only the
+  Kaniko container receives `CHOWN`, `DAC_OVERRIDE`, and `FOWNER`; all other
+  sidecars drop every Linux capability.
+- Build #11 succeeded for `backend` with `DEPLOY_TO_EKS=false`. It completed
+  checkout, Python/Bandit checks, Kaniko build/push, artifact archiving, and
+  temporary Docker Hub auth cleanup. Published application image:
+  `zer0w1/devops-project1-backend:11-068f0d1cc250` at
+  `sha256:d091ba23865fcace28b4171f26f4998bddb3825b0d147bafdefdcb17edd2a691`.
+- EKS Pod Identity Agent is active. Jenkins CD agents use ServiceAccount
+  `jenkins/jenkins-deployer`, IAM role
+  `arn:aws:iam::058264247987:role/devops-app-eks-jenkins-deployer`, an EKS
+  access entry mapped to group `jenkins-deployer`, and namespace Role/Binding
+  restricted to `devops-app`. A temporary verification Pod proved the expected
+  STS assumed role, allowed Deployment/Secret actions, and denied Node deletion.
+- Standalone CD job `devops-project1-eks-deploy` is sourced from
+  `Jenkins/Jenkinsfile-deploy`. `scripts/create_jenkins_job.sh` now supports
+  reusable pre-seeded string/boolean job parameters, and
+  `scripts/create_jenkins_eks_deploy_job.sh` supplies all ten CD parameters so
+  a fresh job exposes **Build with Parameters** before its first run.
+- The standalone CD build succeeded on 2026-08-03 using immutable image
+  `zer0w1/devops-project1-backend:11-068f0d1cc250`. Helm release
+  `devops-app/backend` is revision 1 and `deployed`; both replicas are Ready
+  with zero restarts, run as UID/GID 999, and the ClusterIP has two endpoints.
+  A loopback port-forward returned
+  `{"status":"ok","service":"backend-api"}` from `/health`.
+- Runtime issues found and fixed during CD validation: cluster-scoped
+  `kubectl cluster-info`/Namespace probes were replaced by namespaced
+  Deployment reads to preserve least privilege; the image's named `USER app`
+  was pinned to numeric UID/GID 999; and the Helm v4-incompatible
+  `helm status --show-resources` flag was removed. Failed first-install attempts
+  used `--atomic` and left no release/resources after rollback.
+- The three-service implementation and CI/CD handoff fixes are committed and
+  pushed through `b915d7ef25354e919240134f56dba3f257da865c` on
+  `aws3-containerized`. The remaining dirty workspace includes unrelated and
+  pre-existing Terraform, recovery, legacy Jenkins, and application work; do not
+  stage it broadly.
 
-## Architecture decisions made
+### Three-service Jenkins pipeline direction — 2026-08-03
 
-- Dockerfiles are required because Helm does not build the app; Helm deploys already-built container images.
-- Helm is responsible for Kubernetes resources and deployments.
-- The app is split into separate microservice Helm charts because the assignment/teacher expects each service to have its own chart and values file:
-  - `helm/frontend`
-  - `helm/backend`
-  - `helm/worker`
-- The older `helm/devops-app` chart exists but is not the main direction for the current microservice-chart workflow.
-- Frontend HTML should remain a real file in the repo and be loaded into a ConfigMap, rather than embedding large HTML in `values.yaml`.
-- Updating frontend HTML can be handled by syncing the HTML file before `helm upgrade`.
-- `deploy_k8s.sh` currently performs the Helm deployment flow and consumes Terraform outputs.
-- Terraform should remain responsible for AWS app infrastructure outputs such as RDS/S3/SNS values.
-- EKS cluster creation is currently script-managed, not Terraform-managed.
-- Frontend exposure is still an explicit pending decision:
-  - option A: Kubernetes `Ingress` in front of the frontend Service, likely with an AWS Load Balancer Controller or nginx ingress controller;
-  - option B: frontend Service of type `LoadBalancer`;
-  - option C: keep `ClusterIP` internally while using another already-installed ingress path.
-  - Current chart contains an ingress template, but the final exposure method should be verified against the actual EKS cluster add-ons and assignment expectations before final submission.
+- `Jenkins/Jenkinsfile.eks` is the CI/orchestrator boundary: it checks the Python
+  services, lints/templates all three Helm charts, builds and pushes frontend,
+  backend, and worker with one immutable tag, and optionally triggers the
+  standalone CD job.
+- `Jenkins/Jenkinsfile-deploy` remains the only pipeline that changes application
+  resources in EKS. It repeats Helm lint/template checks, deploys the worker,
+  backend, and frontend releases with `--atomic`, and verifies all three images.
+- PostgreSQL, S3 synchronization, and SNS notifications are intentionally
+  disabled in the current Jenkins deployment. Terraform-derived worker values
+  and Kubernetes DB Secret automation will be wired in a later infrastructure
+  integration milestone rather than exposed as numerous build parameters now.
+- Current job defaults are pre-seeded by thin wrappers
+  `scripts/create_jenkins_eks_pipeline_job.sh` and
+  `scripts/create_jenkins_eks_deploy_job.sh`; both delegate shared CLI/XML work
+  to `scripts/create_jenkins_job.sh`.
+- Temporary implementation: Helm command blocks remain in the Jenkinsfiles to
+  focus first on proving all three services. Planned refactor: move deployment
+  operations into a reusable helper/Jenkins Shared Library or invoke the
+  `kubernetes.core.helm` Ansible module, leaving Jenkinsfiles as orchestration.
+- The frontend nginx runtime template stays checked into the image build context
+  for deterministic builds. Planned refactor: manage that nginx configuration
+  through the frontend Helm chart ConfigMap and mount it into the Pod.
 
-## Completed changes from the previous task and current task
+### Verified automatic CI → CD and final lab state — 2026-08-03
 
-- [x] Added/updated Docker-related app assets for containerized deployment.
-- [x] Added Dockerfiles for app services:
-  - `Ansible-modules-01/roles/app/files/app/Dockerfile.frontend`
-  - `Ansible-modules-01/roles/app/files/app/Dockerfile.backend`
-  - `Ansible-modules-01/roles/app/files/app/Dockerfile.worker`
-- [x] Added frontend nginx container config:
-  - `Ansible-modules-01/roles/app/files/app/src/frontend/nginx/default.conf.template`
-- [x] Added/updated separate Helm charts and values for services:
-  - `helm/frontend`
-  - `helm/backend`
-  - `helm/worker`
-- [x] Added frontend chart file-based HTML support:
-  - `helm/frontend/files/index.html`
-  - `helm/frontend/templates/configmap.yaml`
-- [x] Added/updated frontend, backend, and worker Kubernetes templates:
-  - deployments
-  - services
-  - service accounts
-  - frontend ingress
-- [x] Added `helm/worker/secret.example.yaml` with dummy example values.
-- [x] Updated Terraform outputs needed by Kubernetes deployment:
-  - `rds_hostname`
-  - `db_port`
-  - `db_name`
-  - `db_username`
-  - `aws_region`
-  - `s3_bucket_name`
-  - `sns_topic_arn`
-  - `db_password_secret_name`
-- [x] Updated worker code/config direction so Kubernetes secret injection is used instead of requiring the app to fetch DB password directly from Secrets Manager.
-- [x] Added `scripts/deploy_k8s.sh` in the previous task as the Helm deployment script that reads Terraform outputs.
-- [x] Added `scripts/apply_terraform.sh` to handle Terraform init/validate/plan/apply separately.
-- [x] Added `scripts/create_eks.sh` to create or reuse an EKS cluster with `eksctl` and update kubeconfig.
-- [x] Added `scripts/destroy_eks.sh` to explicitly delete the EKS cluster only.
-- [x] Added `scripts/deploy_all_k8s.sh` as the non-destroy orchestrator:
-  1. Terraform app infrastructure
-  2. EKS creation/reuse
-  3. Helm deployment
-- [x] Updated `deploy_all_k8s.sh` to call scripts using `bash`, so `chmod +x` is not required.
-- [x] Verified script syntax with `bash -n` without creating AWS resources.
-- [x] Verified `destroy_eks.sh --help` without deleting anything.
+- Jenkins CI build **#17** built and pushed frontend, backend, and worker with
+  shared immutable tag `17-b915d7ef2535`, then automatically triggered CD build
+  **#13** with the repository, commit, image repositories, tag, namespace,
+  cluster, and region handoff intact.
+- CD deployed all three Helm releases successfully. Frontend, backend, and
+  worker each reached **2/2 Ready** replicas (**6/6 total**) on the shared tag;
+  all service endpoints were populated, the in-cluster frontend smoke test
+  returned HTML, and the public frontend LoadBalancer returned **HTTP 200**.
+- The undersized two-node `t3.small` node group was replaced safely with managed
+  node group `app-medium-v1`: **3 × `t3.medium`**, minimum **3**, desired **3**,
+  maximum **4**. Old nodes were cordoned/drained one at a time and their node
+  group was deleted only after Jenkins, application, CoreDNS, metrics-server,
+  and EBS CSI workloads were healthy on the replacement nodes.
+- The complete local Terraform state currently contains **0 resources**. The
+  active lab is shell/eksctl/Helm-managed; existing Terraform and the older
+  `deploy_all_k8s.sh` flow are outdated and must not be treated as authoritative
+  for creation or teardown until deliberately modernized/imported.
+- Intentional dependency-ordered teardown is approved for tonight after this
+  evidence is committed: application releases/LoadBalancer → Jenkins/PVC/EBS →
+  Jenkins Pod Identity/access/IAM role → EKS cluster/node group → residual-cost
+  audit. Preserve out-of-scope S3 bucket
+  `quick-demo-058264247987-us-east-1-an`.
 
-## Current script workflow
+### Confirmed local Docker Jenkins work
 
-### Full non-destroy deployment
+- Job: `devops-project1-pipeline`, from `Jenkins/Jenkinsfile`.
+- Default branch: `aws3-containerized`; default build: backend using
+  `Dockerfile.backend` and `zer0w1/devops-project1-backend`.
+- Worker/frontend require parameter changes.
+- Verified through checkout, Python/security stages, Docker build, image
+  inspection, and scan flow.
+- SonarQube and Trivy are opt-in (`RUN_SONARQUBE=false`,
+  `RUN_TRIVY_SCAN=false`). Docker Hub credentials and SMTP may need setup.
+- Local Jenkins/SonarQube were stopped during memory troubleshooting; do not
+  assume they are running.
 
-```bash
-bash scripts/deploy_all_k8s.sh
-```
+### Jenkins-on-EKS status
 
-This runs:
+- Current active cluster: `devops-app-eks` in `us-east-1`; three `t3.medium`
+  worker nodes were Ready after the 2026-08-03 capacity migration. This incurs
+  AWS cost until an intentional teardown is approved and completed.
+- Active Jenkins and application state is documented in **Current
+  Jenkins-on-EKS lab** above. The older 2026-07-30 no-cluster inventory is
+  historical only and must not be used as current state.
+- EKS/Jenkins assets include `Jenkins/values-eks.yaml`,
+  `Jenkins/Jenkinsfile.eks`, `Jenkins/Jenkinsfile-deploy`,
+  `Jenkins/rbac-app-deployer.yaml`, `scripts/deploy_jenkins_eks.sh`,
+  `scripts/create_jenkins_eks_pipeline_job.sh`, and
+  `scripts/create_jenkins_eks_deploy_job.sh`.
 
-1. `bash scripts/apply_terraform.sh`
-2. `bash scripts/create_eks.sh`
-3. `bash scripts/deploy_k8s.sh`
+## Next session
 
-### Non-interactive-ish run
-
-```bash
-bash scripts/deploy_all_k8s.sh --auto-approve --yes
-```
-
-- `--auto-approve` passes through to Terraform apply.
-- `--yes` skips the EKS creation confirmation.
-
-### Destroy EKS only
-
-```bash
-bash scripts/destroy_eks.sh
-```
-
-This intentionally does not destroy Terraform-managed RDS/S3/SNS/VPC/EC2/IAM resources.
-
-## Terraform output status from previous task
-
-The previous task checked:
-
-```bash
-terraform -chdir=terraform output -json | jq 'keys'
-```
-
-and received:
-
-```json
-[]
-```
-
-Meaning: Terraform currently had no usable outputs in state at that point. Before `deploy_k8s.sh` can succeed, Terraform must be applied or an existing state with outputs must be restored.
-
-## Current checklist
-
-- [x] Recover previous Cline conversation context.
-- [x] Create separate Terraform/EKS/Kubernetes scripts instead of putting everything into `deploy_k8s.sh`.
-- [x] Keep destroy separate from the deploy orchestrator.
-- [x] Document recovery context in this file for future Cline sessions.
-- [ ] Decide and verify final frontend exposure method: Ingress vs `LoadBalancer` Service vs another EKS-supported route.
-- [ ] Verify compliance against the assignment PDF in the project root.
-- [ ] Update the root README with the new script workflow.
-- [ ] Review full git diff before commit.
-- [ ] Commit all related Kubernetes/EKS/containerization changes.
-- [ ] Push the current branch.
-
-## Assignment compliance verification
-
-The assignment PDF is present in the project root and should be consulted in a future session before final submission:
-
-- `DevOps_on_AWS_-_-_k8s__Docker.pdf`
-
-Do not assume this checklist is final until the PDF is re-read/extracted and compared directly to the implementation.
-
-- [ ] Extract/read the assignment PDF text in a future session when performing final compliance review.
-- [ ] Confirm the app runs in Kubernetes/EKS rather than on the old separate EC2 app servers.
-- [ ] Confirm all three application services are represented as Kubernetes workloads:
-  - [ ] frontend
-  - [ ] backend
-  - [ ] worker
-- [ ] Confirm each microservice has its own Helm chart and values file, matching the chosen teacher-aligned direction.
-- [ ] Confirm Helm is the mechanism that creates/updates Kubernetes Deployments, Services, ServiceAccounts, ConfigMaps, Secrets, and Ingress/LoadBalancer resources.
-- [ ] Confirm the frontend is exposed externally in an assignment-appropriate way.
-- [ ] Decide whether final frontend exposure should be documented as Ingress or LoadBalancer after checking the actual EKS setup.
-- [ ] Confirm backend and worker stay internal-only unless the PDF requires otherwise.
-- [ ] Confirm worker can connect to external AWS services needed by the app:
-  - [ ] RDS PostgreSQL
-  - [ ] S3
-  - [ ] SNS
-- [ ] Confirm DB credentials are automated from Terraform/RDS creation into a Kubernetes Secret, rather than manually typed for normal deployment.
-- [ ] Confirm generated Terraform outputs feed the Helm deployment flow.
-- [ ] Confirm container images are built and pushed to Docker Hub repositories used by the Helm values.
-- [ ] Confirm security-related Kubernetes choices are documented or implemented where required:
-  - [ ] non-root containers/securityContext
-  - [ ] ServiceAccounts
-  - [ ] least-privilege AWS access direction
-  - [ ] clear secret handling
-- [ ] Collect final evidence commands/output for submission:
-  - [ ] `kubectl get pods -n devops-app -o wide`
-  - [ ] `kubectl get svc -n devops-app -o wide`
-  - [ ] `kubectl get ingress -n devops-app`
-  - [ ] `helm list -n devops-app`
-  - [ ] app health checks through the chosen external endpoint
-  - [ ] worker/RDS/S3/SNS behavior evidence if required by the PDF
-
-## Planned next improvements
-
-- [ ] Add AWS-side idle cleanup for EKS so the cluster can be deleted after being idle/unused for too long without requiring the local machine to stay on.
-- [ ] Decide later whether EKS should move from `eksctl` script management into Terraform.
-- [ ] Update documentation more thoroughly after the restructuring stabilizes.
-- [ ] Finalize frontend exposure after checking actual EKS capabilities and assignment requirements.
-- [ ] Add verification/evidence commands for assignment submission:
-  - `kubectl get pods -n devops-app`
-  - `kubectl get svc -n devops-app`
-  - `helm list -n devops-app`
-  - ingress/load balancer checks
-  - backend/worker health checks
-- [ ] Validate the full deployment on a real EKS cluster after confirming AWS cost expectations.
+1. Modernize Terraform and establish explicit infrastructure ownership. Update
+   modules/state backend, define the desired EKS and supporting AWS resources,
+   and use a deliberate import/recreation plan; never apply the current
+   empty/outdated state against an existing environment.
+2. Consolidate lifecycle automation around that ownership model. Replace the
+   stale Terraform-dependent
+   `deploy_all_k8s.sh` assumptions with one idempotent create workflow and one
+   dependency-safe destroy workflow matching the proven three-node EKS/Jenkins
+   architecture.
+3. As part of the Terraform/lifecycle reimplementation, clean up and trim the
+   codebase. Inventory files by domain and remove obsolete/redundant local Docker
+   Jenkins flows, duplicate scripts, recovery artifacts, stale Helm assets, and
+   abandoned application files only after confirming their purpose. Continue
+   explicit-path staging; never use a broad `git add .` in the mixed workspace.
+4. Refactor verbose Helm shell blocks from Jenkinsfiles into a reusable helper,
+   Jenkins Shared Library, or Ansible `kubernetes.core.helm` workflow while
+   retaining independent CI and CD jobs.
+5. Re-read `DevOps_on_AWS_-_-_k8s__Docker.pdf` and update the primary README with
+   concise architecture, reproducible setup, evidence, lifecycle, cost, and
+   security instructions.
