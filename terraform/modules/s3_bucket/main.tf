@@ -39,31 +39,6 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "machine_catalog" 
   }
 }
 
-resource "aws_s3_bucket_versioning" "machine_catalog" {
-  bucket = aws_s3_bucket.machine_catalog.id
-
-  versioning_configuration {
-    status = "Enabled"
-  }
-}
-
-resource "aws_s3_bucket_lifecycle_configuration" "machine_catalog" {
-  bucket = aws_s3_bucket.machine_catalog.id
-
-  rule {
-    id     = "expire-noncurrent-versions"
-    status = "Enabled"
-
-    filter {}
-
-    noncurrent_version_expiration {
-      noncurrent_days = 90
-    }
-  }
-
-  depends_on = [aws_s3_bucket_versioning.machine_catalog]
-}
-
 data "aws_iam_policy_document" "require_tls" {
   statement {
     sid    = "DenyInsecureTransport"

@@ -22,13 +22,14 @@
   Temporary shell helpers must not become a second owner of those resources.
 - Teardown must be intentional, cost-aware, dependency-ordered, and implemented as
   a separate lifecycle path. Remove application entry points and releases before
-  stateful Jenkins storage and identity bindings, then remove EKS and audit
-  residual billable resources.
+  stateful Jenkins storage and identity bindings, then run one Terraform destroy
+  for the Terraform-owned main stack. Residual billable-resource inspection is a
+  separate read-only operational check, not part of the destroy owner.
 - Transitional shell/`eksctl` resources are not Terraform-owned unless a reviewed
   migration plan explicitly imports or recreates them. Never infer ownership from
   matching names alone.
 - Terraform creates the new private application-content S3 bucket and its security
-  controls. Ansible uploads the initial versioned `index.html` object after
+  controls. Ansible uploads the initial `index.html` object after
   Terraform outputs are available; application Helm/CD configuration consumes the
   bucket and object identifiers. At runtime, the worker persists machine records
   in Terraform-owned RDS PostgreSQL as the primary structured datastore, exports

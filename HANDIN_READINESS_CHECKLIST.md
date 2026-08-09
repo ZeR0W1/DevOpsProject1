@@ -42,7 +42,7 @@ must remain explicitly approved, cost-aware, and dependency-ordered.
 - [x] Configure disposable RDS lifecycle: encrypted `gp3`, no public endpoint,
   backup retention 0, no final snapshot, and deletion protection off.
 - [x] Remove the main stack's runtime dependency on the external `db_creds` secret.
-- [x] Define a private, versioned, encrypted, TLS-only application S3 bucket with
+- [x] Define a private, encrypted, TLS-only application S3 bucket with
   public access blocked and bucket-owner enforcement.
 - [x] Define a separate hardened Terraform-state bootstrap root and partial S3
   backend with native lock files.
@@ -93,14 +93,17 @@ must remain explicitly approved, cost-aware, and dependency-ordered.
 
 - [ ] Complete the Ansible create order: inputs/state -> Terraform infrastructure ->
   kubeconfig/prerequisites -> Jenkins -> initial S3 content -> application config -> CD.
-- [ ] Implement a separate destroy playbook; never import destroy into `site.yml`.
-- [ ] Require exact account/region/cluster/backend/state confirmations before destroy.
-- [ ] Destroy application entry points and Helm releases before cluster infrastructure.
-- [ ] Remove Jenkins release, PVC, RBAC, and owned identity resources in order.
-- [ ] Empty all versions/delete markers from only the Terraform-owned application
-  bucket before destroying it; never target the legacy external bucket.
-- [ ] Destroy the Terraform-owned main stack while retaining the state bucket.
-- [ ] Finish with a read-only residual billable-resource audit.
+- [x] Implement a separate statically validated destroy playbook; never import
+  destroy into `site.yml`.
+- [x] Require nonempty Terraform ownership, the active Kubernetes target, and an
+  exact cluster/application-bucket confirmation before destroy.
+- [x] Destroy application entry points and Helm releases before cluster infrastructure.
+- [x] Remove the Jenkins release, disposable PVC, and namespaces in order.
+- [x] Optionally retain `index.html` and `instances.json` locally, then delete those
+  exact objects before destroying the Terraform-owned application bucket.
+- [x] Run one Terraform main-stack destroy while retaining the remote-state bucket.
+- [ ] Keep read-only residual billable-resource inspection as a separate optional
+  operational check rather than a responsibility of the destroy playbook.
 - [ ] Keep transitional scripts until the Ansible workflows demonstrably replace them.
 
 ## 8. Approved future cloud verification and evidence

@@ -35,6 +35,8 @@ Main project documentation: [../README.md](../README.md)
   Terraform lifecycle tasks
 - `playbooks/prepare_application_secret.yml` — explicitly gated Secrets Manager
   to Kubernetes Secret synchronization
+- `playbooks/destroy.yml` — separate dependency-ordered full-stack teardown; it is
+  intentionally not imported by `site.yml`
 
 ## Useful run commands
 
@@ -55,12 +57,46 @@ PREPARE_TERRAFORM_INPUTS=true \
 # Safe local validation; all mutation stages default off
 ANSIBLE_CONFIG=ansible.cfg ansible-playbook playbooks/site.yml
 
+# Safe destroy validation; defaults to local assertions/debug only
+ANSIBLE_CONFIG=ansible.cfg ansible-playbook playbooks/destroy.yml
+
 # After separately reviewing AWS identity, kubeconfig context, namespace, and
 # rotation impact, synchronize only the application database Secret.
 SYNC_APPLICATION_SECRET=true \
   ANSIBLE_CONFIG=ansible.cfg \
   ansible-playbook playbooks/prepare_application_secret.yml
 ```
+
+## Full-stack destroy
+
+`playbooks/destroy.yml` is the routine destroy interface after the Terraform-owned
+stack has been created and verified. It refuses execution unless Terraform state
+contains the expected EKS, RDS, and application S3 resources, the active Kubernetes
+context and API endpoint match Terraform outputs, and the exact confirmation is:
+
+```text
+DESTROY <terraform-eks-cluster-name> <terraform-application-bucket-name>
+```
+
+When explicitly enabled, the playbook optionally downloads `index.html` and
+`instances.json` into ignored `recovery/<UTC timestamp>/`, removes application and
+Jenkins Helm releases, deletes the disposable Jenkins PVC and namespaces, deletes
+those two application objects, and runs one Terraform main-stack destroy. The
+separate Terraform remote-state bucket remains retained.
+
+```bash
+DESTROY_EXECUTE=true \
+  RETAIN_APPLICATION_DATA=true \
+  EXPECTED_KUBE_CONTEXT='<reviewed-context>' \
+  DESTROY_CONFIRMATION='DESTROY <cluster> <application-bucket>' \
+  ANSIBLE_CONFIG=ansible.cfg \
+  ansible-playbook playbooks/destroy.yml
+```
+
+Do not run the enabled path during the current empty-state Phase 1 boundary. The
+workflow has only local/static validation and has not been cloud-tested. Residual
+billable-resource inspection is a separate optional read-only operational check,
+not a step or ownership responsibility of this destroy playbook.
 
 The generated `.vault-password` and `vault/local-environment.yml` files are
 ignored and mode `0600`. Post-setup runs that decrypt the local file set

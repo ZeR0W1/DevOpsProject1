@@ -132,8 +132,10 @@ as ignored local recovery material.
   password secret retains `recovery_window_in_days=0` for the selected disposable
   stack boundary. The RDS and secret Terraform files were normalized to LF.
 - The application S3 module was reverified locally with `force_destroy=false`,
-  versioning, SSE-S3, full public-access blocking, bucket-owner enforcement,
-  TLS-only policy, and 90-day noncurrent-version expiry. No S3/AWS mutation ran.
+  SSE-S3, full public-access blocking, bucket-owner enforcement, and a TLS-only
+  policy. Versioning and noncurrent-version lifecycle were later removed because
+  the selected recovery boundary optionally retains the two runtime objects locally
+  before an intentional full teardown. No S3/AWS mutation ran.
 - `terraform/README.md` now includes a three-tier direct Terraform recovery runbook:
   local diagnostics; reviewed backend/state recovery with backups; and explicitly
   approved emergency state/resource mutation followed by Ansible reconciliation.
@@ -151,10 +153,21 @@ as ignored local recovery material.
   Jenkins, create/destroy lifecycle, approved cloud evidence, documentation, and
   cleanup work. It explicitly labels the repository as mid-refactor and not yet
   hand-in ready.
-- Work paused late on **2026-08-09** before destroy-workflow implementation. The
-  teardown inventory is complete, and the user selected a fully disposable
-  intentional teardown for RDS/application S3/Jenkins PVC data while retaining the
-  Terraform state bucket by default. No destroy playbook or mutation was run.
+- A separate `playbooks/destroy.yml` now statically implements the selected fully
+  disposable teardown for RDS/application S3/Jenkins PVC data while retaining the
+  Terraform remote-state bucket. It defaults to local assertions/debug only and is
+  never imported by `site.yml`. Its enabled path requires nonempty Terraform state
+  with the expected EKS/RDS/S3 addresses, a kube context/API endpoint matching
+  Terraform outputs, and exact cluster/application-bucket confirmation. It can
+  optionally retain `index.html` and `instances.json` under ignored local
+  `Ansible-modules-01/recovery/`, uses a narrow Helm/kubectl helper to remove
+  application and Jenkins resources/PVC/namespaces, deletes those two S3 objects,
+  then runs one Terraform main-stack destroy. Residual-cost inspection remains a
+  separate optional read-only operational check, not part of destroy ownership.
+- Destroy syntax, helper shell syntax, recursive Terraform formatting, Git
+  whitespace, and the default destroy run passed on **2026-08-09**; the default run
+  completed `ok=2`, `changed=0`, `skipped=15`. No Terraform remote-state access,
+  AWS/Kubernetes/Helm mutation, destroy, Git staging, commit, or push occurred.
 
 ## Current live EKS boundary — verified 2026-08-08
 
@@ -329,17 +342,17 @@ coherent, reproducible, and safe.
   wiring, private subnet placement, node-to-database security-group path, secret
   flow, outputs, worker configuration, schema initialization, and failure handling.
 - [ ] Create a new private Terraform-owned application-content S3 bucket, upload
-  the initial versioned `index.html` through Ansible after Terraform outputs exist,
+  the initial `index.html` through Ansible after Terraform outputs exist,
   and remove runtime dependence on the legacy `quick-demo-058264247987-us-east-1-an`
   bucket without altering that legacy bucket.
 - [ ] Implement and statically validate one idempotent Ansible create workflow:
   Terraform infrastructure; kubeconfig/prerequisites; Jenkins namespace, storage,
   Helm release, identity/RBAC and job seeding; initial S3 content; application
   secrets/configuration; then deployment through the standalone CD job.
-- [ ] Implement and statically validate a separate dependency-ordered Ansible
-  destroy workflow covering application entry points/releases, Jenkins state and
-  identity, EKS/infrastructure teardown, retained-data decisions, and residual-cost
-  audit; never make destroy an implicit deploy action.
+- [x] Implement and statically validate a separate dependency-ordered Ansible
+  destroy workflow covering application entry points/releases, Jenkins state,
+  EKS/infrastructure teardown, and retained-data decisions; never make destroy an
+  implicit deploy action.
 - [ ] Execute and verify the reviewed teardown only with explicit approval, then
   audit AWS for residual billable resources and document intentionally retained
   data/external resources without mutating the legacy bucket or old protected stack
@@ -394,11 +407,10 @@ core requirements. Do not present unimplemented bonus ideas as completed work.
    seeding; initial repository `index.html` upload to the Terraform-owned bucket;
    application secrets/configuration; then standalone CD invocation. Keep Terraform
    as AWS owner and Ansible as routine lifecycle orchestrator.
-4. Build and statically validate a separate dependency-ordered destroy workflow:
-   application entry points/releases first; Jenkins release/state/identity next;
-   then Terraform-owned infrastructure; retained remote-state bucket decisions;
-   and a read-only residual-cost audit. Preserve transitional teardown scripts until
-   this workflow demonstrably covers their responsibilities.
+4. The dependency-ordered destroy workflow is now statically validated. Do not run
+   its enabled path until the Terraform-owned stack has been created and verified;
+   retain transitional teardown scripts until replacement coverage is demonstrated.
+   Residual-cost inspection remains a separate optional read-only operation.
 5. Continue local worker/PostgreSQL/S3/SNS integration and tests, Helm/CD wiring,
    then the assignment-complete root README and architecture diagram. Do not modify
    imported Ansible roles, the legacy external S3 bucket, the protected old stack,

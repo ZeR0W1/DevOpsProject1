@@ -52,6 +52,7 @@ src/legacy/
 vault_pass.txt
 Ansible-modules-01/.vault-password
 Ansible-modules-01/vault/local-environment.yml
+Ansible-modules-01/recovery/
 ansible.log
 Ansible-modules-01/inventory.ini
 
