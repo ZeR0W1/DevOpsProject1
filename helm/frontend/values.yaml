@@ -74,4 +74,6 @@ frontendContent:
   enabled: true
   mountPath: /usr/share/nginx/html/index.html
   subPath: index.html
-  sourceFile: Ansible-modules-01/roles/app/files/app/src/frontend/index2.html # temporary local source file; replace later with your final repo/chart-managed file flow
+  # Canonical repository source. The remaining ConfigMap refactor will make this
+  # path the single input used by image and chart validation workflows.
+  sourceFile: Ansible-modules-01/roles/app/files/app/src/frontend/index.html

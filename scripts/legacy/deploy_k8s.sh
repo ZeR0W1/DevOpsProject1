@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 TERRAFORM_DIR="$PROJECT_ROOT/terraform"
 FRONTEND_CHART_DIR="$PROJECT_ROOT/helm/frontend"
 BACKEND_CHART_DIR="$PROJECT_ROOT/helm/backend"
 WORKER_CHART_DIR="$PROJECT_ROOT/helm/worker"
-FRONTEND_SOURCE_HTML="$PROJECT_ROOT/Ansible-modules-01/roles/app/files/app/src/frontend/index2.html"
+FRONTEND_SOURCE_HTML="$PROJECT_ROOT/Ansible-modules-01/roles/app/files/app/src/frontend/index.html"
 FRONTEND_CHART_HTML="$FRONTEND_CHART_DIR/files/index.html"
 NAMESPACE="devops-app"
 

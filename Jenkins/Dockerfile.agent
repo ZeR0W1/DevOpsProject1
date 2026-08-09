@@ -1,0 +1,97 @@
+FROM jenkins/inbound-agent:latest-jdk21
+
+LABEL org.opencontainers.image.title="DevOps Project Jenkins Python Agent" \
+      org.opencontainers.image.description="Jenkins agent tool image used by the EKS CI pipeline for checkout and Python checks." \
+      org.opencontainers.image.source="https://github.com/ZeR0W1/DevOpsProject1"
+
+USER root
+
+ARG SONAR_SCANNER_VERSION=6.2.1.4610
+ARG DOCKER_CLI_VERSION=28.5.1
+ARG TARGETARCH
+
+ENV SONAR_SCANNER_HOME=/opt/sonar-scanner \
+    PATH="/opt/sonar-scanner/bin:${PATH}" \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
+        bash \
+        ca-certificates \
+        curl \
+        git \
+        gnupg \
+        jq \
+        lsb-release \
+        openssh-client \
+        python3 \
+        python3-pip \
+        python3-venv \
+        unzip; \
+    rm -rf /var/lib/apt/lists/*
+
+# Docker CLI remains for compatibility with the archived local-agent workflow.
+# The active EKS CI pipeline builds application images in its separate Kaniko
+# container and does not mount a host Docker socket into this container.
+RUN set -eux; \
+    case "${TARGETARCH:-amd64}" in \
+        amd64) docker_arch="x86_64" ;; \
+        arm64) docker_arch="aarch64" ;; \
+        *) echo "Unsupported architecture for Docker CLI: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL -o /tmp/docker.tgz \
+        "https://download.docker.com/linux/static/stable/${docker_arch}/docker-${DOCKER_CLI_VERSION}.tgz"; \
+    tar -xzf /tmp/docker.tgz -C /tmp; \
+    install -m 0755 /tmp/docker/docker /usr/local/bin/docker; \
+    rm -rf /tmp/docker /tmp/docker.tgz; \
+    docker --version
+
+# Sonar Scanner remains available for the archived local pipeline.
+RUN set -eux; \
+    case "${TARGETARCH:-amd64}" in \
+        amd64) scanner_arch="linux-x64" ;; \
+        arm64) scanner_arch="linux-aarch64" ;; \
+        *) echo "Unsupported architecture for Sonar Scanner: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL -o /tmp/sonar-scanner.zip \
+        "https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-${SONAR_SCANNER_VERSION}-${scanner_arch}.zip"; \
+    unzip -q /tmp/sonar-scanner.zip -d /opt; \
+    mv "/opt/sonar-scanner-${SONAR_SCANNER_VERSION}-${scanner_arch}" "${SONAR_SCANNER_HOME}"; \
+    rm -f /tmp/sonar-scanner.zip; \
+    sonar-scanner --version
+
+# Trivy remains available for the archived local pipeline. EKS CI uses a separate
+# pinned Trivy container.
+RUN set -eux; \
+    curl -fsSL https://aquasecurity.github.io/trivy-repo/deb/public.key \
+        | gpg --dearmor -o /usr/share/keyrings/trivy.gpg; \
+    echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" \
+        > /etc/apt/sources.list.d/trivy.list; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends trivy; \
+    rm -rf /var/lib/apt/lists/*; \
+    trivy --version
+
+# Preinstall the Python CI tools used by Jenkins/Jenkinsfile.eks. The pipeline
+# still creates a clean per-build venv and installs tools there for repeatability.
+RUN set -eux; \
+    python3 -m pip install --no-cache-dir --break-system-packages \
+        bandit \
+        flake8 \
+        pytest; \
+    python3 --version; \
+    pip3 --version; \
+    git --version; \
+    docker --version
+
+# Retain Docker-group compatibility for the archived local-agent workflow.
+RUN set -eux; \
+    if ! getent group docker >/dev/null; then \
+        groupadd --gid 999 docker; \
+    fi; \
+    usermod -aG docker jenkins
+
+USER jenkins
+WORKDIR /home/jenkins/agent

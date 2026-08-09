@@ -29,7 +29,11 @@
 
 ## Edit and validate safely
 
-- Edit one workspace file per patch/tool call.
+- Edit one workspace file per editor/patch tool call. This is a workaround for
+  the legacy Cline multi-file approval UI bug, not a prohibition on concise,
+  explicitly approved batch filesystem operations. After the exact paths and
+  ownership boundary are verified, one short shell command may move or delete
+  multiple approved files.
 - Use exact, unique patch context; never rely on fuzzy patching.
 - Never issue a file or directory deletion action without first asking the user
   and receiving explicit approval. This includes editor delete operations,
@@ -43,9 +47,9 @@
 - Compensate for legacy Cline bundle limitations with one-file patches, explicit
   post-edit reads, short commands, Git inspection, and concise status updates. Do
   not rely on checkpoints as the sole safety mechanism.
-- Avoid sequential multi-file approval operations because legacy approval buttons
-  can become stuck. Tasks created under the `next` bundle may be hidden in legacy,
-  but workspace files remain authoritative.
+- Avoid sequential multi-file editor/patch approval operations because legacy
+  approval buttons can become stuck. Tasks created under the `next` bundle may be
+  hidden in legacy, but workspace files remain authoritative.
 
 ## Preserve the mixed workspace
 

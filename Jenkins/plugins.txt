@@ -1,0 +1,14 @@
+# Pinned Jenkins plugins baked into Dockerfile.controller.
+# Keep this list aligned with the functionality required by Jenkins/Jenkinsfile.
+kubernetes:4398.vb_b_33d9e7fe23
+workflow-aggregator:608.v67378e9d3db_1
+# Explicitly pin the matching Declarative API family. Without these direct pins,
+# the offline resolver can bake incompatible transitive versions into the image.
+pipeline-model-api:2.2255.v56a_15e805f12
+pipeline-model-definition:2.2255.v56a_15e805f12
+pipeline-model-extensions:2.2255.v56a_15e805f12
+json-path-api:2.9.0-148.v22a_7ffe323ce
+git:5.8.1
+configuration-as-code:2036.v0b_c2de701dcb_
+email-ext:1933.v45cec755423f
+sonar:2.18.3

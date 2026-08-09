@@ -1,449 +1,210 @@
+# DevOps on AWS: Kubernetes, EKS, and Jenkins
 
-## Overview
+> **Repository status: mid-refactor — not hand-in ready.**
+>
+> The target Terraform-owned, Ansible-orchestrated EKS lifecycle has not been
+> created or verified end to end. Current validation is local/static unless a
+> dated evidence section says otherwise. Do not run mutation stages without
+> reviewing the safety gates and current ownership boundary.
 
-> **Kubernetes/EKS assignment checklist:** see [`K8S_EKS_PROGRESS.md`](K8S_EKS_PROGRESS.md) for the current recovery notes, completed/planned changes, frontend exposure decision, and assignment PDF compliance checklist.
+## Project goal
 
-This project provisions and deploys a 3-tier AWS application using **Terraform + Ansible**:
+The assignment target is a three-service application on Amazon EKS:
 
-- **Frontend EC2**: nginx + static UI (served from S3-synced `index2.html`)
-- **Backend EC2**: FastAPI validation/orchestration API
-- **Worker EC2**: FastAPI persistence/integration API (RDS + S3 + SNS)
+- **frontend** — nginx-hosted browser UI and the only generally public
+  application entry point;
+- **backend** — internal FastAPI validation/orchestration service;
+- **worker** — internal FastAPI persistence and integration service;
+- **RDS PostgreSQL** — primary structured datastore;
+- **S3** — initial `index.html` content and synchronized `instances.json` backup;
+- **SNS** — application notifications; and
+- **Jenkins** — mandatory CI with a separately controlled optional CD job.
 
-Cloud services:
-- **RDS PostgreSQL** for machine persistence
-- **S3** for machine catalog/object storage
-- **SNS** for notifications
-- **Secrets Manager** for DB password retrieval at runtime (worker)
+The remaining work is tracked in
+[`HANDIN_READINESS_CHECKLIST.md`](HANDIN_READINESS_CHECKLIST.md). The durable
+safety and recovery record is
+[`.clinerules/90-current-project-status.md`](.clinerules/90-current-project-status.md).
 
-## Short architecture explanation
+## Ownership and lifecycle boundaries
 
-The architecture is based on three EC2 instances inside one AWS VPC:
+- **Terraform owns AWS infrastructure**: VPC networking, EKS, RDS, S3, SNS,
+  Secrets Manager, and AWS identity integrations.
+- **Ansible is the routine lifecycle orchestrator**. The guarded create flow is
+  still incomplete; default execution performs local checks and leaves mutations
+  disabled.
+- **Jenkins CI and CD remain separate**. `Jenkins/Jenkinsfile.eks` checks code and
+  charts and builds one immutable tag for all three images. CD through
+  `Jenkins/Jenkinsfile-deploy` is optional and is the only Jenkins job allowed to
+  change application workloads.
+- **Helm deploys three independent releases** from `helm/frontend`,
+  `helm/backend`, and `helm/worker`. The retained `helm/spring-music` chart is the
+  professor-provided reference/template; it is not the production application
+  release.
 
-- the **frontend EC2** is the public-facing machine and runs nginx
-- the **backend EC2** receives validated requests from the frontend
-- the **worker EC2** performs persistence and integration tasks
-- **RDS PostgreSQL** stores machine records
-- **S3** stores the synchronized machine catalog file
-- **SNS** sends notifications when worker-side processing completes
-
-User traffic enters through nginx on the frontend EC2. nginx proxies API requests to the backend. The backend validates and prepares machine data, then forwards it to the worker. The worker stores the catalog in PostgreSQL, updates the JSON catalog file, uploads the file to S3, and publishes notifications through SNS.
-
-## System components
-
-### Terraform
-
-- provisions AWS infrastructure (networking, IAM, EC2, RDS, S3, SNS)
-- outputs runtime values consumed by Ansible
-- keeps infra definition versioned and reproducible
-
-### Ansible
-
-- configures provisioned instances
-- installs and configures nginx, app runtime, and services
-- syncs Terraform outputs into inventory/group vars for deployment
-
-### Frontend EC2
-
-- public entry point of the application
-- runs **nginx**
-- serves `Ansible-modules-01/roles/frontend_content/files/index2.html` (synced from S3)
-- proxies API requests such as `/health`, `/machines`, and `/schema/` to the backend
-
-### Backend EC2
-
-- runs the backend FastAPI service
-- validates machine input
-- assigns machine IDs
-- exposes read and write API endpoints
-- forwards machine-processing requests to the worker service
-
-### Worker EC2
-
-- runs the worker FastAPI service
-- stores and reads machine records
-- synchronizes machine data between JSON, PostgreSQL, and S3
-- publishes SNS notifications
-- exposes maintenance functionality such as recataloguing machine IDs
-
-### RDS PostgreSQL
-
-- stores machine records in the `machines` table
-- acts as the authoritative persistent database when PostgreSQL mode is enabled
-- is currently public so pgAdmin access can be used directly
-
-### S3
-
-- stores the synchronized machine catalog file
-- receives uploads from the worker after machine processing and maintenance operations
-
-### SNS
-
-- sends notifications generated by the worker
-- is connected to the email topic already used by the project
-
-### nginx
-
-- runs on the frontend EC2
-- serves the frontend HTML page
-- acts as reverse proxy between browser traffic and backend API routes
-
-## Project structure
-
-```text
-Ansible-modules-01/
-  playbooks/
-  roles/
-    app/files/app/src/
-      frontend/
-      backend/
-      worker/
-      shared/
-terraform/
-  modules/
-```
-
-Application source used by deployment lives in:
-
-- `Ansible-modules-01/roles/app/files/app/src/backend/`
-- `Ansible-modules-01/roles/app/files/app/src/worker/`
-- `Ansible-modules-01/roles/app/files/app/src/frontend/`
-- `Ansible-modules-01/roles/app/files/app/src/shared/`
-
-## Architecture diagram
+## Target architecture
 
 ```mermaid
-flowchart TD
-    %% In-chart legend (top-left)
-    subgraph Legend[Legend]
-        direction TB
-        Ltf[Terraform managed]
-        Lans[Ansible managed]
-    end
+flowchart LR
+    Internet((Internet)) --> FrontEntry[Public frontend entry point]
 
-    Internet((Internet)) --> IGW[Internet Gateway]
-
-    subgraph VPC[ ]
-        direction TB
-
-        VpcLabel[VPC]
-
-        subgraph Net1[ ]
-            direction TB
-            subgraph Net1Row[ ]
-                direction LR
-                Front[Frontend EC2]
-                Back[Backend EC2]
-                Worker[Worker EC2]
-                Nginx[nginx service]
-                BackSvc[backend service]
-                WorkerSvc[worker service]
-            end
-            PubLabel[Public subnet]
+    subgraph AWS[AWS account / VPC]
+      subgraph EKS[Terraform-owned EKS]
+        subgraph AppNS[devops-app namespace]
+          Front[Frontend Deployment + Service]
+          Back[Backend Deployment + ClusterIP]
+          Worker[Worker Deployment + ClusterIP]
+          FrontCM[Frontend ConfigMap]
+          RuntimeCM[Runtime ConfigMap]
+          DbSecret[Database Secret]
+          FrontSA[frontend ServiceAccount]
+          BackSA[backend ServiceAccount]
+          WorkerSA[worker ServiceAccount]
         end
 
-        subgraph Net2[ ]
-            direction TB
-            DbLabel[DB subnet]
-            RDS[(RDS PostgreSQL)]
+        subgraph JenkinsNS[jenkins namespace]
+          Jenkins[Jenkins controller + PVC]
+          Agents[Ephemeral CI/CD agents]
         end
+      end
+
+      RDS[(Private RDS PostgreSQL)]
+      Bucket[(Private application S3 bucket)]
+      Topic[(SNS topic)]
     end
 
-    S3[(S3 bucket)]
-    SNS[(SNS topic)]
-    Email[Email]
-    SGHttp[SG frontend-http]
-    SGBack[SG backend-api]
-    SGWorker[SG worker-app]
-    SGDb[SG db]
-    SgSsh[SG ssh_admin - admin_cidr]
-
-    IGW --> Front
-    Front -.configured by Ansible.- Nginx
-    Back -.configured by Ansible.- BackSvc
-    Worker -.configured by Ansible.- WorkerSvc
-
-    Nginx -->|proxy /health,/machines| Back
-    Back -->|API| Worker
-    Worker -->|DB| RDS
-    Worker -->|upload catalog| S3
-    Worker -->|publish notification| SNS
-    SNS --> Email
-
-    SGHttp -.attached.- Front
-    SGBack -.attached.- Back
-    SGWorker -.attached.- Worker
-    SGDb -.attached.- RDS
-    SgSsh -.optional attach.- Front
-    SgSsh -.optional attach.- Back
-    SgSsh -.optional attach.- Worker
-
-    classDef tf fill:#1f2937,stroke:#60a5fa,color:#fff;
-    classDef ans fill:#14532d,stroke:#4ade80,color:#fff;
-    classDef title fill:none,stroke:none,color:#ffffff,font-size:34px,font-weight:bold;
-    classDef sublabel fill:none,stroke:none,color:#ffffff,font-size:18px,font-weight:bold;
-    classDef invis fill:none,stroke:none,color:transparent;
-
-    class Ltf,Front,Back,Worker,RDS,S3,SNS,SGHttp,SGBack,SGWorker,SGDb,SgSsh tf;
-    class Lans,Nginx,BackSvc,WorkerSvc ans;
-    class VpcLabel title;
-    class PubLabel,DbLabel sublabel;
-    class Net1Row invis;
+    FrontEntry --> Front
+    Front --> Back
+    Back --> Worker
+    Worker --> RDS
+    Worker -->|instances.json| Bucket
+    Worker --> Topic
+    FrontCM --> Front
+    RuntimeCM --> Worker
+    DbSecret --> Worker
+    FrontSA --> Front
+    BackSA --> Back
+    WorkerSA --> Worker
+    Agents -->|CI: build/push| Registry[(Public Docker Hub repositories)]
+    Agents -->|optional CD only| AppNS
 ```
 
-## Connections between the services
+Target Kubernetes invariants include two replicas per service, readiness/liveness
+probes, resource requests/limits, non-root least-privilege security contexts,
+separate ServiceAccounts, an internal backend and worker, and a private RDS/S3/SNS
+trust boundary.
 
-The service flow is:
+## Repository map
 
-1. the browser reaches the **frontend EC2** over HTTP
-2. **nginx** serves the static frontend page
-3. nginx proxies API requests to the **backend**
-4. the **backend** validates the request and forwards processing to the **worker**
-5. the **worker** stores machine data in **RDS PostgreSQL**
-6. the worker updates the catalog file and uploads it to **S3**
-7. the worker publishes a completion notification to **SNS**
-8. SNS forwards the notification to email
+| Path | Purpose |
+| --- | --- |
+| `terraform/` | Main AWS stack; partial S3 backend configuration |
+| `terraform/state-bootstrap/` | Separate retained Terraform-state bucket root |
+| `Ansible-modules-01/playbooks/site.yml` | Guarded create entry point; incomplete |
+| `Ansible-modules-01/playbooks/destroy.yml` | Separate guarded destroy entry point |
+| `Jenkins/Jenkinsfile.eks` | Mandatory EKS-native CI pipeline |
+| `Jenkins/Jenkinsfile-deploy` | Optional standalone CD pipeline |
+| `helm/frontend`, `helm/backend`, `helm/worker` | Independent application charts |
+| `helm/spring-music` | Professor-provided Helm reference/template |
+| `Ansible-modules-01/roles/app/files/app/src/` | Application source |
+| `scripts/legacy/`, `Jenkins/legacy/` | Archived transitional/lab assets; not supported lifecycle owners |
 
-## Assumptions
+The canonical frontend source is
+`Ansible-modules-01/roles/app/files/app/src/frontend/index.html`.
 
-This documentation assumes:
+## Jenkins model
 
-- you run the control-node workflow on **Linux** (Ansible/Terraform examples are Linux-first)
-- Terraform `ami_id` is currently set to an Amazon Linux image in this repository's active tfvars;
-  if you switch to a different distro AMI, package/service behavior may differ unless playbooks are adapted
-- you have AWS credentials configured for an identity that can create IAM, EC2, VPC, RDS, S3, SNS, and Secrets Manager resources
-- you can SSH into provisioned EC2 instances using the configured key pair
-- your SSH private key has restrictive local permissions (for example `chmod 600 <key>.pem`) so OpenSSH/Ansible can use it
-- the project is executed from this repository root with the documented directory structure unchanged
+The CI pipeline is mandatory. It performs checkout, Python compilation/testing,
+Dockerfile checks, Helm lint/render checks, image builds with Kaniko, and pushes
+frontend/backend/worker images under one immutable tag. Trivy scanning is a
+selected bonus and remains optional while inherited-vulnerability policy is
+finalized.
 
-If you use macOS/Windows, the same workflow applies but package installation commands differ.
+Successful CI does **not** require automatic deployment. CD is controlled by
+`AUTO_DEPLOY` and a separate job. This preserves the security boundary that only
+the deployer job receives namespace-scoped Kubernetes mutation permissions.
 
-## Setup and run instructions
+Public custom Jenkins images are reproducible from:
 
-### Project setup in a development environment
+- `Jenkins/Dockerfile.controller` + `Jenkins/plugins.txt`;
+- `Jenkins/Dockerfile.agent` for Python/check tooling; and
+- `Jenkins/Dockerfile.kaniko-agent` for the documented Kaniko compatibility
+  image.
 
-Clone the repository and create a Python virtual environment:
+Users can pull public images without the repository owner's Docker Hub
+credentials. Credentials are needed only to publish replacement images.
+
+## Safe local validation
+
+The following commands are intended for local/static validation. They do not
+authorize a Terraform plan/apply, backend initialization, cloud mutation, secret
+sync, or enabled destroy:
 
 ```bash
-git clone https://github.com/ZeR0W1/DevOpsProject1.git
-cd DevOpsProject1
-python -m venv venv
-source venv/bin/activate  # Linux
-# or: venv\Scripts\Activate  # Windows
-pip install -r Ansible-modules-01/roles/app/files/app/src/backend/requirements.txt
-pip install -r Ansible-modules-01/roles/app/files/app/src/worker/requirements.txt
+terraform -chdir=terraform fmt -check -recursive
+terraform -chdir=terraform validate
+terraform -chdir=terraform/state-bootstrap fmt -check
+terraform -chdir=terraform/state-bootstrap validate
+
+ANSIBLE_CONFIG=Ansible-modules-01/ansible.cfg \
+  ansible-playbook --syntax-check Ansible-modules-01/playbooks/site.yml
+ANSIBLE_CONFIG=Ansible-modules-01/ansible.cfg \
+  ansible-playbook --syntax-check Ansible-modules-01/playbooks/destroy.yml
+
+helm lint helm/frontend
+helm lint helm/backend
+helm lint helm/worker
+helm template frontend helm/frontend --namespace devops-app >/dev/null
+helm template backend helm/backend --namespace devops-app >/dev/null
+helm template worker helm/worker --namespace devops-app >/dev/null
 ```
 
-Install Terraform, Ansible, and AWS CLI (example on Ubuntu/Debian):
+See [`terraform/README.md`](terraform/README.md) and
+[`Ansible-modules-01/README.md`](Ansible-modules-01/README.md) before running any
+lifecycle stage.
 
-```bash
-sudo apt update
-sudo apt install -y ansible awscli
+## Create and destroy status
 
-# Terraform (HashiCorp repo)
-wget -O- https://apt.releases.hashicorp.com/gpg | \
-  gpg --dearmor | \
-  sudo tee /usr/share/keyrings/hashicorp-archive-keyring.gpg >/dev/null
-echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" | \
-  sudo tee /etc/apt/sources.list.d/hashicorp.list
-sudo apt update
-sudo apt install -y terraform
-```
+`Ansible-modules-01/playbooks/site.yml` currently orchestrates guarded local input
+preparation, Terraform lifecycle gates, and application-secret preparation. The
+remaining cluster prerequisites, Jenkins Helm/RBAC/job seeding, initial S3
+content, runtime configuration, and standalone CD invocation are not complete.
 
+`Ansible-modules-01/playbooks/destroy.yml` is a separate dependency-ordered
+workflow. Its default invocation performs only local assertions/debug. The enabled
+path requires explicit flags, Terraform ownership checks, exact cluster/bucket
+confirmation, and a reviewed state boundary before it can remove application
+releases, Jenkins data, the application bucket contents, or the main stack. The
+Terraform state bucket remains retained by default.
 
+## Protected external resources
 
-### End-to-end deployment
+- Preserve legacy bucket `quick-demo-058264247987-us-east-1-an`. It is not part of
+  the new Terraform state and must not be altered or silently adopted.
+- Preserve termination-protected stack `eksctl-learn-eks-cluster` during the
+  current phase.
+- The transitional live `devops-app-eks` cluster was created through
+  eksctl/CloudFormation and is not owned by the empty Terraform state. The future
+  Terraform cluster must use a distinct name.
 
-Run from control node:
+## Current limitations
 
-```bash
-cd Ansible-modules-01
-ANSIBLE_CONFIG=ansible.cfg ansible-playbook playbooks/site.yml
-```
+- PostgreSQL/S3/SNS worker behavior and automated tests are still incomplete.
+- The final public frontend route and controlled Jenkins administrative access
+  still need implementation/verification.
+- The Ansible create flow and Jenkins deployment/job-seeding lifecycle are not
+  complete.
+- Assignment-complete evidence and the final architecture/security narrative are
+  still pending.
 
-This orchestrates:
-1. Guarded Terraform remote-state/infrastructure lifecycle
-   (`playbooks/configure_terraform_state.yml`)
-2. Terraform→Ansible sync (`playbooks/sync_from_terraform.yml`)
-3. Frontend nginx and content setup (`playbooks/install-nginx.yml`)
-4. Backend/worker app deploy (`playbooks/deploy_app.yml`)
+Historical scripts are retained only for provenance under `scripts/legacy/` and
+`Jenkins/legacy/`. Do not use them as an alternative infrastructure or deployment
+owner.
 
-### Kubernetes / EKS deployment workflow in progress
+## Detailed documentation
 
-The Kubernetes assignment work is being tracked separately in [`K8S_EKS_PROGRESS.md`](K8S_EKS_PROGRESS.md). That file is the current recovery/context checklist for future work sessions.
-
-Current script-based flow:
-
-```bash
-# 1. Apply Terraform-managed AWS app infrastructure and outputs.
-bash scripts/apply_terraform.sh
-
-# 2. Create or reuse the EKS cluster and update kubeconfig.
-bash scripts/create_eks.sh
-
-# 3. Deploy the frontend/backend/worker Helm charts.
-bash scripts/deploy_k8s.sh
-```
-
-Or run the non-destroy orchestration script:
-
-```bash
-bash scripts/deploy_all_k8s.sh
-```
-
-For a less interactive run:
-
-```bash
-bash scripts/deploy_all_k8s.sh --auto-approve --yes
-```
-
-Destroying EKS is intentionally separate from deployment:
-
-```bash
-bash scripts/destroy_eks.sh
-```
-
-Notes:
-- `deploy_all_k8s.sh` sequences Terraform → EKS → Helm; it does not destroy anything.
-- `destroy_eks.sh` deletes only the EKS cluster and does not destroy Terraform-managed app infrastructure.
-- The frontend exposure method is still pending final decision: Ingress vs Service type `LoadBalancer` vs another EKS-supported route.
-- Final assignment compliance should be checked against the PDF in the project root before submission.
-
-### Validation checks
-
-After deploy:
-
-```bash
-cd terraform
-FRONT_IP=$(terraform output -raw frontend_public_ip)
-curl -fsS "http://$FRONT_IP/health"
-curl -fsS "http://$FRONT_IP/machines"
-```
-
-### systemd services
-
-The deployed EC2 instances use systemd units for the backend and worker services, and nginx as the frontend web server.
-
-## Use of nginx, RDS, S3, and SNS in the application
-
-### nginx
-
-- hosts the frontend HTML page
-- exposes the public application endpoint
-- proxies browser API traffic to the backend
-
-### RDS
-
-- stores machine records in PostgreSQL
-- is used by the worker for persistent machine storage
-- currently remains public to allow direct pgAdmin access
-
-### S3
-
-- stores the synchronized `instances.json` catalog copy
-- receives uploads from the worker after processing or recataloguing
-
-### SNS
-
-- sends application notifications from the worker
-- is used to notify by email when worker-side operations complete
-
-## Deployment notes
-
-- Frontend source file for S3 sync (editable copy in repo):
-  - `Ansible-modules-01/roles/frontend_content/files/index2.html`
-- Backend code:
-  - `Ansible-modules-01/roles/app/files/app/src/backend/`
-- Worker code:
-  - `Ansible-modules-01/roles/app/files/app/src/worker/`
-- Active EC2 security groups:
-  - Front: `http`
-  - Back: `backend-api`
-  - Worker: `worker-app`
-- Active security-group flow:
-  - `http` allows inbound `80/tcp` from the internet
-  - `backend-api` allows inbound `8000/tcp` from SG `http`
-  - `worker-app` allows inbound `8000/tcp` from SG `backend-api`
-  - RDS SG `default` allows `5432/tcp` from SG `worker-app` and from the admin IP used for pgAdmin access
-
-## Security decisions rationale
-
-- `0.0.0.0/0` is used for `80/tcp` only on the public frontend to expose HTTP.
-- `admin_cidr` is defined in Terraform input/secrets flow and then used by the networking module (`terraform/modules/networking`) to configure the `ssh_admin` security group.
-- `ssh_admin` is a Terraform-created security group in `terraform/modules/networking/main.tf`, attached to app instances when `enable_ssh_ingress=true`.
-- App-to-app communication is restricted to the relevant security groups (`frontend -> backend -> worker`).
-- RDS ingress is restricted to worker security group + admin CIDR (for direct DB access when needed).
-
-## Runtime/secrets model
-
-- Worker reads DB password from **AWS Secrets Manager** using:
-  - `POSTGRES_PASSWORD_SECRET_NAME`
-  - `AWS_REGION`
-- DB password is not hardcoded into generated Ansible app environment files.
-
-## Vault vs AWS Secrets Manager
-
-Both are used, but for different scopes:
-
-- **Ansible Vault (`Ansible-modules-01/vault/staging.yml`)**
-  - stores control-node/deployment inputs (for example SSH key path and deployment-time values)
-  - is consumed by Ansible playbooks during orchestration
-
-- **AWS Secrets Manager**
-  - stores runtime cloud secret values (notably DB password)
-  - is accessed by the worker service at runtime via IAM permissions
-  - avoids embedding DB password directly in generated app env files
-
-## Terraform state management
-
-- State is currently managed as **local state** under `terraform/terraform.tfstate`.
-- This is acceptable for coursework/demo workflows on a single control node.
-- For team/production use, migrate state to a remote backend (for locking/history/access control).
-
-
-## Destroy / teardown
-
-```bash
-cd terraform
-terraform destroy
-```
-
-If the bucket is intentionally retained (to keep frontend content), `terraform destroy` may stop at S3 with `BucketNotEmpty`.
-
-If using a non-default variable file:
-
-```bash
-terraform destroy -var-file=terraform.fresh.tfvars
-```
-
-## Service documentation
-
-- Terraform docs: [terraform/README.md](terraform/README.md)
-- Ansible docs: [Ansible-modules-01/README.md](Ansible-modules-01/README.md)
-- Frontend: [Ansible-modules-01/roles/app/files/app/src/frontend/README.md](Ansible-modules-01/roles/app/files/app/src/frontend/README.md)
-- Backend: [Ansible-modules-01/roles/app/files/app/src/backend/README.md](Ansible-modules-01/roles/app/files/app/src/backend/README.md)
-- Worker: [Ansible-modules-01/roles/app/files/app/src/worker/README.md](Ansible-modules-01/roles/app/files/app/src/worker/README.md)
-
-## Known issues
-
-### pip self-update under Ansible become(root)
-
-- In this project, `buluma.python_pip` is executed from `playbooks/deploy_app.yml` with:
-  - `python_pip_update: false`
-- This is intentional for stability on the current Amazon Linux-based target hosts.
-
-Observed behavior:
-- Enabling pip self-update has previously failed with errors indicating missing Python module context (for example `packaging`) when tasks run under `become: true`.
-- The failure is caused by interpreter/site-package context mismatch during root-executed pip operations.
-
-Current workaround:
-- Keep `python_pip_update: false` in deploy playbooks.
-- `buluma.python_pip` still installs pip packages with `state: present`, so hosts without pip are bootstrapped.
-- Continue installing app dependencies in the application virtual environment (`app` role), which remains the supported deployment path.
-
-If pip self-update must be re-enabled in future:
-- ensure required Python tooling is present in the exact interpreter context used by Ansible pip tasks, and
-- test on the same Amazon Linux image family used by Terraform before changing defaults.
-
-Notes:
-- `sync_from_terraform.yml` refreshes generated files (`inventory.ini`, `group_vars`) and also refreshes in-memory host vars for `Front`, `Back`, and `Worker` in the same run.
-- To reuse an existing S3 bucket without attempting bucket creation during apply, set `create_s3_bucket = false` and keep `bucket_name` set to that existing bucket.
+- [Hand-in readiness checklist](HANDIN_READINESS_CHECKLIST.md)
+- [Terraform guide](terraform/README.md)
+- [Ansible guide](Ansible-modules-01/README.md)
+- [Frontend service](Ansible-modules-01/roles/app/files/app/src/frontend/README.md)
+- [Backend service](Ansible-modules-01/roles/app/files/app/src/backend/README.md)
+- [Worker service](Ansible-modules-01/roles/app/files/app/src/worker/README.md)

@@ -28,8 +28,8 @@ worker's synchronized `instances.json` backup. It is not the Terraform state buc
 - `modules/sns_topic` — notifications
 - `modules/services` — operational monitoring
 
-The legacy `modules/ec2` directory is not composed by the root module. Its final
-cleanup is deferred until the repository-wide redundancy inventory is complete.
+The obsolete standalone-EC2 module was removed after the repository-wide
+ownership inventory confirmed that the EKS root does not compose it.
 
 ## Inputs, outputs, and secrets
 

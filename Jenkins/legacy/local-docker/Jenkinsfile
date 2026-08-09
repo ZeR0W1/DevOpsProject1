@@ -1,0 +1,460 @@
+// Archived local-Docker lab pipeline. The supported EKS CI/CD entry points are
+// Jenkins/Jenkinsfile.eks and Jenkins/Jenkinsfile-deploy.
+pipeline {
+    agent {
+        label "${params.REMOTE_DOCKER_NODE_LABEL}"
+    }
+
+    options {
+        buildDiscarder(logRotator(numToKeepStr: '20'))
+        disableConcurrentBuilds()
+        timestamps()
+    }
+
+    parameters {
+        string(
+            name: 'REPO_URL',
+            defaultValue: 'https://github.com/ZeR0W1/DevOpsProject1.git',
+            description: 'Git repository URL to pull code from.'
+        )
+        string(
+            name: 'REPO_BRANCH',
+            defaultValue: 'aws3-containerized',
+            description: 'Git branch, tag, or ref to build.'
+        )
+        string(
+            name: 'GIT_CREDENTIALS_ID',
+            defaultValue: '',
+            description: 'Optional Jenkins credentials ID for private Git repositories. Leave empty for public repositories.'
+        )
+        string(
+            name: 'SONARQUBE_ENV',
+            defaultValue: 'SonarQube',
+            description: 'Jenkins SonarQube server name configured under Manage Jenkins > System.'
+        )
+        booleanParam(
+            name: 'RUN_SONARQUBE',
+            defaultValue: false,
+            description: 'Temporarily disabled by default while SonarQube host-memory usage is being remediated. Enable to run SonarQube analysis and Quality Gate.'
+        )
+        string(
+            name: 'SONAR_PROJECT_KEY',
+            defaultValue: 'devops-project1',
+            description: 'SonarQube project key.'
+        )
+        string(
+            name: 'APP_DIR',
+            defaultValue: 'Ansible-modules-01/roles/app/files/app',
+            description: 'Path to the application directory inside the checked-out repository.'
+        )
+        string(
+            name: 'PYTHON_SOURCE_DIRS',
+            defaultValue: 'src/backend src/worker',
+            description: 'Space-separated Python source directories, relative to APP_DIR, for linting and code security scanning.'
+        )
+        string(
+            name: 'DOCKERFILE',
+            defaultValue: 'Dockerfile.backend',
+            description: 'Dockerfile path relative to APP_DIR.'
+        )
+        string(
+            name: 'DOCKERHUB_REPOSITORY',
+            defaultValue: 'zer0w1/devops-project1-backend',
+            description: 'Docker Hub repository, for example: username/image-name.'
+        )
+        string(
+            name: 'IMAGE_TAG',
+            defaultValue: '',
+            description: 'Optional Docker image tag. If empty, Jenkins will use BUILD_NUMBER and short Git commit SHA.'
+        )
+        string(
+            name: 'DOCKERHUB_CREDENTIALS_ID',
+            defaultValue: 'dockerhub-creds',
+            description: 'Jenkins username/password credentials ID for Docker Hub.'
+        )
+        booleanParam(
+            name: 'RUN_TRIVY_SCAN',
+            defaultValue: false,
+            description: 'Temporarily disabled by default while inherited base-image CVE policy is being reviewed. Enable to scan the built image with Trivy before pushing.'
+        )
+        string(
+            name: 'REMOTE_DOCKER_NODE_LABEL',
+            defaultValue: 'docker-builder',
+            description: 'Jenkins agent label for the remote execution node that has Docker and the scanner CLI installed.'
+        )
+        string(
+            name: 'EMAIL_TO',
+            defaultValue: '',
+            description: 'Email recipient for build notifications.'
+        )
+    }
+
+    environment {
+        VENV_DIR = '.venv-jenkins'
+        IMAGE_REF_FILE = 'image-ref.txt'
+        SCAN_REPORT_DIR = 'scan-reports'
+        APP_DIR = "${params.APP_DIR}"
+        PYTHON_SOURCE_DIRS = "${params.PYTHON_SOURCE_DIRS}"
+        DOCKERFILE = "${params.DOCKERFILE}"
+        SONAR_PROJECT_KEY = "${params.SONAR_PROJECT_KEY}"
+    }
+
+    stages {
+        stage('Checkout Repository') {
+            steps {
+                script {
+                    if (params.GIT_CREDENTIALS_ID?.trim()) {
+                        checkout([
+                            $class: 'GitSCM',
+                            branches: [[name: params.REPO_BRANCH]],
+                            userRemoteConfigs: [[
+                                url: params.REPO_URL,
+                                credentialsId: params.GIT_CREDENTIALS_ID
+                            ]]
+                        ])
+                    } else {
+                        git branch: params.REPO_BRANCH, url: params.REPO_URL
+                    }
+
+                    env.GIT_SHORT_SHA = sh(
+                        script: 'git rev-parse --short=12 HEAD',
+                        returnStdout: true
+                    ).trim()
+
+                    env.IMAGE_TAG_RESOLVED = params.IMAGE_TAG?.trim()
+                        ? params.IMAGE_TAG.trim()
+                        : "${env.BUILD_NUMBER}-${env.GIT_SHORT_SHA}"
+
+                    env.IMAGE_REF = "${params.DOCKERHUB_REPOSITORY}:${env.IMAGE_TAG_RESOLVED}"
+                    writeFile file: env.IMAGE_REF_FILE, text: env.IMAGE_REF
+                    stash name: 'image-ref', includes: env.IMAGE_REF_FILE
+                }
+            }
+        }
+
+        stage('Install Python CI Tools') {
+            steps {
+                sh '''#!/usr/bin/env bash
+                    set -euo pipefail
+                    python3 -m venv "${VENV_DIR}"
+                    . "${VENV_DIR}/bin/activate"
+                    python -m pip install --upgrade pip
+                    pip install pytest flake8 bandit
+
+                    if [ -f "${APP_DIR}/requirements.txt" ]; then
+                        pip install -r "${APP_DIR}/requirements.txt"
+                    fi
+                    if [ -f "${APP_DIR}/src/backend/requirements.txt" ]; then
+                        pip install -r "${APP_DIR}/src/backend/requirements.txt"
+                    fi
+                    if [ -f "${APP_DIR}/src/worker/requirements.txt" ]; then
+                        pip install -r "${APP_DIR}/src/worker/requirements.txt"
+                    fi
+                '''
+            }
+        }
+
+        stage('Short Code Security Scan') {
+            steps {
+                dir(params.APP_DIR) {
+                    sh '''#!/usr/bin/env bash
+                        set -euo pipefail
+                        mkdir -p "${WORKSPACE}/${SCAN_REPORT_DIR}"
+                        . "${WORKSPACE}/${VENV_DIR}/bin/activate"
+
+                        # Bandit performs a fast Python SAST pass before the deeper SonarQube analysis.
+                        # Exit code 1 means Bandit found issues. Preserve its JSON report
+                        # and allow SonarQube to run; scanner/configuration failures (2+)
+                        # still fail the build immediately.
+                        bandit_status=0
+                        bandit -r ${PYTHON_SOURCE_DIRS} \
+                            --severity-level low \
+                            --confidence-level medium \
+                            -f json \
+                            -o "${WORKSPACE}/${SCAN_REPORT_DIR}/bandit.json" || bandit_status=$?
+
+                        if [ "${bandit_status}" -eq 1 ]; then
+                            echo 'Bandit found security findings; report archived and pipeline continuing to SonarQube.'
+                        elif [ "${bandit_status}" -ne 0 ]; then
+                            echo "Bandit failed to execute (exit code ${bandit_status})." >&2
+                            exit "${bandit_status}"
+                        fi
+                    '''
+                }
+            }
+            post {
+                always {
+                    archiveArtifacts artifacts: "${SCAN_REPORT_DIR}/bandit.json", allowEmptyArchive: true
+                }
+            }
+        }
+
+        stage('SonarQube Analysis') {
+            when {
+                expression { params.RUN_SONARQUBE }
+            }
+            steps {
+                withSonarQubeEnv(params.SONARQUBE_ENV) {
+                    // The configured SonarQube server supplies URL and Quality Gate
+                    // integration. Bind the actual analysis token explicitly because
+                    // this plugin version does not export a usable token environment
+                    // variable from withSonarQubeEnv.
+                    withCredentials([string(
+                        credentialsId: 'sonar-token',
+                        variable: 'SONAR_TOKEN'
+                    )]) {
+                        sh '''#!/usr/bin/env bash
+                            set -euo pipefail
+                            sonar-scanner \
+                                -Dsonar.projectKey="${SONAR_PROJECT_KEY}" \
+                                -Dsonar.projectName="${SONAR_PROJECT_KEY}" \
+                                -Dsonar.sources="${APP_DIR}/src" \
+                                -Dsonar.python.version=3.11 \
+                                -Dsonar.token="${SONAR_TOKEN}" \
+                                -Dsonar.sourceEncoding=UTF-8
+                        '''
+                    }
+                }
+            }
+        }
+
+        stage('SonarQube Quality Gate') {
+            when {
+                expression { params.RUN_SONARQUBE }
+            }
+            steps {
+                // SonarQube Scanner for Jenkins 2.18.3 can authenticate the scanner,
+                // but its waitForQualityGate client returns 401 against SonarQube 26.x.
+                // Poll the same documented SonarQube APIs with the managed token instead.
+                withSonarQubeEnv(params.SONARQUBE_ENV) {
+                    withCredentials([string(
+                        credentialsId: 'sonar-token',
+                        variable: 'SONAR_TOKEN'
+                    )]) {
+                        sh '''#!/usr/bin/env bash
+                            set -euo pipefail
+
+                            report_file="${WORKSPACE}/.scannerwork/report-task.txt"
+                            if [ ! -f "${report_file}" ]; then
+                                echo "SonarQube task report was not created: ${report_file}" >&2
+                                exit 1
+                            fi
+
+                            ce_task_id="$(awk -F= '$1 == "ceTaskId" { print $2 }' "${report_file}")"
+                            if [ -z "${ce_task_id}" ]; then
+                                echo 'Could not read ceTaskId from SonarQube report-task.txt.' >&2
+                                exit 1
+                            fi
+
+                            echo "Waiting for SonarQube Compute Engine task ${ce_task_id}."
+                            for attempt in $(seq 1 60); do
+                                ce_response="$(curl --fail --silent --show-error \
+                                    --user "${SONAR_TOKEN}:" \
+                                    "${SONAR_HOST_URL}/api/ce/task?id=${ce_task_id}")"
+                                ce_status="$(python3 -c 'import json, sys; print(json.load(sys.stdin)["task"]["status"])' <<< "${ce_response}")"
+
+                                case "${ce_status}" in
+                                    SUCCESS)
+                                        analysis_id="$(python3 -c 'import json, sys; print(json.load(sys.stdin)["task"]["analysisId"])' <<< "${ce_response}")"
+                                        break
+                                        ;;
+                                    FAILED|CANCELED)
+                                        echo "SonarQube Compute Engine task ended with ${ce_status}." >&2
+                                        exit 1
+                                        ;;
+                                    *)
+                                        echo "SonarQube task status: ${ce_status} (${attempt}/60); waiting 5 seconds."
+                                        sleep 5
+                                        ;;
+                                esac
+                            done
+
+                            if [ -z "${analysis_id:-}" ]; then
+                                echo 'Timed out waiting for SonarQube analysis processing.' >&2
+                                exit 1
+                            fi
+
+                            gate_response="$(curl --fail --silent --show-error \
+                                --user "${SONAR_TOKEN}:" \
+                                "${SONAR_HOST_URL}/api/qualitygates/project_status?analysisId=${analysis_id}")"
+                            gate_status="$(python3 -c 'import json, sys; print(json.load(sys.stdin)["projectStatus"]["status"])' <<< "${gate_response}")"
+                            echo "SonarQube Quality Gate: ${gate_status}"
+
+                            if [ "${gate_status}" != 'OK' ]; then
+                                echo 'SonarQube Quality Gate did not pass.' >&2
+                                exit 1
+                            fi
+                        '''
+                    }
+                }
+            }
+        }
+
+        stage('Unit Tests') {
+            steps {
+                dir(params.APP_DIR) {
+                    sh '''#!/usr/bin/env bash
+                        set -euo pipefail
+                        . "${WORKSPACE}/${VENV_DIR}/bin/activate"
+
+                        # Succeeds gracefully when the repository has no tests yet.
+                        if find . -type f -name '*test*.py' | grep -q .; then
+                            pytest -q
+                        else
+                            echo 'No Python unit tests found; skipping pytest execution.'
+                        fi
+                    '''
+                }
+            }
+        }
+
+        stage('Python Lint') {
+            steps {
+                dir(params.APP_DIR) {
+                    sh '''#!/usr/bin/env bash
+                        set -euo pipefail
+                        . "${WORKSPACE}/${VENV_DIR}/bin/activate"
+                        mkdir -p "${WORKSPACE}/${SCAN_REPORT_DIR}"
+
+                        # Exit code 1 means lint violations were found. Save the report
+                        # and continue so the requested image build/scan/push stages run.
+                        # A tool/runtime error (exit code 2+) still fails the pipeline.
+                        lint_status=0
+                        flake8 ${PYTHON_SOURCE_DIRS} \
+                            --count \
+                            --show-source \
+                            --statistics \
+                            --output-file "${WORKSPACE}/${SCAN_REPORT_DIR}/flake8.txt" || lint_status=$?
+
+                        if [ "${lint_status}" -eq 1 ]; then
+                            echo 'Flake8 found lint violations; report archived and pipeline continuing.'
+                        elif [ "${lint_status}" -ne 0 ]; then
+                            echo "Flake8 failed to execute (exit code ${lint_status})." >&2
+                            exit "${lint_status}"
+                        fi
+                    '''
+                }
+            }
+            post {
+                always {
+                    archiveArtifacts artifacts: "${SCAN_REPORT_DIR}/flake8.txt", allowEmptyArchive: true
+                }
+            }
+        }
+
+        stage('Remote Docker Build, Manifest Scan, and Push') {
+            // The top-level pipeline already runs on REMOTE_DOCKER_NODE_LABEL.
+            // Do not request another executor here: a single-executor agent would
+            // otherwise wait on the executor held by this same build.
+            stages {
+                stage('Checkout on Remote Docker Node') {
+                    steps {
+                        script {
+                            deleteDir()
+                            if (params.GIT_CREDENTIALS_ID?.trim()) {
+                                checkout([
+                                    $class: 'GitSCM',
+                                    branches: [[name: params.REPO_BRANCH]],
+                                    userRemoteConfigs: [[
+                                        url: params.REPO_URL,
+                                        credentialsId: params.GIT_CREDENTIALS_ID
+                                    ]]
+                                ])
+                            } else {
+                                git branch: params.REPO_BRANCH, url: params.REPO_URL
+                            }
+
+                            unstash 'image-ref'
+                            env.IMAGE_REF = readFile(env.IMAGE_REF_FILE).trim()
+                        }
+                    }
+                }
+
+                stage('Build Docker Image') {
+                    steps {
+                        dir(params.APP_DIR) {
+                            sh '''#!/usr/bin/env bash
+                                set -euo pipefail
+                                docker build \
+                                    --pull \
+                                    --file "${DOCKERFILE}" \
+                                    --tag "${IMAGE_REF}" \
+                                    .
+                            '''
+                        }
+                    }
+                }
+
+                stage('Scan Docker Image Manifest and Packages') {
+                    when {
+                        expression { params.RUN_TRIVY_SCAN }
+                    }
+                    steps {
+                        sh '''#!/usr/bin/env bash
+                            set -euo pipefail
+                            mkdir -p "${SCAN_REPORT_DIR}"
+
+                            # Save the Docker manifest for auditability.
+                            docker manifest inspect "${IMAGE_REF}" > "${SCAN_REPORT_DIR}/docker-manifest.json" || \
+                                docker image inspect "${IMAGE_REF}" > "${SCAN_REPORT_DIR}/docker-image-inspect.json"
+
+                            # Trivy scans OS and library packages in the image and fails on HIGH/CRITICAL issues.
+                            trivy image \
+                                --scanners vuln \
+                                --severity HIGH,CRITICAL \
+                                --exit-code 1 \
+                                --format table \
+                                --output "${SCAN_REPORT_DIR}/trivy-image-vulnerabilities.txt" \
+                                "${IMAGE_REF}"
+                        '''
+                    }
+                    post {
+                        always {
+                            archiveArtifacts artifacts: "${SCAN_REPORT_DIR}/**", allowEmptyArchive: true
+                        }
+                    }
+                }
+
+                stage('Push Docker Image to Docker Hub') {
+                    steps {
+                        withCredentials([usernamePassword(
+                            credentialsId: params.DOCKERHUB_CREDENTIALS_ID,
+                            usernameVariable: 'DOCKERHUB_USERNAME',
+                            passwordVariable: 'DOCKERHUB_TOKEN'
+                        )]) {
+                            sh '''#!/usr/bin/env bash
+                                set -euo pipefail
+                                printf '%s' "${DOCKERHUB_TOKEN}" | docker login \
+                                    --username "${DOCKERHUB_USERNAME}" \
+                                    --password-stdin
+                                docker push "${IMAGE_REF}"
+                                docker logout
+                            '''
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            emailext(
+                to: params.EMAIL_TO,
+                subject: "Jenkins ${currentBuild.currentResult}: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+                body: """
+Build result: ${currentBuild.currentResult}
+Job: ${env.JOB_NAME}
+Build number: ${env.BUILD_NUMBER}
+Repository: ${params.REPO_URL}
+Branch/ref: ${params.REPO_BRANCH}
+Docker image: ${env.IMAGE_REF ?: 'not built'}
+Build URL: ${env.BUILD_URL}
+"""
+            )
+        }
+        cleanup {
+            cleanWs(deleteDirs: true, disableDeferredWipeout: true, notFailBuild: true)
+        }
+    }
+}

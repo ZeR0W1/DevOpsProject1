@@ -104,7 +104,9 @@ must remain explicitly approved, cost-aware, and dependency-ordered.
 - [x] Run one Terraform main-stack destroy while retaining the remote-state bucket.
 - [ ] Keep read-only residual billable-resource inspection as a separate optional
   operational check rather than a responsibility of the destroy playbook.
-- [ ] Keep transitional scripts until the Ansible workflows demonstrably replace them.
+- [x] Archive superseded direct Terraform/Helm and local Jenkins lab helpers under
+  explicit legacy paths; keep the transitional eksctl/Jenkins lifecycle helpers
+  until Ansible demonstrably replaces their remaining responsibilities.
 
 ## 8. Approved future cloud verification and evidence
 
@@ -129,10 +131,13 @@ must remain explicitly approved, cost-aware, and dependency-ordered.
 - [ ] Clearly distinguish the public application endpoint from the controlled Jenkins
   administrative endpoint.
 - [ ] Document why the legacy bucket and protected old stack remain externally owned.
-- [ ] Inventory duplicate scripts, old EC2 paths, Helm assets, Jenkins flows, and
-  abandoned frontend files before requesting any deletion.
-- [ ] Remove/archive redundant files only with explicit approval and after validating
-  their replacements.
+- [x] Inventory duplicate scripts, old EC2 paths, Helm assets, Jenkins flows, and
+  abandoned frontend files before requesting deletion.
+- [x] Complete the first approved cleanup batch: remove obsolete EC2/Ansible/
+  umbrella-chart assets, archive superseded helpers, and retain the professor's
+  `spring-music` reference chart plus active three-service CI/CD paths.
+- [ ] Continue later cleanup only after the remaining create lifecycle proves it
+  replaces transitional eksctl and Jenkins helpers.
 - [ ] Run all local tests, Terraform/Ansible/Helm validation, documentation-link
   checks, Git whitespace checks, and a final secret scan.
 - [ ] Review the final staged diff, ensure no private/ignored artifacts are included,
@@ -141,6 +146,7 @@ must remain explicitly approved, cost-aware, and dependency-ordered.
 ## Current checkpoint warning
 
 The current repository checkpoint is **mid-refactor**. Local static validation has
-passed for the completed Terraform/Ansible slice, but the new end-to-end lifecycle,
-application integrations, destroy workflow, and final target cloud deployment have
-not been executed or proven. Do not represent this checkpoint as hand-in ready.
+passed for the completed Terraform/Ansible and cleanup slices, but the new
+end-to-end create lifecycle, application integrations, enabled destroy path, and
+final target cloud deployment have not been executed or proven. Do not represent
+this checkpoint as hand-in ready.

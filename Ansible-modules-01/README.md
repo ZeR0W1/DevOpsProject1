@@ -21,8 +21,9 @@ Main project documentation: [../README.md](../README.md)
   effective Terraform inputs from the committed example
 - optionally reads the Terraform-owned RDS password from AWS Secrets Manager and
   synchronizes it into the namespace-scoped `worker-db-secret`
-- will grow into the authoritative EKS/Jenkins/application create and destroy
-  lifecycle; legacy EC2 inventory/nginx/systemd playbooks are not in `site.yml`
+- will grow into the authoritative EKS/Jenkins/application create lifecycle;
+  obsolete EC2 inventory/nginx/systemd playbooks have been removed and archived
+  transitional shell helpers are not imported by `site.yml`
 
 ## Main playbooks
 
@@ -131,5 +132,5 @@ RBAC access to the Secret and use EKS encryption at rest for Kubernetes Secrets.
 - `PREPARE_TERRAFORM_INPUTS=true` rewrites only the ignored effective tfvars and
   performs a read-only AWS identity check; it does not apply Terraform.
 - Never add secret-value debug tasks or remove `no_log: true` from secret handling.
-- The remaining EC2-oriented playbooks are legacy transition material and are not
-  imported by the authoritative `site.yml` flow.
+- Archived direct Terraform/eksctl/Helm helpers live under `../scripts/legacy/`
+  for provenance only. They are not supported lifecycle entry points.

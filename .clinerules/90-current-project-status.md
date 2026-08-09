@@ -168,6 +168,32 @@ as ignored local recovery material.
   whitespace, and the default destroy run passed on **2026-08-09**; the default run
   completed `ok=2`, `changed=0`, `skipped=15`. No Terraform remote-state access,
   AWS/Kubernetes/Helm mutation, destroy, Git staging, commit, or push occurred.
+- The user approved the pipeline boundary on **2026-08-09**: CI is mandatory,
+  successful CI does not require deployment, CD remains optional and separate, and
+  only CD may mutate application workloads. The active pipeline paths remain
+  `Jenkins/Jenkinsfile.eks` and `Jenkins/Jenkinsfile-deploy`; the professor-provided
+  `helm/spring-music` chart is retained as a reference/template, not a production
+  application release.
+- The first redundancy cleanup batch removed the unused standalone EC2 Terraform
+  module, obsolete EC2-oriented Ansible playbooks, and unused `helm/devops-app`
+  umbrella metadata. Superseded direct Terraform/Helm scripts were moved under
+  `scripts/legacy/`; the earlier local-Docker Jenkinsfile/helper were moved under
+  explicit legacy paths and sanitized. Transitional `create_eks.sh`,
+  `deploy_jenkins_eks.sh`, current EKS job helpers, separate application charts,
+  imported roles, recovery material, and ignored Jenkins CLI jar were preserved.
+- The canonical frontend source is now
+  `Ansible-modules-01/roles/app/files/app/src/frontend/index.html`. Retained Jenkins
+  controller/Python-agent build sources and plugin lock are now tracked project
+  assets, and root/Ansible/Terraform/readiness documentation was reconciled to the
+  current EKS architecture and safety boundary.
+- Cleanup validation on **2026-08-09** passed shell syntax for retained/archived
+  helpers, recursive Terraform formatting and main/bootstrap validation, `site.yml`
+  and `destroy.yml` syntax/default runs (`ok=10`/`ok=2`, `changed=0`), Helm lint and
+  render for all three application charts, Python compilation, documentation-link
+  checks, focused stale-reference/private-value scans, and Git whitespace checks.
+  No application tests exist yet. Only expected stale ignored-tfvars validation
+  warnings remained. No cloud/network mutation, enabled secret sync, Terraform
+  backend access/plan/apply/import/destroy, Git staging, commit, or push occurred.
 
 ## Current live EKS boundary — verified 2026-08-08
 
@@ -357,12 +383,13 @@ coherent, reproducible, and safe.
   audit AWS for residual billable resources and document intentionally retained
   data/external resources without mutating the legacy bucket or old protected stack
   outside their separately approved cleanup decisions.
-- [ ] Inventory redundancy by domain before cleanup: temporary shell/`eksctl`
+- [x] Inventory redundancy by domain before cleanup: temporary shell/`eksctl`
   lifecycle scripts, duplicate Jenkins flows, stale Helm charts/assets, recovery
   artifacts, old EC2 application paths, and abandoned application files.
-- [ ] Remove or archive only items whose ownership and replacement are verified;
-  preserve imported Ansible roles, unrelated dirty/untracked work, evidence still
-  needed for submission, and rollback/recovery material still serving a purpose.
+- [x] Remove or archive the first approved batch whose ownership and replacement
+  were verified; continue preserving transitional helpers until replacement
+  coverage exists, imported Ansible roles, unrelated work, evidence still
+  needed for submission, and recovery material still serving a purpose.
 - [ ] Re-run domain tests, documentation links, and lifecycle validation after each
   cleanup batch so trimming does not create a second ownership path or break CI/CD.
 
@@ -411,7 +438,9 @@ core requirements. Do not present unimplemented bonus ideas as completed work.
    its enabled path until the Terraform-owned stack has been created and verified;
    retain transitional teardown scripts until replacement coverage is demonstrated.
    Residual-cost inspection remains a separate optional read-only operation.
-5. Continue local worker/PostgreSQL/S3/SNS integration and tests, Helm/CD wiring,
-   then the assignment-complete root README and architecture diagram. Do not modify
-   imported Ansible roles, the legacy external S3 bucket, the protected old stack,
-   or unrelated mixed-workspace files; do not stage/commit/push without a request.
+5. Continue local worker/PostgreSQL/S3/SNS integration and tests, then guarded
+   Ansible create lifecycle and Helm/CD wiring. The root README now reflects the
+   target architecture but still requires assignment-complete deployment,
+   verification, recovery, cost, and evidence sections after implementation. Do
+   not modify imported Ansible roles, the legacy external S3 bucket, the protected
+   old stack, or unrelated workspace files; do not push without a request.

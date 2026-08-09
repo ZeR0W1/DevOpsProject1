@@ -1,0 +1,19 @@
+# The base image exactly matches Jenkins Helm chart 5.8.114's controller.
+FROM jenkins/jenkins:2.528.3-jdk21
+
+LABEL org.opencontainers.image.title="DevOps Project Jenkins Controller" \
+      org.opencontainers.image.description="Jenkins controller with pinned CI plugins baked into the image" \
+      org.opencontainers.image.source="https://github.com/ZeR0W1/DevOpsProject1"
+
+USER jenkins
+
+# Resolve the locked plugin set while building the image. The Helm deployment
+# retains these plugins and does not invoke the plugin manager during startup.
+# No plugin mirror is configured here: a failed upstream download fails the
+# image build safely before any image is pushed or deployed.
+COPY --chown=jenkins:jenkins plugins.txt /usr/share/jenkins/ref/plugins.txt
+RUN jenkins-plugin-cli \
+      --verbose \
+      --war /usr/share/jenkins/jenkins.war \
+      --plugin-file /usr/share/jenkins/ref/plugins.txt \
+      --latest false
