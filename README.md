@@ -261,7 +261,8 @@ ANSIBLE_CONFIG=ansible.cfg ansible-playbook playbooks/site.yml
 ```
 
 This orchestrates:
-1. Terraform apply (`playbooks/apply_terraform.yml`)
+1. Guarded Terraform remote-state/infrastructure lifecycle
+   (`playbooks/configure_terraform_state.yml`)
 2. Terraform→Ansible sync (`playbooks/sync_from_terraform.yml`)
 3. Frontend nginx and content setup (`playbooks/install-nginx.yml`)
 4. Backend/worker app deploy (`playbooks/deploy_app.yml`)

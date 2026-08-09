@@ -1,0 +1,144 @@
+---
+- name: Create encrypted local environment inputs
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars_prompt:
+    - name: prompted_admin_email
+      prompt: "Administrator email for SNS notifications"
+      private: false
+
+  vars:
+    project_root: "{{ playbook_dir }}/../.."
+    terraform_example: "{{ project_root }}/terraform/terraform.tfvars.example"
+    local_vault_file: "{{ playbook_dir }}/../vault/local-environment.yml"
+    local_vault_password_file: "{{ playbook_dir }}/../.vault-password"
+
+  tasks:
+    - name: Read authoritative Terraform input example
+      ansible.builtin.set_fact:
+        terraform_example_content: "{{ lookup('ansible.builtin.file', terraform_example) }}"
+
+    - name: Derive project and environment identifiers from the example
+      ansible.builtin.set_fact:
+        terraform_name_prefix: >-
+          {{ (terraform_example_content
+              | regex_search('(?m)^name_prefix\\s*=\\s*"([a-z0-9-]+)"', '\\1')
+              | first) }}
+        terraform_environment: >-
+          {{ (terraform_example_content
+              | regex_search('(?m)^environment\\s*=\\s*"([a-z0-9-]+)"', '\\1')
+              | first) }}
+
+    - name: Validate administrator email and derived identifiers
+      ansible.builtin.assert:
+        that:
+          - prompted_admin_email is match('^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$')
+          - terraform_name_prefix is match('^[a-z][a-z0-9-]{1,15}$')
+          - terraform_environment is match('^[a-z][a-z0-9-]{1,15}$')
+        fail_msg: >-
+          Enter a valid email address and ensure name_prefix/environment in
+          terraform.tfvars.example are lowercase identifiers.
+
+    - name: Detect the control node public IPv4 address
+      ansible.builtin.uri:
+        url: https://checkip.amazonaws.com
+        return_content: true
+        timeout: 10
+      register: detected_public_ip
+      changed_when: false
+
+    - name: Confirm detected CIDR or enter an IPv4 slash-32 override
+      ansible.builtin.pause:
+        prompt: >-
+          Detected {{ detected_public_ip.content | trim }}/32. Enter yes to use it,
+          or enter the required administrator IPv4 CIDR ending in /32
+      register: admin_cidr_confirmation
+
+    - name: Select administrator CIDR and deterministic database username
+      ansible.builtin.set_fact:
+        selected_admin_cidr: >-
+          {{ (detected_public_ip.content | trim) ~ '/32'
+             if (admin_cidr_confirmation.user_input | lower) in ['y', 'yes']
+             else (admin_cidr_confirmation.user_input | trim) }}
+        derived_db_username: >-
+          {{ (terraform_name_prefix ~ '_' ~ terraform_environment ~ '_admin')
+             | regex_replace('[^a-z0-9_]', '_') }}
+
+    - name: Validate selected private environment inputs
+      ansible.builtin.assert:
+        that:
+          - selected_admin_cidr is match('^(25[0-5]|2[0-4][0-9]|1?[0-9]{1,2})(\\.(25[0-5]|2[0-4][0-9]|1?[0-9]{1,2})){3}/32$')
+          - derived_db_username is match('^[a-z][a-z0-9_]{0,62}$')
+        fail_msg: "The administrator CIDR must be a valid IPv4 /32."
+
+    - name: Generate or retain the local vault password
+      ansible.builtin.copy:
+        dest: "{{ local_vault_password_file }}"
+        content: "{{ lookup('ansible.builtin.password', '/dev/null', length=48) }}\n"
+        mode: "0600"
+        force: false
+      no_log: true
+
+    - name: Encrypt administrator email as a named variable
+      ansible.builtin.command:
+        argv:
+          - ansible-vault
+          - encrypt_string
+          - --vault-password-file
+          - "{{ local_vault_password_file }}"
+          - --stdin-name
+          - admin_email
+        stdin: "{{ prompted_admin_email }}"
+        stdin_add_newline: false
+      register: encrypted_admin_email
+      changed_when: false
+      no_log: true
+
+    - name: Encrypt administrator CIDR as a named variable
+      ansible.builtin.command:
+        argv:
+          - ansible-vault
+          - encrypt_string
+          - --vault-password-file
+          - "{{ local_vault_password_file }}"
+          - --stdin-name
+          - admin_cidr
+        stdin: "{{ selected_admin_cidr }}"
+        stdin_add_newline: false
+      register: encrypted_admin_cidr
+      changed_when: false
+      no_log: true
+
+    - name: Encrypt database username as a named variable
+      ansible.builtin.command:
+        argv:
+          - ansible-vault
+          - encrypt_string
+          - --vault-password-file
+          - "{{ local_vault_password_file }}"
+          - --stdin-name
+          - db_username
+        stdin: "{{ derived_db_username }}"
+        stdin_add_newline: false
+      register: encrypted_db_username
+      changed_when: false
+      no_log: true
+
+    - name: Write encrypted local environment variables
+      ansible.builtin.copy:
+        dest: "{{ local_vault_file }}"
+        mode: "0600"
+        content: |
+          ---
+          {{ encrypted_admin_email.stdout }}
+          {{ encrypted_admin_cidr.stdout }}
+          {{ encrypted_db_username.stdout }}
+      no_log: true
+
+    - name: Report setup completion without private values
+      ansible.builtin.debug:
+        msg: >-
+          Encrypted local environment inputs and the local vault password were
+          created with mode 0600. Neither file is tracked by Git.

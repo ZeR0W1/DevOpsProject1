@@ -1,6 +1,7 @@
 # Ansible deployment layer
 
-This directory contains the Ansible control-node automation used to configure instances provisioned by Terraform.
+This directory contains the control-node automation that orchestrates guarded
+Terraform lifecycle stages and prepares EKS application configuration.
 
 Main project documentation: [../README.md](../README.md)
 
@@ -9,50 +10,90 @@ Main project documentation: [../README.md](../README.md)
 - control node is Linux-based (commands/examples are Linux-first)
 - `ansible` is installed locally and `ANSIBLE_CONFIG=ansible.cfg` is used when running playbooks
 - AWS credentials for Terraform/Ansible orchestration are already configured on the control node
-- `vault/staging.yml` is present with environment-specific values
-- SSH private key file used for EC2 access exists locally and has restrictive permissions (`chmod 600 <key>.pem`)
+- `terraform`, AWS CLI, and `kubectl` are available for the stages that use them
+- AWS and Kubernetes mutations are enabled only through the documented opt-in flags
 
 ## What this Ansible layer does
 
-- applies Terraform from Ansible orchestration (`playbooks/apply_terraform.yml`)
-- syncs Terraform outputs into runtime inventory/vars (`playbooks/sync_from_terraform.yml`)
-- installs/configures frontend nginx (`playbooks/install-nginx.yml`)
-- deploys backend and worker app services (`playbooks/deploy_app.yml`)
+- validates and orchestrates Terraform state/infrastructure through guarded,
+  opt-in lifecycle stages (`playbooks/configure_terraform_state.yml`)
+- creates encrypted local environment inputs and, only when enabled, regenerates
+  effective Terraform inputs from the committed example
+- optionally reads the Terraform-owned RDS password from AWS Secrets Manager and
+  synchronizes it into the namespace-scoped `worker-db-secret`
+- will grow into the authoritative EKS/Jenkins/application create and destroy
+  lifecycle; legacy EC2 inventory/nginx/systemd playbooks are not in `site.yml`
 
 ## Main playbooks
 
-- `playbooks/site.yml` — full end-to-end orchestrator
-- `playbooks/apply_terraform.yml` — runs Terraform lifecycle tasks
-- `playbooks/sync_from_terraform.yml` — generates inventory/runtime vars from Terraform outputs
-- `playbooks/install-nginx.yml` — frontend nginx + content sync
-- `playbooks/deploy_app.yml` — backend/worker deployment
+- `playbooks/site.yml` — authoritative guarded lifecycle entry point
+- `playbooks/setup_local_environment.yml` — one-time interactive email/CIDR setup,
+  deterministic DB username derivation, and local Ansible Vault creation
+- `playbooks/prepare_terraform_inputs.yml` — gated `terraform.tfvars` regeneration
+  and read-only AWS caller-identity preflight
+- `playbooks/configure_terraform_state.yml` — remote-state bootstrap and guarded
+  Terraform lifecycle tasks
+- `playbooks/prepare_application_secret.yml` — explicitly gated Secrets Manager
+  to Kubernetes Secret synchronization
 
 ## Useful run commands
 
 ```bash
 cd Ansible-modules-01
 
-# Full end-to-end run
+# One-time local setup: prompts for email, detects and confirms/overrides the
+# administrator IPv4 /32, and writes only ignored mode-0600 encrypted files.
+ANSIBLE_CONFIG=ansible.cfg ansible-playbook playbooks/setup_local_environment.yml
+
+# Regenerate ignored terraform.tfvars from the committed example and inject only
+# the encrypted local values. This also performs a read-only AWS STS preflight.
+PREPARE_TERRAFORM_INPUTS=true \
+  ANSIBLE_VAULT_PASSWORD_FILE=.vault-password \
+  ANSIBLE_CONFIG=ansible.cfg \
+  ansible-playbook playbooks/prepare_terraform_inputs.yml
+
+# Safe local validation; all mutation stages default off
 ANSIBLE_CONFIG=ansible.cfg ansible-playbook playbooks/site.yml
 
-# Only sync outputs -> inventory/group_vars
-ANSIBLE_CONFIG=ansible.cfg ansible-playbook playbooks/sync_from_terraform.yml
-
-# Skip generated group_vars writes when you want cleaner diffs
-SKIP_GROUP_VARS_WRITE=true ANSIBLE_CONFIG=ansible.cfg ansible-playbook playbooks/sync_from_terraform.yml
+# After separately reviewing AWS identity, kubeconfig context, namespace, and
+# rotation impact, synchronize only the application database Secret.
+SYNC_APPLICATION_SECRET=true \
+  ANSIBLE_CONFIG=ansible.cfg \
+  ansible-playbook playbooks/prepare_application_secret.yml
 ```
 
+The generated `.vault-password` and `vault/local-environment.yml` files are
+ignored and mode `0600`. Post-setup runs that decrypt the local file set
+`ANSIBLE_VAULT_PASSWORD_FILE=.vault-password`, which supports unattended Ansible
+without breaking clean-clone syntax/default validation. The encrypted file contains
+only the administrator email, administrator `/32`, and deterministic DB username.
+They must never contain AWS credentials or the generated database password.
+Manual edits to generated `terraform/terraform.tfvars` are unsupported; update
+the committed example for non-secret settings and rerun the preparation stage.
 
-## Vault and Secrets Manager responsibilities
 
-- **Ansible Vault (`vault/staging.yml`)**: deployment-time values for playbooks (for example SSH private key path).
-- **AWS Secrets Manager**: runtime application secrets (for example DB password consumed by worker via IAM).
+## Database secret responsibilities
 
-This separation keeps runtime DB credentials out of generated Ansible app environment files while still allowing automated deployments.
+- **Terraform** creates the RDS password and its AWS Secrets Manager secret.
+- **Ansible** reads that value only during an explicitly enabled deployment stage
+  and creates or updates `devops-app/worker-db-secret` with `no_log: true`.
+- **Helm/Kubernetes** injects the `password` key into the worker as
+  `POSTGRES_PASSWORD`; the password is never committed to Git or written to a
+  generated workspace file.
+- **Worker Pod Identity** remains scoped to runtime S3 and SNS responsibilities;
+  the worker does not read Secrets Manager directly.
+
+AWS Secrets Manager remains the upstream source of truth, but the Kubernetes copy
+must be resynchronized and worker Pods rolled after password rotation. Restrict
+RBAC access to the Secret and use EKS encryption at rest for Kubernetes Secrets.
 
 ## Notes
 
-- This is a control-node workflow; do not run these playbooks on target EC2 instances directly.
-- SSH key path and vault-backed values are sourced from `vault/staging.yml`.
-- Generated files (`inventory.ini`, some `group_vars/*.yml`) can change per environment.
-- `group_vars/backend.example.yml` and `group_vars/worker.example.yml` are optional templates/examples only (not required by the active site flow).
+- This is a control-node workflow; do not run the lifecycle on cluster nodes.
+- `SYNC_APPLICATION_SECRET=true` performs AWS read and Kubernetes mutation and is
+  intentionally off by default.
+- `PREPARE_TERRAFORM_INPUTS=true` rewrites only the ignored effective tfvars and
+  performs a read-only AWS identity check; it does not apply Terraform.
+- Never add secret-value debug tasks or remove `no_log: true` from secret handling.
+- The remaining EC2-oriented playbooks are legacy transition material and are not
+  imported by the authoritative `site.yml` flow.

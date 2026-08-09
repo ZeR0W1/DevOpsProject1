@@ -1,0 +1,138 @@
+---
+- name: Configure automated Terraform remote state and infrastructure lifecycle
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    project_root: "{{ playbook_dir }}/../.."
+    terraform_dir: "{{ project_root }}/terraform"
+    terraform_state_bootstrap_dir: "{{ terraform_dir }}/state-bootstrap"
+    terraform_remote_state_config: "{{ terraform_dir }}/remote-state.hcl"
+    terraform_state_key: "devops-project1/{{ terraform_environment | default('dev') }}/terraform.tfstate"
+
+    # Phase 1 safety defaults. After the reviewed ownership/state migration, the
+    # create workflow may enable its normal idempotent stages by default while
+    # destructive operations and one-time migrations remain explicitly gated.
+    terraform_state_bootstrap_apply: false
+    terraform_main_init: false
+    terraform_main_migrate_state: false
+    terraform_main_apply: false
+    terraform_mutation_confirmation: ""
+
+  tasks:
+    - name: Validate Terraform lifecycle flag combinations
+      ansible.builtin.assert:
+        that:
+          - not (terraform_main_migrate_state | bool) or (terraform_main_init | bool)
+          - not (terraform_main_apply | bool) or (terraform_main_init | bool)
+          - >-
+            not (
+              (terraform_state_bootstrap_apply | bool) or
+              (terraform_main_init | bool) or
+              (terraform_main_apply | bool)
+            ) or terraform_mutation_confirmation == 'TERRAFORM_MUTATION_APPROVED'
+        fail_msg: >-
+          Migration requires terraform_main_init=true. Main apply also requires
+          initialization. Any apply, backend initialization, or migration requires
+          terraform_mutation_confirmation=TERRAFORM_MUTATION_APPROVED.
+
+    - name: Initialize state-bootstrap providers without a remote backend
+      ansible.builtin.command:
+        cmd: >-
+          terraform -chdir={{ terraform_state_bootstrap_dir }} init
+          -backend=false -input=false
+      changed_when: false
+
+    - name: Check state-bootstrap Terraform formatting
+      ansible.builtin.command:
+        cmd: terraform -chdir={{ terraform_state_bootstrap_dir }} fmt -check -diff
+      changed_when: false
+
+    - name: Validate state-bootstrap Terraform configuration
+      ansible.builtin.command:
+        cmd: terraform -chdir={{ terraform_state_bootstrap_dir }} validate -no-color
+      changed_when: false
+
+    - name: Check main Terraform formatting
+      ansible.builtin.command:
+        cmd: terraform -chdir={{ terraform_dir }} fmt -check -recursive -diff
+      changed_when: false
+
+    - name: Initialize main-stack providers without configuring remote state
+      ansible.builtin.command:
+        cmd: terraform -chdir={{ terraform_dir }} init -backend=false -input=false
+      changed_when: false
+
+    - name: Validate main Terraform configuration
+      ansible.builtin.command:
+        cmd: terraform -chdir={{ terraform_dir }} validate -no-color
+      changed_when: false
+
+    - name: Initialize the state-bootstrap working directory
+      ansible.builtin.command:
+        cmd: terraform -chdir={{ terraform_state_bootstrap_dir }} init -input=false
+      changed_when: false
+      when: terraform_state_bootstrap_apply | bool
+
+    - name: Apply the state-bootstrap configuration
+      ansible.builtin.command:
+        cmd: terraform -chdir={{ terraform_state_bootstrap_dir }} apply -auto-approve -input=false
+      when: terraform_state_bootstrap_apply | bool
+
+    - name: Read state-bootstrap outputs
+      ansible.builtin.command:
+        cmd: terraform -chdir={{ terraform_state_bootstrap_dir }} output -json
+      register: terraform_state_output
+      changed_when: false
+      when: terraform_main_init | bool
+
+    - name: Parse state-bootstrap outputs
+      ansible.builtin.set_fact:
+        terraform_state: "{{ terraform_state_output.stdout | from_json }}"
+      when: terraform_main_init | bool
+
+    - name: Write generated main-stack remote-state settings
+      ansible.builtin.copy:
+        dest: "{{ terraform_remote_state_config }}"
+        mode: "0600"
+        content: |
+          bucket  = "{{ terraform_state.state_bucket_name.value }}"
+          key     = "{{ terraform_state_key }}"
+          region  = "{{ terraform_state.state_bucket_region.value }}"
+          encrypt = true
+      when: terraform_main_init | bool
+
+    - name: Initialize a fresh main stack with remote state
+      ansible.builtin.command:
+        cmd: >-
+          terraform -chdir={{ terraform_dir }} init -input=false -reconfigure
+          -backend-config={{ terraform_remote_state_config }}
+      changed_when: false
+      when:
+        - terraform_main_init | bool
+        - not (terraform_main_migrate_state | bool)
+
+    - name: Migrate existing main-stack state to remote state
+      ansible.builtin.command:
+        cmd: >-
+          terraform -chdir={{ terraform_dir }} init -input=false -migrate-state -force-copy
+          -backend-config={{ terraform_remote_state_config }}
+      when:
+        - terraform_main_init | bool
+        - terraform_main_migrate_state | bool
+
+    - name: Apply the main Terraform infrastructure
+      ansible.builtin.command:
+        cmd: terraform -chdir={{ terraform_dir }} apply -auto-approve -input=false
+      when: terraform_main_apply | bool
+
+    - name: Report local-only validation mode
+      ansible.builtin.debug:
+        msg: >-
+          Terraform configurations validated without bootstrap apply, state
+          initialization/migration, main apply, or AWS infrastructure mutation.
+      when:
+        - not (terraform_state_bootstrap_apply | bool)
+        - not (terraform_main_init | bool)
+        - not (terraform_main_apply | bool)

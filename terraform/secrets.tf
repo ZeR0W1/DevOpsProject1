@@ -5,22 +5,8 @@ ephemeral "random_password" "db_password" {
   override_special = "!#$%&*()-_=+[]{}<>:?"
 }
 
-// Read the existing db_creds secret metadata for optional consumers.
-data "aws_secretsmanager_secret" "db_creds" {
-  name = var.db_creds_secret_name
-}
-
-// Read the current db_creds secret value from Secrets Manager.
-data "aws_secretsmanager_secret_version" "db_creds" {
-  secret_id = data.aws_secretsmanager_secret.db_creds.id
-}
-
-locals {
-  db_creds_secret = jsondecode(data.aws_secretsmanager_secret_version.db_creds.secret_string)
-}
-
 resource "aws_secretsmanager_secret" "db_password" {
-  # Stable secret container for the RDS master password value.
+  # This secret follows the intentionally disposable application-data boundary.
   name                    = var.db_password_secret_name
   recovery_window_in_days = 0
 }

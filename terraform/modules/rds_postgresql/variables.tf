@@ -40,26 +40,6 @@ variable "allocated_storage" {
   type        = number
 }
 
-variable "storage_type" {
-  description = "RDS storage type"
-  type        = string
-}
-
-variable "publicly_accessible" {
-  description = "Whether the RDS instance is publicly accessible"
-  type        = bool
-}
-
-variable "skip_final_snapshot" {
-  description = "Whether to skip the final snapshot when destroying the DB"
-  type        = bool
-}
-
-variable "backup_retention_period" {
-  description = "RDS backup retention period"
-  type        = number
-}
-
 variable "subnet_ids" {
   description = "Subnet IDs used by the DB subnet group"
   type        = list(string)

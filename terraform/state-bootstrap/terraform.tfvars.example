@@ -1,0 +1,11 @@
+# The state bucket name must be globally unique. Include your AWS account ID or
+# another stable organization identifier; do not reuse the application-data bucket.
+state_bucket_name = "devops-project1-terraform-state-123456789012-us-east-1"
+
+aws_region  = "us-east-1"
+project_name = "devops-project1"
+environment  = "shared"
+
+common_tags = {
+  Owner = "example-owner"
+}

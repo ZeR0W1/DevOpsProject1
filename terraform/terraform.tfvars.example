@@ -1,4 +1,5 @@
-# Copy this file to terraform.tfvars and update values for your account/environment.
+# Authoritative non-secret input template. The guarded Ansible lifecycle copies
+# this file to ignored terraform.tfvars and injects the three local values below.
 
 aws_region  = "us-east-1"
 name_prefix = "doa"
@@ -9,22 +10,29 @@ common_tags = {
   ManagedBy = "Terraform"
 }
 
-enable_ssh_ingress = true
-create_s3_bucket   = false
-
 vpc_cidr           = "10.0.0.0/16"
 availability_zones = ["us-east-1b", "us-east-1a"]
 
-ami_id        = "ami-REPLACE_ME"
-instance_type = "t3.micro"
-key_name      = "REPLACE_WITH_YOUR_KEYPAIR_NAME"
+eks_cluster_name        = "doa-staging-eks"
+eks_cluster_version     = "1.34"
+eks_node_instance_types = ["t3.medium"]
+eks_node_desired_size   = 3
+eks_node_min_size       = 3
+eks_node_max_size       = 4
 
-bucket_name         = "REPLACE-WITH-GLOBALLY-UNIQUE-BUCKET"
+# Terraform derives the private application bucket name from name_prefix,
+# environment, the authenticated AWS account ID, and aws_region. Uncomment only
+# when an explicit globally unique override is required.
+# bucket_name       = "custom-globally-unique-application-bucket"
 worker_topic_name   = "DOAworker"
 billing_alarm_name  = "Billing-Over-20-USD"
 
 db_password_secret_name = "project/postgresql/master-password"
-db_creds_secret_name    = "db_creds"
+
+# Replaced by Ansible from the encrypted ignored local environment file.
+admin_cidr  = "203.0.113.10/32"
+admin_email = "admin@example.com"
+db_username = "doa_staging_admin"
 
 db_subnet_group_name       = "db-group1"
 db_identifier              = "dodb2"
@@ -32,11 +40,3 @@ db_name                    = "postgres"
 db_engine_version          = "17.6"
 db_instance_class          = "db.t4g.micro"
 db_allocated_storage       = 20
-db_storage_type            = "gp2"
-db_publicly_accessible     = false
-db_skip_final_snapshot     = true
-db_backup_retention_period = 0
-
-frontend_name = "Front"
-backend_name  = "Back"
-worker_name   = "Worker"

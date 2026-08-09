@@ -1,0 +1,100 @@
+---
+- name: Prepare effective Terraform inputs and verify AWS identity
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    project_root: "{{ playbook_dir }}/../.."
+    terraform_dir: "{{ project_root }}/terraform"
+    terraform_input_example: "{{ terraform_dir }}/terraform.tfvars.example"
+    terraform_effective_inputs: "{{ terraform_dir }}/terraform.tfvars"
+    local_environment_file: "{{ playbook_dir }}/../vault/local-environment.yml"
+    prepare_terraform_inputs: "{{ lookup('ansible.builtin.env', 'PREPARE_TERRAFORM_INPUTS') | default('false', true) | bool }}"
+
+  tasks:
+    - name: Verify local encrypted environment inputs exist
+      ansible.builtin.stat:
+        path: "{{ local_environment_file }}"
+      register: local_environment
+      when: prepare_terraform_inputs | bool
+
+    - name: Require one-time environment setup before input preparation
+      ansible.builtin.assert:
+        that:
+          - local_environment.stat.exists
+          - local_environment.stat.isreg
+        fail_msg: >-
+          Run playbooks/setup_local_environment.yml first to create the ignored
+          encrypted local environment file.
+      when: prepare_terraform_inputs | bool
+
+    - name: Load encrypted local environment inputs
+      ansible.builtin.include_vars:
+        file: "{{ local_environment_file }}"
+      no_log: true
+      when: prepare_terraform_inputs | bool
+
+    - name: Validate decrypted local environment inputs
+      ansible.builtin.assert:
+        that:
+          - admin_email is match('^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$')
+          - admin_cidr is match('^(25[0-5]|2[0-4][0-9]|1?[0-9]{1,2})(\\.(25[0-5]|2[0-4][0-9]|1?[0-9]{1,2})){3}/32$')
+          - db_username is match('^[a-z][a-z0-9_]{0,62}$')
+          - not db_username.startswith('pg_')
+        fail_msg: "Encrypted local environment inputs are invalid; rerun the setup helper."
+      no_log: true
+      when: prepare_terraform_inputs | bool
+
+    - name: Copy authoritative Terraform input template
+      ansible.builtin.copy:
+        src: "{{ terraform_input_example }}"
+        dest: "{{ terraform_effective_inputs }}"
+        remote_src: true
+        mode: "0600"
+      when: prepare_terraform_inputs | bool
+
+    - name: Inject encrypted local Terraform input values
+      ansible.builtin.lineinfile:
+        path: "{{ terraform_effective_inputs }}"
+        regexp: "^{{ item.key }}\\s*="
+        line: "{{ item.key }} = {{ item.value | to_json }}"
+      loop:
+        - key: admin_cidr
+          value: "{{ admin_cidr }}"
+        - key: admin_email
+          value: "{{ admin_email }}"
+        - key: db_username
+          value: "{{ db_username }}"
+      no_log: true
+      when: prepare_terraform_inputs | bool
+
+    - name: Verify AWS credential chain and caller identity
+      ansible.builtin.command:
+        argv:
+          - aws
+          - sts
+          - get-caller-identity
+          - --query
+          - Account
+          - --output
+          - text
+      register: aws_account_check
+      changed_when: false
+      no_log: true
+      when: prepare_terraform_inputs | bool
+
+    - name: Report prepared inputs without private values
+      ansible.builtin.debug:
+        msg: >-
+          Effective Terraform inputs were regenerated from the committed example,
+          local encrypted values were injected, and the AWS credential chain was
+          verified. No infrastructure mutation was performed.
+      when: prepare_terraform_inputs | bool
+
+    - name: Report disabled Terraform input preparation
+      ansible.builtin.debug:
+        msg: >-
+          Terraform input preparation and AWS preflight are disabled. Set
+          PREPARE_TERRAFORM_INPUTS=true only after local environment setup.
+      when: not (prepare_terraform_inputs | bool)

@@ -30,14 +30,6 @@
         dest: "{{ frontend_chart_html }}"
         mode: "0644"
 
-    - name: Create or update worker DB Kubernetes Secret
-      ansible.builtin.command:
-        cmd: >-
-          kubectl create secret generic worker-db-secret
-          --namespace devops-app
-          --from-literal=password=$(terraform -chdir={{ terraform_dir }} output -raw db_password_secret_name)
-          --dry-run=client -o yaml | kubectl apply -f -
-
     - name: Deploy frontend chart
       ansible.builtin.command:
         cmd: >-

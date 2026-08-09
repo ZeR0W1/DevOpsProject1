@@ -19,16 +19,18 @@ resource "aws_db_instance" "postgres" {
   engine_version          = var.db_engine_version
   instance_class          = var.db_instance_class
   allocated_storage       = var.allocated_storage
-  storage_type            = var.storage_type
+  storage_type            = "gp3"
+  storage_encrypted       = true
   db_name                 = var.db_name
   username                = var.db_username
   password_wo             = var.db_password_wo
   password_wo_version     = 1
-  publicly_accessible     = var.publicly_accessible
+  publicly_accessible     = false
   db_subnet_group_name    = aws_db_subnet_group.project.name
   vpc_security_group_ids  = var.security_group_ids
-  skip_final_snapshot     = var.skip_final_snapshot
-  backup_retention_period = var.backup_retention_period
+  skip_final_snapshot     = true
+  backup_retention_period = 0
+  deletion_protection     = false
 
   tags = merge(var.common_tags, {
     Name        = "${var.name_prefix}-${var.environment}-${var.db_identifier}"

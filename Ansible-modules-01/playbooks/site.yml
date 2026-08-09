@@ -1,20 +1,16 @@
 ---
-# Dev/testing orchestrator for control-node execution.
-# This file runs the full provisioning flow end-to-end:
-# 1) apply Terraform infrastructure
-# 2) sync Terraform outputs
-# 3) configure frontend nginx
-# 4) deploy backend/worker app services
+# Top-level control-node orchestrator.
 #
-# It is not intended to run *on* EC2 instances themselves.
-- name: Apply Terraform infrastructure
-  ansible.builtin.import_playbook: apply_terraform.yml
+# Terraform Phase 1 exposes guarded input, infrastructure, and application-secret stages.
+# EKS prerequisites, Jenkins lifecycle, initial S3 content, remaining application
+# configuration, and standalone CD invocation will be added here as separately
+# validated stages. Do not append the legacy EC2 inventory/nginx/systemd flow: the
+# EKS root intentionally no longer exports its required EC2 host outputs.
+- name: Prepare effective Terraform inputs
+  ansible.builtin.import_playbook: prepare_terraform_inputs.yml
 
-- name: Sync dynamic infra values from Terraform outputs
-  ansible.builtin.import_playbook: sync_from_terraform.yml
+- name: Configure Terraform state and infrastructure lifecycle
+  ansible.builtin.import_playbook: configure_terraform_state.yml
 
-- name: Configure frontend nginx
-  ansible.builtin.import_playbook: install-nginx.yml
-
-- name: Deploy backend and worker application services
-  ansible.builtin.import_playbook: deploy_app.yml
+- name: Prepare application runtime secrets
+  ansible.builtin.import_playbook: prepare_application_secret.yml

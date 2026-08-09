@@ -11,7 +11,7 @@ variable "vpc_cidr" {
 }
 
 variable "availability_zones" {
-  description = "Availability zones used for app/db subnet placement (index 0 = app, index 1 = db)"
+  description = "Availability zones used for Kubernetes public/private subnet placement"
   type        = list(string)
 }
 
@@ -21,42 +21,76 @@ variable "subnet_newbits" {
   default     = 8
 }
 
-variable "app_subnet_netnum" {
-  description = "Netnum index for app subnet CIDR derivation"
+variable "public_subnet_netnums" {
+  description = "Netnum indexes for public subnet CIDR derivation. Public subnets support the temporary frontend LoadBalancer and NAT Gateway placement."
+  type        = list(number)
+  default     = [10, 11]
+}
+
+variable "private_subnet_netnums" {
+  description = "Netnum indexes for private subnet CIDR derivation. Private subnets are intended for EKS worker nodes and RDS."
+  type        = list(number)
+  default     = [20, 21]
+}
+
+variable "enable_nat_gateway" {
+  description = "Enable NAT Gateway routing so private EKS nodes can reach image registries and AWS APIs without public IPs"
+  type        = bool
+  default     = true
+}
+
+variable "eks_cluster_name" {
+  description = "Name of the Terraform-managed EKS cluster"
+  type        = string
+  default     = ""
+}
+
+variable "eks_cluster_version" {
+  description = "Kubernetes version for the EKS control plane"
+  type        = string
+  default     = "1.34"
+}
+
+variable "eks_node_instance_types" {
+  description = "EC2 instance types for the EKS managed node group"
+  type        = list(string)
+  default     = ["t3.medium"]
+}
+
+variable "eks_node_desired_size" {
+  description = "Desired number of EKS worker nodes"
   type        = number
-  default     = 1
+  default     = 3
 }
 
-variable "db_subnet_netnum" {
-  description = "Netnum index for db subnet CIDR derivation"
+variable "eks_node_min_size" {
+  description = "Minimum number of EKS worker nodes"
   type        = number
-  default     = 2
+  default     = 3
 }
 
-variable "ami_id" {
-  description = "AMI ID used by the EC2 instances"
-  type        = string
-}
-
-variable "instance_type" {
-  description = "EC2 instance type"
-  type        = string
-}
-
-variable "key_name" {
-  description = "EC2 key pair name"
-  type        = string
+variable "eks_node_max_size" {
+  description = "Maximum number of EKS worker nodes"
+  type        = number
+  default     = 4
 }
 
 variable "bucket_name" {
-  description = "S3 bucket name for machine catalog synchronization"
+  description = "Optional application S3 bucket name override; when null, Terraform derives a deterministic name from prefix, environment, AWS account ID, and region"
   type        = string
-}
+  default     = null
+  nullable    = true
 
-variable "create_s3_bucket" {
-  description = "Whether Terraform should create/manage the S3 bucket resource"
-  type        = bool
-  default     = false
+  validation {
+    condition = var.bucket_name == null || (
+      length(var.bucket_name) >= 3 &&
+      length(var.bucket_name) <= 63 &&
+      can(regex("^[a-z0-9][a-z0-9.-]*[a-z0-9]$", var.bucket_name)) &&
+      !can(regex("\\.\\.", var.bucket_name)) &&
+      !can(regex("^[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+$", var.bucket_name))
+    )
+    error_message = "bucket_name must be null or a valid 3-63 character lowercase S3 bucket name that is not formatted as an IPv4 address."
+  }
 }
 
 variable "worker_topic_name" {
@@ -99,49 +133,43 @@ variable "db_allocated_storage" {
   type        = number
 }
 
-variable "db_storage_type" {
-  description = "RDS storage type"
-  type        = string
-}
-
-variable "db_publicly_accessible" {
-  description = "Whether the RDS instance is publicly accessible"
-  type        = bool
-}
-
-variable "db_skip_final_snapshot" {
-  description = "Whether to skip the final snapshot when destroying the DB"
-  type        = bool
-}
-
-variable "db_backup_retention_period" {
-  description = "RDS backup retention period"
-  type        = number
-}
-
 variable "db_password_secret_name" {
   description = "AWS Secrets Manager secret name used to store the PostgreSQL master password"
   type        = string
 }
 
-variable "db_creds_secret_name" {
-  description = "AWS Secrets Manager secret name for the existing db_creds secret"
+variable "admin_cidr" {
+  description = "Administrator IPv4 CIDR allowed to reach controlled administrative endpoints and the EKS public API"
   type        = string
+
+  sensitive = true
+
+  validation {
+    condition     = can(cidrhost(var.admin_cidr, 0)) && can(regex("/32$", var.admin_cidr))
+    error_message = "admin_cidr must be a valid IPv4 /32 CIDR."
+  }
 }
 
-variable "frontend_name" {
-  description = "Name tag for the frontend instance"
+variable "admin_email" {
+  description = "Administrator email used for SNS notifications"
   type        = string
+  sensitive   = true
+
+  validation {
+    condition     = can(regex("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$", var.admin_email))
+    error_message = "admin_email must be a valid email address."
+  }
 }
 
-variable "backend_name" {
-  description = "Name tag for the backend instance"
+variable "db_username" {
+  description = "Deterministic PostgreSQL administrator username derived from name_prefix and environment by Ansible"
   type        = string
-}
+  sensitive   = true
 
-variable "worker_name" {
-  description = "Name tag for the worker instance"
-  type        = string
+  validation {
+    condition     = can(regex("^[a-z][a-z0-9_]{0,62}$", var.db_username)) && !startswith(var.db_username, "pg_")
+    error_message = "db_username must be a valid PostgreSQL identifier up to 63 characters and must not start with pg_."
+  }
 }
 
 variable "name_prefix" {
@@ -158,10 +186,4 @@ variable "common_tags" {
   description = "Base tags applied to managed resources"
   type        = map(string)
   default     = {}
-}
-
-variable "enable_ssh_ingress" {
-  description = "Enable a shared SSH admin security group and attach it to app instances"
-  type        = bool
-  default     = false
 }

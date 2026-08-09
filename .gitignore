@@ -13,6 +13,10 @@ logs/
 !.env*.example
 .vscode/
 
+# Local Cline command/recovery artifacts (project rules remain tracked)
+/.command-logs/
+/.recovery-progress-note-candidates/
+
 */__pycache__/
 *.pyc
 *$py.class
@@ -24,6 +28,7 @@ misc/
 *.pdf
 *.deb
 /auth
+/Jenkins/jenkins-cli.jar
 
 **/.terraform/
 
@@ -31,6 +36,9 @@ misc/
 *.tfstate.*
 *.tfplan
 terraform/terraform.tfvars
+terraform/remote-state.hcl
+terraform/state-bootstrap/terraform.tfvars
+terraform/state_backups/
 
 *.pem
 
@@ -42,6 +50,8 @@ src/legacy/
 *.retry.json
 *.vault
 vault_pass.txt
+Ansible-modules-01/.vault-password
+Ansible-modules-01/vault/local-environment.yml
 ansible.log
 Ansible-modules-01/inventory.ini
 

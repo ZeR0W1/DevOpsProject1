@@ -8,14 +8,8 @@ variable "admin_cidr" {
   type        = string
 }
 
-variable "enable_ssh_ingress" {
-  description = "Whether to allow SSH ingress (22/tcp) from admin_cidr to app instances"
-  type        = bool
-  default     = false
-}
-
 variable "availability_zones" {
-  description = "Availability zones used for app and DB subnets (first = app, second = db)"
+  description = "Availability zones used for Kubernetes public/private subnets"
   type        = list(string)
 }
 
@@ -25,16 +19,29 @@ variable "subnet_newbits" {
   default     = 8
 }
 
-variable "app_subnet_netnum" {
-  description = "Netnum index for app subnet CIDR derivation"
-  type        = number
-  default     = 1
+# Kubernetes-first network layout:
+# - public subnets host internet-facing entry points such as an AWS Load Balancer
+#   or ingress controller load balancer, and also host NAT Gateway placement.
+# - private subnets host EKS worker nodes and private AWS dependencies such as RDS.
+# The defaults derive /24s from the project VPC when subnet_newbits = 8.
+variable "public_subnet_netnums" {
+  description = "Netnum indexes for public subnet CIDR derivation"
+  type        = list(number)
+  default     = [10, 11]
 }
 
-variable "db_subnet_netnum" {
-  description = "Netnum index for db subnet CIDR derivation"
-  type        = number
-  default     = 2
+variable "private_subnet_netnums" {
+  description = "Netnum indexes for private subnet CIDR derivation"
+  type        = list(number)
+  default     = [20, 21]
+}
+
+# Private EKS nodes need outbound access for image pulls and AWS/API calls.
+# NAT Gateway provides that while keeping nodes out of public subnets.
+variable "enable_nat_gateway" {
+  description = "Whether to create NAT Gateway routing for private subnets"
+  type        = bool
+  default     = true
 }
 
 variable "name_prefix" {
