@@ -7,4 +7,4 @@ WORKER_HOST = os.getenv("WORKER_HOST")
 WORKER_PORT = int(os.getenv("WORKER_PORT", "8000"))
 
 if not WORKER_HOST:
-    raise RuntimeError("WORKER_HOST must be provided by Ansible app_environment")
+    raise RuntimeError("WORKER_HOST must identify the internal worker service")

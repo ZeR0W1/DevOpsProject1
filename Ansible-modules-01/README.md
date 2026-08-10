@@ -19,8 +19,10 @@ Main project documentation: [../README.md](../README.md)
   opt-in lifecycle stages (`playbooks/configure_terraform_state.yml`)
 - creates encrypted local environment inputs and, only when enabled, regenerates
   effective Terraform inputs from the committed example
-- optionally reads the Terraform-owned RDS password from AWS Secrets Manager and
-  synchronizes it into the namespace-scoped `worker-db-secret`
+- optionally writes reviewed, non-password Terraform runtime outputs to ignored
+  mode-0600 `recovery/application-runtime.yml`, then reads the Terraform-owned
+  RDS password from AWS Secrets Manager and synchronizes it into the
+  namespace-scoped `worker-db-secret`
 - will grow into the authoritative EKS/Jenkins/application create lifecycle;
   obsolete EC2 inventory/nginx/systemd playbooks have been removed and archived
   transitional shell helpers are not imported by `site.yml`
@@ -34,8 +36,8 @@ Main project documentation: [../README.md](../README.md)
   and read-only AWS caller-identity preflight
 - `playbooks/configure_terraform_state.yml` — remote-state bootstrap and guarded
   Terraform lifecycle tasks
-- `playbooks/prepare_application_secret.yml` — explicitly gated Secrets Manager
-  to Kubernetes Secret synchronization
+- `playbooks/prepare_application_secret.yml` — independently gated runtime-output
+  preparation and Secrets Manager to Kubernetes Secret synchronization
 - `playbooks/destroy.yml` — separate dependency-ordered full-stack teardown; it is
   intentionally not imported by `site.yml`
 
@@ -61,9 +63,11 @@ ANSIBLE_CONFIG=ansible.cfg ansible-playbook playbooks/site.yml
 # Safe destroy validation; defaults to local assertions/debug only
 ANSIBLE_CONFIG=ansible.cfg ansible-playbook playbooks/destroy.yml
 
-# After separately reviewing AWS identity, kubeconfig context, namespace, and
-# rotation impact, synchronize only the application database Secret.
-SYNC_APPLICATION_SECRET=true \
+# After reviewing Terraform outputs, write the ignored non-password runtime
+# handoff. Add SYNC_APPLICATION_SECRET=true only after separately reviewing AWS
+# identity, kubeconfig context, namespace, and password-rotation impact.
+PREPARE_APPLICATION_RUNTIME=true \
+  SYNC_APPLICATION_SECRET=true \
   ANSIBLE_CONFIG=ansible.cfg \
   ansible-playbook playbooks/prepare_application_secret.yml
 ```
@@ -114,6 +118,9 @@ the committed example for non-secret settings and rerun the preparation stage.
 - **Terraform** creates the RDS password and its AWS Secrets Manager secret.
 - **Ansible** reads that value only during an explicitly enabled deployment stage
   and creates or updates `devops-app/worker-db-secret` with `no_log: true`.
+- The ignored mode-0600 runtime handoff contains only deployment metadata such as
+  RDS endpoint/name/user/port, AWS region, S3 bucket, SNS topic ARN, and Secret
+  names; it never contains the database password value.
 - **Helm/Kubernetes** injects the `password` key into the worker as
   `POSTGRES_PASSWORD`; the password is never committed to Git or written to a
   generated workspace file.
@@ -127,8 +134,10 @@ RBAC access to the Secret and use EKS encryption at rest for Kubernetes Secrets.
 ## Notes
 
 - This is a control-node workflow; do not run the lifecycle on cluster nodes.
-- `SYNC_APPLICATION_SECRET=true` performs AWS read and Kubernetes mutation and is
-  intentionally off by default.
+- `PREPARE_APPLICATION_RUNTIME=true` reads Terraform outputs and writes only the
+  ignored non-password handoff; `SYNC_APPLICATION_SECRET=true` additionally
+  performs the AWS secret read and Kubernetes mutation. Both default off, and
+  secret synchronization requires both flags in the same run.
 - `PREPARE_TERRAFORM_INPUTS=true` rewrites only the ignored effective tfvars and
   performs a read-only AWS identity check; it does not apply Terraform.
 - Never add secret-value debug tasks or remove `no_log: true` from secret handling.

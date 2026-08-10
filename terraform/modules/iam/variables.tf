@@ -8,6 +8,11 @@ variable "sns_topic_arn" {
   type        = string
 }
 
+variable "eks_cluster_arn" {
+  description = "EKS cluster ARN that the Jenkins deployer may describe"
+  type        = string
+}
+
 variable "name_prefix" {
   description = "Prefix used to namespace IAM resource names"
   type        = string

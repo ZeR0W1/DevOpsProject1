@@ -24,14 +24,10 @@ spec:
             - containerPort: {{ .Values.service.targetPort }}
               name: http
           env:
-            - name: API_HOST
-              value: {{ .Values.env.API_HOST | quote }}
-            - name: API_PORT
-              value: {{ .Values.env.API_PORT | quote }}
             - name: WORKER_HOST
-              value: {{ .Values.env.WORKER_HOST | quote }}
+              value: {{ .Values.workerService.host | quote }}
             - name: WORKER_PORT
-              value: {{ .Values.env.WORKER_PORT | quote }}
+              value: {{ .Values.workerService.port | quote }}
           livenessProbe:
             {{- toYaml .Values.livenessProbe | nindent 12 }}
           readinessProbe:

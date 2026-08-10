@@ -4,7 +4,7 @@ fullnameOverride: ""
 namespace: devops-app
 
 image:
-  repository: zer0w1/devops-app-worker
+  repository: zer0w1/devops-project1-worker
   tag: "1.0.0"
   pullPolicy: IfNotPresent
 

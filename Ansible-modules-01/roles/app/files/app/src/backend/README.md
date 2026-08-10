@@ -1,4 +1,4 @@
-## Backend instance
+# Backend service
 
 ### Functional intent
 
@@ -21,7 +21,7 @@ src/backend/
   README.md
 ```
 
-### Deployment setup
+### Local setup
 
 Install dependencies:
 
@@ -29,55 +29,31 @@ Install dependencies:
 pip install -r ./requirements.txt
 ```
 
-Run from the `src/backend/` directory:
+Set the worker endpoint and run from the `src/backend/` directory:
 
 ```bash
+export WORKER_HOST=localhost
+export WORKER_PORT=8000
 python ./api.py
 ```
 
-### systemd setup
+### Container and EKS deployment
 
-Install and start:
+`Dockerfile.backend` runs Uvicorn on immutable container endpoint
+`0.0.0.0:8000`. The `helm/backend` Service is internal `ClusterIP` port `8000`
+and the frontend nginx proxy reaches it through Kubernetes Service DNS name
+`backend`.
 
-```bash
-sudo tee /etc/systemd/system/infra-backend.service >/dev/null <<'UNIT'
-[Unit]
-Description=Infrastructure Automation Backend API
-After=network.target
+The only non-secret backend runtime settings are the internal worker endpoint:
 
-[Service]
-User=ec2-user
-WorkingDirectory=/home/ec2-user/infra-automation/src/backend
-Environment="API_HOST=127.0.0.1"
-Environment="API_PORT=8000"
-Environment="WORKER_HOST=10.0.157.192"
-Environment="WORKER_PORT=8000"
-ExecStart=/home/ec2-user/infra-automation/venv/bin/python /home/ec2-user/infra-automation/src/backend/api.py
-Restart=always
+- `workerService.host` defaults to Kubernetes Service `worker`;
+- `workerService.port` defaults to `8000`; and
+- the Deployment maps those values to `WORKER_HOST` and `WORKER_PORT`.
 
-[Install]
-WantedBy=multi-user.target
-UNIT
-sudo systemctl daemon-reload
-sudo systemctl enable infra-backend.service
-sudo systemctl restart infra-backend.service
-sudo systemctl status infra-backend.service
-```
-
-### Key configuration
-
-```bash
-API_HOST=127.0.0.1
-API_PORT=8000
-WORKER_HOST=10.0.157.192
-WORKER_PORT=8000
-```
-
-### Current AWS attachment notes
-
-- instance security group: `backend-api`
-- inbound application traffic: `8000/tcp` from security group `http`
-- backend forwards worker requests to `10.0.157.192:8000`
+The chart intentionally does not expose `API_HOST` or `API_PORT`: the image
+command owns the fixed container bind contract, and the Service and probes remain
+aligned to port `8000`. The backend has no AWS credentials and no direct RDS, S3,
+or SNS access; those integrations belong to the internal worker.
 
 ### Maintenance endpoint
 

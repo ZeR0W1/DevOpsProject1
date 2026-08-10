@@ -55,7 +55,8 @@ must remain explicitly approved, cost-aware, and dependency-ordered.
 
 - [ ] Make PostgreSQL the worker's primary structured datastore.
 - [ ] Add idempotent schema initialization and useful database failure handling.
-- [ ] Load initial `index.html` from the checked-out repository on every create.
+- [x] Implement validated CI seed-if-missing and explicit reset of versioned S3
+  `index.html`; Ansible invocation during create remains tracked in section 7.
 - [ ] Synchronize the machine catalog to S3 object `instances.json`.
 - [ ] Publish the required SNS notifications without leaking machine records or
   credentials.
@@ -69,7 +70,8 @@ must remain explicitly approved, cost-aware, and dependency-ordered.
 - [ ] Finish ConfigMap and Secret wiring for RDS, S3, SNS, and service endpoints.
 - [ ] Verify resource requests/limits, probes, immutable tags, labels/selectors,
   ServiceAccounts, and least-privilege security contexts for all three services.
-- [ ] Move frontend nginx runtime configuration into a Helm-managed ConfigMap.
+- [x] Mount CD-owned `frontend-runtime-content` into frontend only; Helm references
+  the external ConfigMap and supports an opt-in packaged fallback for chart tests.
 - [ ] Decide and implement the final public frontend entry point.
 - [ ] Re-lint and template every chart with production-intended values.
 
@@ -78,14 +80,16 @@ must remain explicitly approved, cost-aware, and dependency-ordered.
 - [x] Keep independent three-service CI and standalone CD pipelines.
 - [x] Build frontend, backend, and worker with one immutable image tag.
 - [x] Keep application mutation inside CD and use atomic Helm deployment behavior.
-- [ ] Move Jenkins AWS identity/infrastructure ownership into Terraform.
+- [x] Define Terraform-owned Jenkins CI/deployer Pod Identity roles, associations,
+  scoped S3/EKS permissions, and the deployer EKS access entry.
 - [ ] Implement idempotent Ansible Jenkins namespace, storage, Helm, RBAC, identity,
   and job-seeding stages.
 - [ ] Resolve the professor decision for CIDR-restricted Jenkins ALB versus a private
   SSM/bastion access path.
 - [ ] If the Jenkins ALB is retained, add TLS, administrator-CIDR restriction,
   authentication, lifecycle ordering, cost notes, and teardown coverage.
-- [ ] Refactor verbose reusable Helm operations without merging CI and CD boundaries.
+- [x] Keep explicit CI/CD stages while moving reusable one-file S3/ConfigMap mechanics
+  into a reviewed helper without merging CI and CD boundaries.
 - [ ] Run the selected image scanning step and document the inherited-vulnerability
   policy if this bonus is retained.
 

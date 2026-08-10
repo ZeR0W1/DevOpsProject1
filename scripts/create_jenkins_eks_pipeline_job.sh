@@ -22,4 +22,14 @@ exec bash "$PROJECT_ROOT/scripts/create_jenkins_job.sh" \
   --string-param AWS_REGION "us-east-1" "AWS region containing the target EKS cluster." \
   --string-param EKS_CLUSTER_NAME "devops-app-eks" "Target EKS cluster name." \
   --string-param DEPLOY_NAMESPACE "devops-app" "Namespace containing application Helm releases." \
+  --string-param FRONTEND_CONTENT_BUCKET "" "Terraform-owned application bucket containing index.html." \
+  --string-param FRONTEND_CONTENT_KEY "index.html" "Stable S3 key used as the runtime frontend content source." \
+  --boolean-param OVERWRITE_FRONTEND_CONTENT false "Replace existing S3 index.html with the repository default; missing content is always seeded." \
+  --string-param WORKER_DB_HOST "" "Terraform RDS hostname passed to FULL CD runs." \
+  --string-param WORKER_DB_PORT "5432" "Terraform RDS PostgreSQL port passed to FULL CD runs." \
+  --string-param WORKER_DB_NAME "" "Terraform PostgreSQL database name passed to FULL CD runs." \
+  --string-param WORKER_DB_USER "" "Terraform PostgreSQL username passed to FULL CD runs." \
+  --string-param WORKER_DB_SECRET_NAME "worker-db-secret" "Existing Ansible-managed Kubernetes Secret name passed to FULL CD runs." \
+  --string-param WORKER_S3_BUCKET "" "Terraform-owned bucket used for worker instances.json synchronization." \
+  --string-param WORKER_SNS_TOPIC_ARN "" "Terraform-owned worker SNS topic ARN." \
   "$@"

@@ -4,7 +4,7 @@ fullnameOverride: ""
 namespace: devops-app
 
 image:
-  repository: zer0w1/devops-app-frontend
+  repository: zer0w1/devops-project1-frontend
   tag: "1.0.0"
   pullPolicy: IfNotPresent
 
@@ -72,8 +72,10 @@ serviceAccount:
 
 frontendContent:
   enabled: true
-  mountPath: /usr/share/nginx/html/index.html
-  subPath: index.html
-  # Canonical repository source. The remaining ConfigMap refactor will make this
-  # path the single input used by image and chart validation workflows.
+  # CD owns this external runtime ConfigMap. Set create=true only for isolated
+  # chart testing that intentionally uses the packaged repository default.
+  create: false
+  configMapName: frontend-runtime-content
+  mountPath: /usr/share/nginx/html
+  # Canonical repository source used by CI to seed S3 when index.html is absent.
   sourceFile: Ansible-modules-01/roles/app/files/app/src/frontend/index.html

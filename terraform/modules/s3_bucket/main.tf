@@ -18,6 +18,14 @@ resource "aws_s3_bucket_ownership_controls" "machine_catalog" {
   }
 }
 
+resource "aws_s3_bucket_versioning" "machine_catalog" {
+  bucket = aws_s3_bucket.machine_catalog.id
+
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
 resource "aws_s3_bucket_public_access_block" "machine_catalog" {
   bucket = aws_s3_bucket.machine_catalog.id
 

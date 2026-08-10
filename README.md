@@ -35,7 +35,8 @@ safety and recovery record is
 - **Jenkins CI and CD remain separate**. `Jenkins/Jenkinsfile.eks` checks code and
   charts and builds one immutable tag for all three images. CD through
   `Jenkins/Jenkinsfile-deploy` is optional and is the only Jenkins job allowed to
-  change application workloads.
+  change application workloads. CI may seed or explicitly reset the versioned S3
+  `index.html`; CD is the sole owner of the S3-to-Kubernetes content activation.
 - **Helm deploys three independent releases** from `helm/frontend`,
   `helm/backend`, and `helm/worker`. The retained `helm/spring-music` chart is the
   professor-provided reference/template; it is not the production application
@@ -77,6 +78,7 @@ flowchart LR
     Back --> Worker
     Worker --> RDS
     Worker -->|instances.json| Bucket
+    Bucket -->|index.html via CD| FrontCM
     Worker --> Topic
     FrontCM --> Front
     RuntimeCM --> Worker
@@ -108,8 +110,9 @@ trust boundary.
 | `Ansible-modules-01/roles/app/files/app/src/` | Application source |
 | `scripts/legacy/`, `Jenkins/legacy/` | Archived transitional/lab assets; not supported lifecycle owners |
 
-The canonical frontend source is
-`Ansible-modules-01/roles/app/files/app/src/frontend/index.html`.
+The repository default frontend source is
+`Ansible-modules-01/roles/app/files/app/src/frontend/index.html`. The authoritative
+runtime source is the Terraform-owned, versioned S3 object `index.html`.
 
 ## Jenkins model
 
@@ -120,8 +123,37 @@ selected bonus and remains optional while inherited-vulnerability policy is
 finalized.
 
 Successful CI does **not** require automatic deployment. CD is controlled by
-`AUTO_DEPLOY` and a separate job. This preserves the security boundary that only
+`DEPLOY_TO_EKS` and a separate job. This preserves the security boundary that only
 the deployer job receives namespace-scoped Kubernetes mutation permissions.
+
+### Frontend runtime content
+
+CI validates the repository default and uses `FRONTEND_CONTENT_BUCKET` plus the
+fixed `FRONTEND_CONTENT_KEY=index.html`. A missing object is seeded. An existing
+object is preserved unless `OVERWRITE_FRONTEND_CONTENT=true`, which provides an
+explicit reset to the repository default. S3 versioning preserves earlier object
+versions for rollback.
+
+The standalone CD pipeline supports:
+
+- `FULL`: synchronize S3 content, deploy all three immutable image releases with
+  Helm, verify them, then restart only the frontend to activate the content; and
+- `CONTENT_ONLY`: skip all Helm/image changes, synchronize the CD-owned
+  `frontend-runtime-content` ConfigMap, verify its SHA-256, and perform a rolling
+  restart of only the frontend Deployment.
+
+`helm/frontend` references this external ConfigMap and mounts it read-only at
+`/usr/share/nginx/html`; backend and worker do not receive the content. The
+reviewed `scripts/manage_frontend_content.sh` helper contains only reusable
+validation/S3/ConfigMap mechanics. Jenkinsfiles retain explicit orchestration
+stages, while Ansible remains responsible for the wider platform lifecycle and
+future idempotent job-seeding invocation. This avoids adding an Ansible runtime
+and collections to every ephemeral content-only CD agent.
+
+AWS access uses separate EKS Pod Identity roles: CI receives `GetObject` and
+`PutObject` only for `index.html`; CD receives `GetObject` for that object plus
+`eks:DescribeCluster`. Kubernetes mutation remains namespace-scoped through the
+`jenkins-deployer` Role and EKS access entry; no `pods/exec` permission is needed.
 
 Public custom Jenkins images are reproducible from:
 
@@ -167,7 +199,9 @@ lifecycle stage.
 `Ansible-modules-01/playbooks/site.yml` currently orchestrates guarded local input
 preparation, Terraform lifecycle gates, and application-secret preparation. The
 remaining cluster prerequisites, Jenkins Helm/RBAC/job seeding, initial S3
-content, runtime configuration, and standalone CD invocation are not complete.
+content invocation, runtime Secret/configuration preparation, and standalone CD
+invocation are not complete in the Ansible lifecycle. The CI/CD runtime-content
+mechanics themselves are implemented and locally/static validated.
 
 `Ansible-modules-01/playbooks/destroy.yml` is a separate dependency-ordered
 workflow. Its default invocation performs only local assertions/debug. The enabled

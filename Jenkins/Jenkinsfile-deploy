@@ -49,6 +49,16 @@ spec:
         string(name: 'WORKER_IMAGE_REPOSITORY', defaultValue: 'zer0w1/devops-project1-worker', description: 'Worker image repository produced by CI.')
         string(name: 'IMAGE_TAG', defaultValue: '', description: 'Required immutable tag shared by all three CI images; latest is rejected.')
         string(name: 'DEPLOY_NAMESPACE', defaultValue: 'devops-app', description: 'Existing application namespace.')
+        choice(name: 'DEPLOY_MODE', choices: ['FULL', 'CONTENT_ONLY'], description: 'FULL deploys all workloads; CONTENT_ONLY synchronizes S3 index.html and restarts only frontend.')
+        string(name: 'FRONTEND_CONTENT_BUCKET', defaultValue: '', description: 'Terraform-owned application bucket containing index.html.')
+        string(name: 'FRONTEND_CONTENT_KEY', defaultValue: 'index.html', description: 'Stable S3 key used as the runtime frontend content source.')
+        string(name: 'WORKER_DB_HOST', defaultValue: '', description: 'Terraform RDS hostname for the worker.')
+        string(name: 'WORKER_DB_PORT', defaultValue: '5432', description: 'Terraform RDS PostgreSQL port.')
+        string(name: 'WORKER_DB_NAME', defaultValue: '', description: 'Terraform PostgreSQL database name.')
+        string(name: 'WORKER_DB_USER', defaultValue: '', description: 'Terraform PostgreSQL administrator username.')
+        string(name: 'WORKER_DB_SECRET_NAME', defaultValue: 'worker-db-secret', description: 'Existing Ansible-managed Kubernetes Secret containing key password.')
+        string(name: 'WORKER_S3_BUCKET', defaultValue: '', description: 'Terraform-owned bucket for worker instances.json synchronization.')
+        string(name: 'WORKER_SNS_TOPIC_ARN', defaultValue: '', description: 'Terraform-owned SNS topic ARN for worker notifications.')
         booleanParam(name: 'CONFIRM_DEPLOY', defaultValue: false, description: 'Required confirmation that this run may change EKS resources.')
     }
 
@@ -56,6 +66,8 @@ spec:
         FRONTEND_CHART_DIR = 'helm/frontend'
         BACKEND_CHART_DIR = 'helm/backend'
         WORKER_CHART_DIR = 'helm/worker'
+        FRONTEND_CONTENT_FILE = 'frontend-runtime-index.html'
+        FRONTEND_CONTENT_CONFIGMAP = 'frontend-runtime-content'
         KUBECONFIG = "${WORKSPACE}/.kube/config"
     }
 
@@ -64,11 +76,21 @@ spec:
             steps {
                 script {
                     def tag = params.IMAGE_TAG?.trim()
+                    def deployMode = params.DEPLOY_MODE?.trim()
                     def namespace = params.DEPLOY_NAMESPACE?.trim()
                     def repoUrl = params.REPO_URL?.trim()
                     def repoRef = params.REPO_REF?.trim()
                     def awsRegion = params.AWS_REGION?.trim()
                     def clusterName = params.EKS_CLUSTER_NAME?.trim()
+                    def contentBucket = params.FRONTEND_CONTENT_BUCKET?.trim()
+                    def contentKey = params.FRONTEND_CONTENT_KEY?.trim()
+                    def workerDbHost = params.WORKER_DB_HOST?.trim()
+                    def workerDbPort = params.WORKER_DB_PORT?.trim()
+                    def workerDbName = params.WORKER_DB_NAME?.trim()
+                    def workerDbUser = params.WORKER_DB_USER?.trim()
+                    def workerDbSecretName = params.WORKER_DB_SECRET_NAME?.trim()
+                    def workerS3Bucket = params.WORKER_S3_BUCKET?.trim()
+                    def workerSnsTopicArn = params.WORKER_SNS_TOPIC_ARN?.trim()
                     def repositories = [
                         frontend: params.FRONTEND_IMAGE_REPOSITORY?.trim(),
                         backend: params.BACKEND_IMAGE_REPOSITORY?.trim(),
@@ -77,6 +99,9 @@ spec:
 
                     if (!params.CONFIRM_DEPLOY) {
                         error('CONFIRM_DEPLOY=true is required before changing EKS resources.')
+                    }
+                    if (!(deployMode in ['FULL', 'CONTENT_ONLY'])) {
+                        error('DEPLOY_MODE must be FULL or CONTENT_ONLY.')
                     }
                     if (!repoUrl || !(repoUrl ==~ /https:\/\/[A-Za-z0-9._-]+\/[A-Za-z0-9._\/-]+(?:\.git)?/)) {
                         error('REPO_URL must be a non-empty HTTPS Git repository URL.')
@@ -90,28 +115,67 @@ spec:
                     if (!clusterName || !(clusterName ==~ /[A-Za-z0-9][A-Za-z0-9_-]{0,99}/)) {
                         error('EKS_CLUSTER_NAME must be a valid non-empty EKS cluster name.')
                     }
-                    repositories.each { component, repository ->
-                        if (!repository || !(repository ==~ /[a-z0-9]+(?:[._-][a-z0-9]+)*(\/[a-z0-9]+(?:[._-][a-z0-9]+)*)+/)) {
-                            error("${component.toUpperCase()}_IMAGE_REPOSITORY must be a lowercase repository such as zer0w1/devops-project1-${component}.")
+                    if (deployMode == 'FULL') {
+                        repositories.each { component, repository ->
+                            if (!repository || !(repository ==~ /[a-z0-9]+(?:[._-][a-z0-9]+)*(\/[a-z0-9]+(?:[._-][a-z0-9]+)*)+/)) {
+                                error("${component.toUpperCase()}_IMAGE_REPOSITORY must be a lowercase repository such as zer0w1/devops-project1-${component}.")
+                            }
                         }
-                    }
-                    if (!tag || tag == 'latest' || !(tag ==~ /[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}/)) {
-                        error('IMAGE_TAG is required, must be immutable, and cannot be latest.')
+                        if (!tag || tag == 'latest' || !(tag ==~ /[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}/)) {
+                            error('IMAGE_TAG is required for FULL mode, must be immutable, and cannot be latest.')
+                        }
+                        if (!workerDbHost || !(workerDbHost ==~ /[A-Za-z0-9][A-Za-z0-9.-]+/)) {
+                            error('WORKER_DB_HOST must be a valid non-empty RDS hostname for FULL mode.')
+                        }
+                        if (!workerDbPort || !(workerDbPort ==~ /[0-9]{1,5}/) || workerDbPort.toInteger() < 1 || workerDbPort.toInteger() > 65535) {
+                            error('WORKER_DB_PORT must be between 1 and 65535 for FULL mode.')
+                        }
+                        if (!workerDbName || !(workerDbName ==~ /[A-Za-z_][A-Za-z0-9_]{0,62}/)) {
+                            error('WORKER_DB_NAME must be a valid PostgreSQL identifier for FULL mode.')
+                        }
+                        if (!workerDbUser || !(workerDbUser ==~ /[A-Za-z_][A-Za-z0-9_]{0,62}/)) {
+                            error('WORKER_DB_USER must be a valid PostgreSQL identifier for FULL mode.')
+                        }
+                        if (!workerDbSecretName || !(workerDbSecretName ==~ /[a-z0-9](?:[-a-z0-9]*[a-z0-9])?/)) {
+                            error('WORKER_DB_SECRET_NAME must be a valid Kubernetes name for FULL mode.')
+                        }
+                        if (!workerS3Bucket || !(workerS3Bucket ==~ /[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]/)) {
+                            error('WORKER_S3_BUCKET must be a valid S3 bucket name for FULL mode.')
+                        }
+                        if (!workerSnsTopicArn || !(workerSnsTopicArn ==~ /arn:[a-z0-9-]+:sns:[a-z0-9-]+:[0-9]{12}:[A-Za-z0-9_-]+/)) {
+                            error('WORKER_SNS_TOPIC_ARN must be a valid SNS topic ARN for FULL mode.')
+                        }
                     }
                     if (namespace != 'devops-app') {
                         error('This CD pipeline is restricted to the devops-app namespace.')
                     }
+                    if (!contentBucket || !(contentBucket ==~ /[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]/)) {
+                        error('FRONTEND_CONTENT_BUCKET must be a valid non-empty S3 bucket name.')
+                    }
+                    if (contentKey != 'index.html') {
+                        error('FRONTEND_CONTENT_KEY is restricted to index.html.')
+                    }
                     env.FRONTEND_IMAGE_REPOSITORY_RESOLVED = repositories.frontend
                     env.BACKEND_IMAGE_REPOSITORY_RESOLVED = repositories.backend
                     env.WORKER_IMAGE_REPOSITORY_RESOLVED = repositories.worker
-                    env.IMAGE_TAG_RESOLVED = tag
+                    env.IMAGE_TAG_RESOLVED = tag ?: ''
+                    env.DEPLOY_MODE_RESOLVED = deployMode
                     env.DEPLOY_NAMESPACE_RESOLVED = namespace
                     env.REPO_URL_RESOLVED = repoUrl
                     env.REPO_REF_RESOLVED = repoRef
                     env.AWS_REGION_RESOLVED = awsRegion
                     env.EKS_CLUSTER_NAME_RESOLVED = clusterName
-                    currentBuild.displayName = "#${env.BUILD_NUMBER} app:${tag}"
-                    echo "Validated CD inputs: ref=${repoRef.take(12)}, tag=${tag}, namespace=${namespace}, cluster=${clusterName}, services=frontend,backend,worker"
+                    env.FRONTEND_CONTENT_BUCKET_RESOLVED = contentBucket
+                    env.FRONTEND_CONTENT_KEY_RESOLVED = contentKey
+                    env.WORKER_DB_HOST_RESOLVED = workerDbHost ?: ''
+                    env.WORKER_DB_PORT_RESOLVED = workerDbPort ?: ''
+                    env.WORKER_DB_NAME_RESOLVED = workerDbName ?: ''
+                    env.WORKER_DB_USER_RESOLVED = workerDbUser ?: ''
+                    env.WORKER_DB_SECRET_NAME_RESOLVED = workerDbSecretName ?: ''
+                    env.WORKER_S3_BUCKET_RESOLVED = workerS3Bucket ?: ''
+                    env.WORKER_SNS_TOPIC_ARN_RESOLVED = workerSnsTopicArn ?: ''
+                    currentBuild.displayName = deployMode == 'FULL' ? "#${env.BUILD_NUMBER} app:${tag}" : "#${env.BUILD_NUMBER} content-only"
+                    echo "Validated CD inputs: mode=${deployMode}, namespace=${namespace}, cluster=${clusterName}, content=s3://${contentBucket}/${contentKey}"
                 }
             }
         }
@@ -158,11 +222,40 @@ spec:
                     kubectl auth can-i get deployments --namespace "${DEPLOY_NAMESPACE_RESOLVED}" | grep -qx yes
                     kubectl auth can-i patch deployments --namespace "${DEPLOY_NAMESPACE_RESOLVED}" | grep -qx yes
                     kubectl auth can-i create secrets --namespace "${DEPLOY_NAMESPACE_RESOLVED}" | grep -qx yes
+                    kubectl auth can-i create configmaps --namespace "${DEPLOY_NAMESPACE_RESOLVED}" | grep -qx yes
+                    kubectl auth can-i patch configmaps --namespace "${DEPLOY_NAMESPACE_RESOLVED}" | grep -qx yes
+                '''
+            }
+        }
+
+        stage('Synchronize Frontend Content from S3') {
+            steps {
+                sh '''#!/bin/sh
+                    set -eu
+                    sh scripts/manage_frontend_content.sh sync \
+                      "${FRONTEND_CONTENT_FILE}" \
+                      "${FRONTEND_CONTENT_BUCKET_RESOLVED}" \
+                      "${FRONTEND_CONTENT_KEY_RESOLVED}" \
+                      "${AWS_REGION_RESOLVED}" \
+                      "${DEPLOY_NAMESPACE_RESOLVED}" \
+                      "${FRONTEND_CONTENT_CONFIGMAP}"
+                '''
+            }
+        }
+
+        stage('Verify Worker Runtime Prerequisites') {
+            when { expression { env.DEPLOY_MODE_RESOLVED == 'FULL' } }
+            steps {
+                sh '''#!/bin/sh
+                    set -eu
+                    kubectl get secret "${WORKER_DB_SECRET_NAME_RESOLVED}" \
+                      --namespace "${DEPLOY_NAMESPACE_RESOLVED}" >/dev/null
                 '''
             }
         }
 
         stage('Deploy All Services with Helm') {
+            when { expression { env.DEPLOY_MODE_RESOLVED == 'FULL' } }
             steps {
                 sh '''#!/bin/sh
                     set -eu
@@ -170,10 +263,17 @@ spec:
                       --set namespace="${DEPLOY_NAMESPACE_RESOLVED}" \
                       --set image.repository="${WORKER_IMAGE_REPOSITORY_RESOLVED}" \
                       --set image.tag="${IMAGE_TAG_RESOLVED}" \
-                      --set database.postgresEnabled=false \
-                      --set env.POSTGRES_ENABLED=false \
-                      --set env.S3_SYNC_ENABLED=false \
-                      --set env.SNS_NOTIFICATIONS_ENABLED=false
+                      --set database.postgresEnabled=true \
+                      --set-string database.host="${WORKER_DB_HOST_RESOLVED}" \
+                      --set database.port="${WORKER_DB_PORT_RESOLVED}" \
+                      --set-string database.name="${WORKER_DB_NAME_RESOLVED}" \
+                      --set-string database.user="${WORKER_DB_USER_RESOLVED}" \
+                      --set-string database.existingSecretName="${WORKER_DB_SECRET_NAME_RESOLVED}" \
+                      --set integrations.s3Enabled=true \
+                      --set integrations.snsEnabled=true \
+                      --set-string aws.region="${AWS_REGION_RESOLVED}" \
+                      --set-string aws.s3BucketName="${WORKER_S3_BUCKET_RESOLVED}" \
+                      --set-string aws.snsTopicArn="${WORKER_SNS_TOPIC_ARN_RESOLVED}"
                     helm lint "${BACKEND_CHART_DIR}" \
                       --set namespace="${DEPLOY_NAMESPACE_RESOLVED}" \
                       --set image.repository="${BACKEND_IMAGE_REPOSITORY_RESOLVED}" \
@@ -188,10 +288,17 @@ spec:
                       --set namespace="${DEPLOY_NAMESPACE_RESOLVED}" \
                       --set image.repository="${WORKER_IMAGE_REPOSITORY_RESOLVED}" \
                       --set image.tag="${IMAGE_TAG_RESOLVED}" \
-                      --set database.postgresEnabled=false \
-                      --set env.POSTGRES_ENABLED=false \
-                      --set env.S3_SYNC_ENABLED=false \
-                      --set env.SNS_NOTIFICATIONS_ENABLED=false \
+                      --set database.postgresEnabled=true \
+                      --set-string database.host="${WORKER_DB_HOST_RESOLVED}" \
+                      --set database.port="${WORKER_DB_PORT_RESOLVED}" \
+                      --set-string database.name="${WORKER_DB_NAME_RESOLVED}" \
+                      --set-string database.user="${WORKER_DB_USER_RESOLVED}" \
+                      --set-string database.existingSecretName="${WORKER_DB_SECRET_NAME_RESOLVED}" \
+                      --set integrations.s3Enabled=true \
+                      --set integrations.snsEnabled=true \
+                      --set-string aws.region="${AWS_REGION_RESOLVED}" \
+                      --set-string aws.s3BucketName="${WORKER_S3_BUCKET_RESOLVED}" \
+                      --set-string aws.snsTopicArn="${WORKER_SNS_TOPIC_ARN_RESOLVED}" \
                       > rendered-worker.yaml
                     helm template backend "${BACKEND_CHART_DIR}" \
                       --namespace "${DEPLOY_NAMESPACE_RESOLVED}" \
@@ -213,10 +320,17 @@ spec:
                       --set namespace="${DEPLOY_NAMESPACE_RESOLVED}" \
                       --set image.repository="${WORKER_IMAGE_REPOSITORY_RESOLVED}" \
                       --set image.tag="${IMAGE_TAG_RESOLVED}" \
-                      --set database.postgresEnabled=false \
-                      --set env.POSTGRES_ENABLED=false \
-                      --set env.S3_SYNC_ENABLED=false \
-                      --set env.SNS_NOTIFICATIONS_ENABLED=false \
+                      --set database.postgresEnabled=true \
+                      --set-string database.host="${WORKER_DB_HOST_RESOLVED}" \
+                      --set database.port="${WORKER_DB_PORT_RESOLVED}" \
+                      --set-string database.name="${WORKER_DB_NAME_RESOLVED}" \
+                      --set-string database.user="${WORKER_DB_USER_RESOLVED}" \
+                      --set-string database.existingSecretName="${WORKER_DB_SECRET_NAME_RESOLVED}" \
+                      --set integrations.s3Enabled=true \
+                      --set integrations.snsEnabled=true \
+                      --set-string aws.region="${AWS_REGION_RESOLVED}" \
+                      --set-string aws.s3BucketName="${WORKER_S3_BUCKET_RESOLVED}" \
+                      --set-string aws.snsTopicArn="${WORKER_SNS_TOPIC_ARN_RESOLVED}" \
                       --atomic --wait --timeout 5m --history-max 10
                     helm upgrade --install backend "${BACKEND_CHART_DIR}" \
                       --namespace "${DEPLOY_NAMESPACE_RESOLVED}" \
@@ -237,6 +351,7 @@ spec:
         }
 
         stage('Verify Deployment') {
+            when { expression { env.DEPLOY_MODE_RESOLVED == 'FULL' } }
             steps {
                 sh '''#!/bin/sh
                     set -eu
@@ -256,14 +371,32 @@ spec:
                 '''
             }
         }
+
+        stage('Activate and Verify Frontend Content') {
+            steps {
+                sh '''#!/bin/sh
+                    set -eu
+                    kubectl get deployment frontend --namespace "${DEPLOY_NAMESPACE_RESOLVED}" >/dev/null
+                    sh scripts/manage_frontend_content.sh verify \
+                      "${FRONTEND_CONTENT_FILE}" \
+                      "${DEPLOY_NAMESPACE_RESOLVED}" \
+                      "${FRONTEND_CONTENT_CONFIGMAP}" \
+                      frontend \
+                      180
+                    kubectl get configmap "${FRONTEND_CONTENT_CONFIGMAP}" \
+                      --namespace "${DEPLOY_NAMESPACE_RESOLVED}" \
+                      -o jsonpath='{.metadata.annotations.devops\.project1/content-sha256}{"\n"}'
+                '''
+            }
+        }
     }
 
     post {
         success {
-            echo "CD succeeded: frontend, backend, and worker tag ${env.IMAGE_TAG_RESOLVED} are active in ${env.DEPLOY_NAMESPACE_RESOLVED}."
+            echo "CD succeeded: mode ${env.DEPLOY_MODE_RESOLVED} completed in ${env.DEPLOY_NAMESPACE_RESOLVED}."
         }
         failure {
-            echo 'CD failed. Helm --atomic rolls a failed release back automatically.'
+            echo 'CD failed. FULL-mode Helm releases use --atomic; inspect the content-sync and rollout stages for CONTENT_ONLY failures.'
         }
         always {
             archiveArtifacts artifacts: 'rendered-*.yaml,deployed-values-*.yaml', allowEmptyArchive: true, fingerprint: true

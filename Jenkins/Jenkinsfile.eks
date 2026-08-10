@@ -23,6 +23,16 @@ pipeline {
         string(name: 'AWS_REGION', defaultValue: 'us-east-1', description: 'AWS region containing the target EKS cluster.')
         string(name: 'EKS_CLUSTER_NAME', defaultValue: 'devops-app-eks', description: 'Target EKS cluster name.')
         string(name: 'DEPLOY_NAMESPACE', defaultValue: 'devops-app', description: 'Namespace containing application Helm releases.')
+        string(name: 'FRONTEND_CONTENT_BUCKET', defaultValue: '', description: 'Terraform-owned application bucket containing index.html.')
+        string(name: 'FRONTEND_CONTENT_KEY', defaultValue: 'index.html', description: 'Stable S3 key used as the runtime frontend content source.')
+        booleanParam(name: 'OVERWRITE_FRONTEND_CONTENT', defaultValue: false, description: 'Replace an existing S3 index.html with the repository default. Missing content is always seeded.')
+        string(name: 'WORKER_DB_HOST', defaultValue: '', description: 'Terraform RDS hostname passed to FULL CD runs.')
+        string(name: 'WORKER_DB_PORT', defaultValue: '5432', description: 'Terraform RDS PostgreSQL port passed to FULL CD runs.')
+        string(name: 'WORKER_DB_NAME', defaultValue: '', description: 'Terraform PostgreSQL database name passed to FULL CD runs.')
+        string(name: 'WORKER_DB_USER', defaultValue: '', description: 'Terraform PostgreSQL username passed to FULL CD runs.')
+        string(name: 'WORKER_DB_SECRET_NAME', defaultValue: 'worker-db-secret', description: 'Existing Ansible-managed Kubernetes Secret name passed to FULL CD runs.')
+        string(name: 'WORKER_S3_BUCKET', defaultValue: '', description: 'Terraform-owned bucket used for worker instances.json synchronization.')
+        string(name: 'WORKER_SNS_TOPIC_ARN', defaultValue: '', description: 'Terraform-owned worker SNS topic ARN.')
     }
 
     stages {
@@ -114,6 +124,17 @@ spec:
                             env.FRONTEND_IMAGE_REPOSITORY = 'zer0w1/devops-project1-frontend'
                             env.BACKEND_IMAGE_REPOSITORY = 'zer0w1/devops-project1-backend'
                             env.WORKER_IMAGE_REPOSITORY = 'zer0w1/devops-project1-worker'
+                            env.FRONTEND_CONTENT_SOURCE = "${env.APP_DIR_RESOLVED}/src/frontend/index.html"
+                            if (!params.VALIDATE_ONLY) {
+                                def contentBucket = params.FRONTEND_CONTENT_BUCKET?.trim()
+                                def contentKey = params.FRONTEND_CONTENT_KEY?.trim()
+                                if (!contentBucket || !(contentBucket ==~ /[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]/)) {
+                                    error('FRONTEND_CONTENT_BUCKET must be a valid non-empty S3 bucket name for publishing runs.')
+                                }
+                                if (contentKey != 'index.html') {
+                                    error('FRONTEND_CONTENT_KEY is restricted to index.html.')
+                                }
+                            }
                             currentBuild.displayName = "#${env.BUILD_NUMBER} app:${env.IMAGE_TAG_RESOLVED}"
                             echo "Building frontend, backend, and worker with tag ${env.IMAGE_TAG_RESOLVED}"
                         }
@@ -187,6 +208,17 @@ spec:
                     }
                 }
 
+                stage('Validate Frontend Default Content') {
+                    steps {
+                        container('helm') {
+                            sh '''#!/bin/sh
+                                set -eu
+                                sh scripts/manage_frontend_content.sh validate "${FRONTEND_CONTENT_SOURCE}"
+                            '''
+                        }
+                    }
+                }
+
                 stage('Kaniko Build and Push All Images') {
                     when { expression { !params.VALIDATE_ONLY } }
                     steps {
@@ -219,6 +251,25 @@ spec:
                     }
                 }
 
+                stage('Seed or Reset Frontend Content in S3') {
+                    when { expression { !params.VALIDATE_ONLY } }
+                    steps {
+                        container('helm') {
+                            sh '''#!/bin/sh
+                                set -eu
+                                test -n "${FRONTEND_CONTENT_BUCKET}"
+                                test "${FRONTEND_CONTENT_KEY}" = index.html
+                                sh scripts/manage_frontend_content.sh seed \
+                                  "${FRONTEND_CONTENT_SOURCE}" \
+                                  "${FRONTEND_CONTENT_BUCKET}" \
+                                  "${FRONTEND_CONTENT_KEY}" \
+                                  "${OVERWRITE_FRONTEND_CONTENT}" \
+                                  "${AWS_REGION}"
+                            '''
+                        }
+                    }
+                }
+
                 stage('Trigger Three-Service CD') {
                     when { expression { !params.VALIDATE_ONLY && params.DEPLOY_TO_EKS } }
                     steps {
@@ -237,7 +288,16 @@ spec:
                                 IMAGE_TAG: env.IMAGE_TAG_RESOLVED?.trim(),
                                 AWS_REGION: params.AWS_REGION?.trim(),
                                 EKS_CLUSTER_NAME: params.EKS_CLUSTER_NAME?.trim(),
-                                DEPLOY_NAMESPACE: params.DEPLOY_NAMESPACE?.trim()
+                                DEPLOY_NAMESPACE: params.DEPLOY_NAMESPACE?.trim(),
+                                FRONTEND_CONTENT_BUCKET: params.FRONTEND_CONTENT_BUCKET?.trim(),
+                                FRONTEND_CONTENT_KEY: params.FRONTEND_CONTENT_KEY?.trim(),
+                                WORKER_DB_HOST: params.WORKER_DB_HOST?.trim(),
+                                WORKER_DB_PORT: params.WORKER_DB_PORT?.trim(),
+                                WORKER_DB_NAME: params.WORKER_DB_NAME?.trim(),
+                                WORKER_DB_USER: params.WORKER_DB_USER?.trim(),
+                                WORKER_DB_SECRET_NAME: params.WORKER_DB_SECRET_NAME?.trim(),
+                                WORKER_S3_BUCKET: params.WORKER_S3_BUCKET?.trim(),
+                                WORKER_SNS_TOPIC_ARN: params.WORKER_SNS_TOPIC_ARN?.trim()
                             ]
                             handoff.each { name, value ->
                                 if (name != 'GIT_CREDENTIALS_ID' && !value) {
@@ -259,6 +319,16 @@ spec:
                                 string(name: 'AWS_REGION', value: handoff.AWS_REGION),
                                 string(name: 'EKS_CLUSTER_NAME', value: handoff.EKS_CLUSTER_NAME),
                                 string(name: 'DEPLOY_NAMESPACE', value: handoff.DEPLOY_NAMESPACE),
+                                string(name: 'DEPLOY_MODE', value: 'FULL'),
+                                string(name: 'FRONTEND_CONTENT_BUCKET', value: handoff.FRONTEND_CONTENT_BUCKET),
+                                string(name: 'FRONTEND_CONTENT_KEY', value: handoff.FRONTEND_CONTENT_KEY),
+                                string(name: 'WORKER_DB_HOST', value: handoff.WORKER_DB_HOST),
+                                string(name: 'WORKER_DB_PORT', value: handoff.WORKER_DB_PORT),
+                                string(name: 'WORKER_DB_NAME', value: handoff.WORKER_DB_NAME),
+                                string(name: 'WORKER_DB_USER', value: handoff.WORKER_DB_USER),
+                                string(name: 'WORKER_DB_SECRET_NAME', value: handoff.WORKER_DB_SECRET_NAME),
+                                string(name: 'WORKER_S3_BUCKET', value: handoff.WORKER_S3_BUCKET),
+                                string(name: 'WORKER_SNS_TOPIC_ARN', value: handoff.WORKER_SNS_TOPIC_ARN),
                                 booleanParam(name: 'CONFIRM_DEPLOY', value: true)
                             ]
                         }

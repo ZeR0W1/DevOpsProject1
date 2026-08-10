@@ -58,11 +58,12 @@ module "iam" {
   source = "./modules/iam"
 
   # Worker pod AWS permissions are exposed through EKS Pod Identity.
-  bucket_name   = local.application_bucket_name
-  sns_topic_arn = module.sns_topic.topic_arn
-  name_prefix   = var.name_prefix
-  environment   = var.environment
-  common_tags   = var.common_tags
+  bucket_name     = local.application_bucket_name
+  sns_topic_arn   = module.sns_topic.topic_arn
+  eks_cluster_arn = module.eks.cluster_arn
+  name_prefix     = var.name_prefix
+  environment     = var.environment
+  common_tags     = var.common_tags
 }
 
 module "eks" {
@@ -87,6 +88,27 @@ resource "aws_eks_pod_identity_association" "worker" {
   namespace       = "devops-app"
   service_account = "worker-sa"
   role_arn        = module.iam.worker_role_arn
+}
+
+resource "aws_eks_pod_identity_association" "jenkins_ci" {
+  cluster_name    = module.eks.pod_identity_agent_cluster_name
+  namespace       = "jenkins"
+  service_account = "jenkins-agent"
+  role_arn        = module.iam.jenkins_ci_role_arn
+}
+
+resource "aws_eks_pod_identity_association" "jenkins_deployer" {
+  cluster_name    = module.eks.pod_identity_agent_cluster_name
+  namespace       = "jenkins"
+  service_account = "jenkins-deployer"
+  role_arn        = module.iam.jenkins_deployer_role_arn
+}
+
+resource "aws_eks_access_entry" "jenkins_deployer" {
+  cluster_name      = module.eks.cluster_name
+  principal_arn     = module.iam.jenkins_deployer_role_arn
+  kubernetes_groups = ["jenkins-deployer"]
+  type              = "STANDARD"
 }
 
 resource "aws_security_group_rule" "eks_nodes_to_rds" {

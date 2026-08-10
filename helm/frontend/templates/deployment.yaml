@@ -39,8 +39,8 @@ spec:
           volumeMounts:
             - name: frontend-content
               mountPath: {{ .Values.frontendContent.mountPath }}
-              subPath: {{ .Values.frontendContent.subPath }}
+              readOnly: true
       volumes:
         - name: frontend-content
           configMap:
-            name: frontend-content
+            name: {{ .Values.frontendContent.configMapName }}
