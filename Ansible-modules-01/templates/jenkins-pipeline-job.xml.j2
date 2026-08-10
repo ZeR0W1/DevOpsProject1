@@ -1,0 +1,46 @@
+<?xml version='1.1' encoding='UTF-8'?>
+<flow-definition plugin="workflow-job">
+  <actions/>
+  <description>{{ jenkins_job.description | e }}</description>
+  <keepDependencies>false</keepDependencies>
+  <properties>
+    <hudson.model.ParametersDefinitionProperty>
+      <parameterDefinitions>
+{% for parameter in jenkins_job.parameters %}
+{% if parameter.type == 'boolean' %}
+        <hudson.model.BooleanParameterDefinition>
+          <name>{{ parameter.name | e }}</name>
+          <description>{{ parameter.description | e }}</description>
+          <defaultValue>{{ parameter.default | bool | lower }}</defaultValue>
+        </hudson.model.BooleanParameterDefinition>
+{% elif parameter.type == 'choice' %}
+        <hudson.model.ChoiceParameterDefinition>
+          <name>{{ parameter.name | e }}</name>
+          <description>{{ parameter.description | e }}</description>
+          <choices class="java.util.Arrays$ArrayList">
+            <a class="string-array">
+{% for choice in parameter.choices %}
+              <string>{{ choice | e }}</string>
+{% endfor %}
+            </a>
+          </choices>
+        </hudson.model.ChoiceParameterDefinition>
+{% else %}
+        <hudson.model.StringParameterDefinition>
+          <name>{{ parameter.name | e }}</name>
+          <description>{{ parameter.description | e }}</description>
+          <defaultValue>{{ parameter.default | string | e }}</defaultValue>
+          <trim>true</trim>
+        </hudson.model.StringParameterDefinition>
+{% endif %}
+{% endfor %}
+      </parameterDefinitions>
+    </hudson.model.ParametersDefinitionProperty>
+  </properties>
+  <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps">
+    <script>{{ lookup('ansible.builtin.file', jenkins_job.jenkinsfile) | e }}</script>
+    <sandbox>true</sandbox>
+  </definition>
+  <triggers/>
+  <disabled>false</disabled>
+</flow-definition>

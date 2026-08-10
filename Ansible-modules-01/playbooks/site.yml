@@ -1,16 +1,22 @@
 ---
 # Top-level control-node orchestrator.
 #
-# Terraform Phase 1 exposes guarded input, infrastructure, and application-secret stages.
-# EKS prerequisites, Jenkins lifecycle, initial S3 content, remaining application
-# configuration, and standalone CD invocation will be added here as separately
-# validated stages. Do not append the legacy EC2 inventory/nginx/systemd flow: the
-# EKS root intentionally no longer exports its required EC2 host outputs.
+# Terraform Phase 1 exposes guarded input, infrastructure, EKS/Jenkins platform,
+# application-runtime, and Jenkins job-seeding stages. Initial S3 content and
+# standalone CD invocation will be added here as separately validated stages. Do
+# not append the legacy EC2 inventory/nginx/systemd flow: the EKS root
+# intentionally no longer exports its required EC2 host outputs.
 - name: Prepare effective Terraform inputs
   ansible.builtin.import_playbook: prepare_terraform_inputs.yml
 
 - name: Configure Terraform state and infrastructure lifecycle
   ansible.builtin.import_playbook: configure_terraform_state.yml
 
+- name: Configure EKS prerequisites and Jenkins platform lifecycle
+  ansible.builtin.import_playbook: configure_eks_platform.yml
+
 - name: Prepare application runtime secrets
   ansible.builtin.import_playbook: prepare_application_secret.yml
+
+- name: Seed separate Jenkins CI and CD jobs
+  ansible.builtin.import_playbook: seed_jenkins_jobs.yml

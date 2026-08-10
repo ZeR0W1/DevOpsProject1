@@ -1,0 +1,184 @@
+---
+- name: Configure guarded EKS prerequisites and Jenkins platform
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    project_root: "{{ playbook_dir }}/../.."
+    terraform_dir: "{{ project_root }}/terraform"
+    kubeconfig_file: "{{ playbook_dir }}/../recovery/target-kubeconfig"
+    jenkins_values_file: "{{ project_root }}/Jenkins/values-eks.yaml"
+    jenkins_rbac_file: "{{ project_root }}/Jenkins/rbac-app-deployer.yaml"
+    jenkins_chart_ref: oci://ghcr.io/jenkinsci/helm-charts/jenkins
+    jenkins_chart_version: 5.8.114
+    jenkins_release_name: jenkins
+    jenkins_namespace: jenkins
+    prepare_eks_prerequisites: >-
+      {{ lookup('ansible.builtin.env', 'PREPARE_EKS_PREREQUISITES')
+         | default('false', true)
+         | bool }}
+    deploy_jenkins_platform: >-
+      {{ lookup('ansible.builtin.env', 'DEPLOY_JENKINS_PLATFORM')
+         | default('false', true)
+         | bool }}
+    apply_jenkins_rbac: >-
+      {{ lookup('ansible.builtin.env', 'APPLY_JENKINS_RBAC')
+         | default('false', true)
+         | bool }}
+    eks_platform_mutation_confirmation: >-
+      {{ lookup('ansible.builtin.env', 'EKS_PLATFORM_MUTATION_CONFIRMATION')
+         | default('', true) }}
+
+  tasks:
+    - name: Validate EKS platform lifecycle flag combinations
+      ansible.builtin.assert:
+        that:
+          - not deploy_jenkins_platform or prepare_eks_prerequisites
+          - not apply_jenkins_rbac or deploy_jenkins_platform
+          - >-
+            not (deploy_jenkins_platform or apply_jenkins_rbac) or
+            eks_platform_mutation_confirmation == 'EKS_PLATFORM_MUTATION_APPROVED'
+        fail_msg: >-
+          Jenkins deployment requires PREPARE_EKS_PREREQUISITES=true. RBAC also
+          requires DEPLOY_JENKINS_PLATFORM=true. Kubernetes or Helm mutation
+          requires EKS_PLATFORM_MUTATION_CONFIRMATION=EKS_PLATFORM_MUTATION_APPROVED.
+
+    - name: Report skipped EKS platform lifecycle
+      ansible.builtin.debug:
+        msg: >-
+          EKS prerequisite, Jenkins Helm, and Jenkins RBAC stages are disabled.
+          Enable them only after the Terraform-owned stack outputs and target
+          AWS identity have been reviewed.
+      when: not prepare_eks_prerequisites
+
+    - name: Prepare the reviewed Terraform-owned EKS target
+      when: prepare_eks_prerequisites
+      block:
+        - name: Read Terraform outputs without displaying sensitive values
+          ansible.builtin.command:
+            argv:
+              - terraform
+              - "-chdir={{ terraform_dir }}"
+              - output
+              - -json
+          register: terraform_outputs_json
+          changed_when: false
+          no_log: true
+
+        - name: Parse required EKS platform outputs
+          ansible.builtin.set_fact:
+            eks_platform:
+              aws_region: "{{ (terraform_outputs_json.stdout | from_json).aws_region.value }}"
+              cluster_name: "{{ (terraform_outputs_json.stdout | from_json).eks_cluster_name.value }}"
+              cluster_endpoint: "{{ (terraform_outputs_json.stdout | from_json).eks_cluster_endpoint.value }}"
+          no_log: true
+
+        - name: Validate required EKS platform outputs
+          ansible.builtin.assert:
+            that:
+              - eks_platform.aws_region | length > 0
+              - eks_platform.cluster_name | length > 0
+              - eks_platform.cluster_endpoint is match('^https://')
+            fail_msg: Required Terraform EKS platform outputs are missing or invalid.
+          no_log: true
+
+        - name: Create ignored kubeconfig directory
+          ansible.builtin.file:
+            path: "{{ kubeconfig_file | dirname }}"
+            state: directory
+            mode: "0700"
+
+        - name: Write kubeconfig for the Terraform-owned EKS cluster
+          ansible.builtin.command:
+            argv:
+              - aws
+              - eks
+              - update-kubeconfig
+              - --name
+              - "{{ eks_platform.cluster_name }}"
+              - --region
+              - "{{ eks_platform.aws_region }}"
+              - --kubeconfig
+              - "{{ kubeconfig_file }}"
+              - --alias
+              - "{{ eks_platform.cluster_name }}"
+          changed_when: true
+
+        - name: Restrict generated kubeconfig permissions
+          ansible.builtin.file:
+            path: "{{ kubeconfig_file }}"
+            mode: "0600"
+
+        - name: Read the generated kubeconfig API endpoint
+          ansible.builtin.command:
+            argv:
+              - kubectl
+              - --kubeconfig
+              - "{{ kubeconfig_file }}"
+              - config
+              - view
+              - --minify
+              - --output
+              - "jsonpath={.clusters[0].cluster.server}"
+          register: kubeconfig_endpoint
+          changed_when: false
+
+        - name: Require kubeconfig to match the Terraform-owned EKS endpoint
+          ansible.builtin.assert:
+            that:
+              - kubeconfig_endpoint.stdout == eks_platform.cluster_endpoint
+            fail_msg: Generated kubeconfig does not match the Terraform EKS endpoint.
+
+        - name: Verify access to the Terraform-owned EKS API
+          ansible.builtin.command:
+            argv:
+              - kubectl
+              - --kubeconfig
+              - "{{ kubeconfig_file }}"
+              - get
+              - namespace
+          changed_when: false
+
+    - name: Install or upgrade the pinned Jenkins Helm release
+      kubernetes.core.helm:
+        name: "{{ jenkins_release_name }}"
+        chart_ref: "{{ jenkins_chart_ref }}"
+        chart_version: "{{ jenkins_chart_version }}"
+        release_namespace: "{{ jenkins_namespace }}"
+        create_namespace: true
+        values_files:
+          - "{{ jenkins_values_file }}"
+        kubeconfig: "{{ kubeconfig_file }}"
+        wait: true
+        timeout: 15m
+        atomic: true
+      when: deploy_jenkins_platform
+
+    - name: Apply Jenkins deployer ServiceAccount and namespace RBAC
+      kubernetes.core.k8s:
+        state: present
+        src: "{{ jenkins_rbac_file }}"
+        kubeconfig: "{{ kubeconfig_file }}"
+      when: apply_jenkins_rbac
+
+    - name: Verify Jenkins deployer namespace permission
+      ansible.builtin.command:
+        argv:
+          - kubectl
+          - --kubeconfig
+          - "{{ kubeconfig_file }}"
+          - auth
+          - can-i
+          - patch
+          - deployments
+          - --namespace
+          - devops-app
+          - --as-group
+          - jenkins-deployer
+          - --as
+          - pod-identity-rbac-verification
+      register: jenkins_rbac_check
+      changed_when: false
+      failed_when: jenkins_rbac_check.stdout != 'yes'
+      when: apply_jenkins_rbac

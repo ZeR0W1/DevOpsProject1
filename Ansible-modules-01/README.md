@@ -36,8 +36,12 @@ Main project documentation: [../README.md](../README.md)
   and read-only AWS caller-identity preflight
 - `playbooks/configure_terraform_state.yml` — remote-state bootstrap and guarded
   Terraform lifecycle tasks
+- `playbooks/configure_eks_platform.yml` — guarded Terraform-output kubeconfig,
+  pinned Jenkins Helm release, and namespace-scoped deployer RBAC lifecycle
 - `playbooks/prepare_application_secret.yml` — independently gated runtime-output
   preparation and Secrets Manager to Kubernetes Secret synchronization
+- `playbooks/seed_jenkins_jobs.yml` — Ansible-native Jenkins HTTP API seeding for
+  the separate inline CI and CD jobs from the prepared non-secret runtime handoff
 - `playbooks/destroy.yml` — separate dependency-ordered full-stack teardown; it is
   intentionally not imported by `site.yml`
 
@@ -59,6 +63,27 @@ PREPARE_TERRAFORM_INPUTS=true \
 
 # Safe local validation; all mutation stages default off
 ANSIBLE_CONFIG=ansible.cfg ansible-playbook playbooks/site.yml
+
+# After reviewing Terraform state/outputs and the target AWS identity, prepare an
+# isolated mode-0600 kubeconfig. Jenkins Helm/RBAC mutations require the two
+# additional flags and the exact confirmation shown below.
+PREPARE_EKS_PREREQUISITES=true \
+  DEPLOY_JENKINS_PLATFORM=true \
+  APPLY_JENKINS_RBAC=true \
+  EKS_PLATFORM_MUTATION_CONFIRMATION=EKS_PLATFORM_MUTATION_APPROVED \
+  ANSIBLE_CONFIG=ansible.cfg \
+  ansible-playbook playbooks/configure_eks_platform.yml
+
+# With a separate loopback-only port-forward to the private Jenkins Service and
+# an API token supplied only in the process environment, create or update CD
+# first and then CI. No Jenkins password or token is written by this playbook.
+SEED_JENKINS_JOBS=true \
+  JENKINS_JOB_MUTATION_CONFIRMATION=JENKINS_JOB_MUTATION_APPROVED \
+  JENKINS_URL=http://127.0.0.1:18080 \
+  JENKINS_ADMIN_USER=admin \
+  JENKINS_API_TOKEN='<temporary-api-token>' \
+  ANSIBLE_CONFIG=ansible.cfg \
+  ansible-playbook playbooks/seed_jenkins_jobs.yml
 
 # Safe destroy validation; defaults to local assertions/debug only
 ANSIBLE_CONFIG=ansible.cfg ansible-playbook playbooks/destroy.yml
@@ -140,6 +165,12 @@ RBAC access to the Secret and use EKS encryption at rest for Kubernetes Secrets.
   secret synchronization requires both flags in the same run.
 - `PREPARE_TERRAFORM_INPUTS=true` rewrites only the ignored effective tfvars and
   performs a read-only AWS identity check; it does not apply Terraform.
+- `configure_eks_platform.yml` never creates IAM roles, EKS access entries, or Pod
+  Identity associations; those remain Terraform-owned. Its mutating scope is the
+  pinned Jenkins Helm release and reviewed Kubernetes RBAC only.
+- `seed_jenkins_jobs.yml` replaces the transitional job-creation shell workflow.
+  It accepts only a loopback Jenkins URL, uses `no_log` for authenticated calls,
+  and never passes a database password into Jenkins parameters or job XML.
 - Never add secret-value debug tasks or remove `no_log: true` from secret handling.
 - Archived direct Terraform/eksctl/Helm helpers live under `../scripts/legacy/`
   for provenance only. They are not supported lifecycle entry points.

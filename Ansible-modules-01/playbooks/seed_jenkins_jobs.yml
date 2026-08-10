@@ -1,0 +1,190 @@
+---
+# yamllint disable rule:line-length
+- name: Seed separate Jenkins CI and CD jobs
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    project_root: "{{ playbook_dir }}/../.."
+    runtime_values_file: "{{ playbook_dir }}/../recovery/application-runtime.yml"
+    jenkins_url: "{{ lookup('ansible.builtin.env', 'JENKINS_URL') | default('http://127.0.0.1:18080', true) }}"
+    jenkins_user: "{{ lookup('ansible.builtin.env', 'JENKINS_ADMIN_USER') | default('', true) }}"
+    jenkins_token: "{{ lookup('ansible.builtin.env', 'JENKINS_API_TOKEN') | default('', true) }}"
+    seed_jenkins_jobs: >-
+      {{ lookup('ansible.builtin.env', 'SEED_JENKINS_JOBS')
+         | default('false', true)
+         | bool }}
+    jenkins_job_mutation_confirmation: >-
+      {{ lookup('ansible.builtin.env', 'JENKINS_JOB_MUTATION_CONFIRMATION')
+         | default('', true) }}
+    application_runtime:
+      aws_region: us-east-1
+      eks_cluster_name: validation-cluster
+      rds_hostname: validation-db.internal
+      db_port: "5432"
+      db_name: validation_db
+      db_username: validation_user
+      worker_db_secret_name: worker-db-secret
+      application_s3_bucket: validation-runtime-bucket
+      sns_topic_arn: arn:aws:sns:us-east-1:123456789012:validation-topic
+    common_runtime_parameters:
+      - {type: string, name: AWS_REGION, default: "{{ application_runtime.aws_region }}", description: AWS region containing the Terraform-owned EKS cluster.}
+      - {type: string, name: EKS_CLUSTER_NAME, default: "{{ application_runtime.eks_cluster_name }}", description: Terraform-owned EKS cluster name.}
+      - {type: string, name: DEPLOY_NAMESPACE, default: devops-app, description: Application namespace.}
+      - {type: string, name: FRONTEND_CONTENT_BUCKET, default: "{{ application_runtime.application_s3_bucket }}", description: Terraform-owned application content bucket.}
+      - {type: string, name: FRONTEND_CONTENT_KEY, default: index.html, description: Fixed runtime frontend content object.}
+      - {type: string, name: WORKER_DB_HOST, default: "{{ application_runtime.rds_hostname }}", description: Terraform-owned RDS hostname.}
+      - {type: string, name: WORKER_DB_PORT, default: "{{ application_runtime.db_port }}", description: Terraform-owned RDS PostgreSQL port.}
+      - {type: string, name: WORKER_DB_NAME, default: "{{ application_runtime.db_name }}", description: Terraform PostgreSQL database name.}
+      - {type: string, name: WORKER_DB_USER, default: "{{ application_runtime.db_username }}", description: Terraform PostgreSQL username.}
+      - {type: string, name: WORKER_DB_SECRET_NAME, default: "{{ application_runtime.worker_db_secret_name }}", description: Ansible-managed Kubernetes database Secret name.}
+      - {type: string, name: WORKER_S3_BUCKET, default: "{{ application_runtime.application_s3_bucket }}", description: Terraform-owned worker catalog bucket.}
+      - {type: string, name: WORKER_SNS_TOPIC_ARN, default: "{{ application_runtime.sns_topic_arn }}", description: Terraform-owned worker SNS topic ARN.}
+    jenkins_jobs:
+      - name: devops-project1-eks-deploy
+        description: Standalone EKS Helm CD pipeline for frontend, backend, and worker.
+        jenkinsfile: "{{ project_root }}/Jenkins/Jenkinsfile-deploy"
+        parameters: >-
+          {{ [
+            {'type': 'string', 'name': 'REPO_URL', 'default': 'https://github.com/ZeR0W1/DevOpsProject1.git', 'description': 'Repository containing all three application Helm charts.'},
+            {'type': 'string', 'name': 'REPO_REF', 'default': 'aws3-containerized', 'description': 'Branch, tag, or commit containing the charts.'},
+            {'type': 'string', 'name': 'GIT_CREDENTIALS_ID', 'default': '', 'description': 'Optional Jenkins Git credential ID.'},
+            {'type': 'string', 'name': 'FRONTEND_IMAGE_REPOSITORY', 'default': 'zer0w1/devops-project1-frontend', 'description': 'Frontend image repository produced by CI.'},
+            {'type': 'string', 'name': 'BACKEND_IMAGE_REPOSITORY', 'default': 'zer0w1/devops-project1-backend', 'description': 'Backend image repository produced by CI.'},
+            {'type': 'string', 'name': 'WORKER_IMAGE_REPOSITORY', 'default': 'zer0w1/devops-project1-worker', 'description': 'Worker image repository produced by CI.'},
+            {'type': 'string', 'name': 'IMAGE_TAG', 'default': '', 'description': 'Required immutable image tag for FULL mode.'},
+            {'type': 'choice', 'name': 'DEPLOY_MODE', 'choices': ['FULL', 'CONTENT_ONLY'], 'description': 'FULL deploys workloads; CONTENT_ONLY updates frontend content only.'}
+          ] + common_runtime_parameters + [
+            {'type': 'boolean', 'name': 'CONFIRM_DEPLOY', 'default': false, 'description': 'Required confirmation before changing EKS resources.'}
+          ] }}
+      - name: devops-project1-eks-pipeline
+        description: EKS-native CI pipeline for frontend, backend, and worker.
+        jenkinsfile: "{{ project_root }}/Jenkins/Jenkinsfile.eks"
+        parameters: >-
+          {{ [
+            {'type': 'string', 'name': 'REPO_URL', 'default': 'https://github.com/ZeR0W1/DevOpsProject1.git', 'description': 'Git repository URL.'},
+            {'type': 'string', 'name': 'REPO_BRANCH', 'default': 'aws3-containerized', 'description': 'Git branch, tag, or ref to build.'},
+            {'type': 'string', 'name': 'GIT_CREDENTIALS_ID', 'default': '', 'description': 'Optional Jenkins Git credential ID.'},
+            {'type': 'string', 'name': 'APP_DIR', 'default': 'Ansible-modules-01/roles/app/files/app', 'description': 'Application path in the repository.'},
+            {'type': 'string', 'name': 'IMAGE_TAG', 'default': '', 'description': 'Optional immutable image tag override.'},
+            {'type': 'string', 'name': 'DOCKERHUB_CREDENTIALS_ID', 'default': 'dockerhub-creds', 'description': 'Jenkins Docker Hub credential ID.'},
+            {'type': 'boolean', 'name': 'VALIDATE_ONLY', 'default': false, 'description': 'Run checks without build, push, content upload, or deployment.'},
+            {'type': 'boolean', 'name': 'RUN_TRIVY_SCAN', 'default': false, 'description': 'Run the opt-in Trivy filesystem scan.'},
+            {'type': 'boolean', 'name': 'DEPLOY_TO_EKS', 'default': false, 'description': 'Trigger the standalone CD job after image publication.'},
+            {'type': 'string', 'name': 'CD_JOB_NAME', 'default': 'devops-project1-eks-deploy', 'description': 'Standalone Jenkins CD job name.'},
+            {'type': 'boolean', 'name': 'OVERWRITE_FRONTEND_CONTENT', 'default': false, 'description': 'Explicitly replace an existing S3 index.html.'}
+          ] + common_runtime_parameters }}
+
+  tasks:
+    - name: Validate Jenkins job XML templates locally
+      ansible.builtin.assert:
+        that:
+          - >-
+            '<flow-definition plugin="workflow-job">' in lookup(
+              'ansible.builtin.template',
+              playbook_dir + '/../templates/jenkins-pipeline-job.xml.j2',
+              template_vars={'jenkins_job': item}
+            )
+          - item.jenkinsfile is file
+          - item.parameters | map(attribute='name') | list | unique | length == item.parameters | length
+        fail_msg: "Jenkins job definition is invalid: {{ item.name }}"
+      loop: "{{ jenkins_jobs }}"
+      loop_control:
+        label: "{{ item.name }}"
+
+    - name: Report skipped Jenkins job seeding
+      ansible.builtin.debug:
+        msg: >-
+          Jenkins job seeding is disabled. Start a loopback-only port-forward and
+          set SEED_JENKINS_JOBS=true only after reviewing the controller and
+          non-secret application runtime handoff.
+      when: not seed_jenkins_jobs
+
+    - name: Seed Jenkins jobs when explicitly enabled
+      when: seed_jenkins_jobs
+      block:
+        - name: Validate Jenkins job mutation boundary
+          ansible.builtin.assert:
+            that:
+              - jenkins_job_mutation_confirmation == 'JENKINS_JOB_MUTATION_APPROVED'
+              - jenkins_url is match('^http://127\\.0\\.0\\.1:[0-9]+/?$')
+              - jenkins_user | length > 0
+              - jenkins_token | length > 0
+              - runtime_values_file is file
+            fail_msg: >-
+              Job seeding requires the exact confirmation, a loopback-only
+              Jenkins URL, environment-provided API credentials, and the prepared
+              non-secret application runtime handoff.
+          no_log: true
+
+        - name: Load prepared non-secret application runtime values
+          ansible.builtin.include_vars:
+            file: "{{ runtime_values_file }}"
+            name: application_runtime
+          no_log: true
+
+        - name: Validate required runtime handoff values
+          ansible.builtin.assert:
+            that:
+              - application_runtime.aws_region | length > 0
+              - application_runtime.eks_cluster_name | length > 0
+              - application_runtime.rds_hostname | length > 0
+              - application_runtime.application_s3_bucket | length > 0
+              - application_runtime.sns_topic_arn | length > 0
+              - application_runtime.worker_db_secret_name == 'worker-db-secret'
+            fail_msg: Prepared application runtime handoff is incomplete or invalid.
+          no_log: true
+
+        - name: Verify the private Jenkins controller is authenticated and ready
+          ansible.builtin.uri:
+            url: "{{ jenkins_url | regex_replace('/$', '') }}/api/json"
+            method: GET
+            user: "{{ jenkins_user }}"
+            password: "{{ jenkins_token }}"
+            force_basic_auth: true
+            return_content: false
+            status_code: 200
+          no_log: true
+
+        - name: Check whether each Jenkins job exists
+          ansible.builtin.uri:
+            url: "{{ jenkins_url | regex_replace('/$', '') }}/job/{{ item.name | urlencode }}/config.xml"
+            method: GET
+            user: "{{ jenkins_user }}"
+            password: "{{ jenkins_token }}"
+            force_basic_auth: true
+            return_content: false
+            status_code: [200, 404]
+          loop: "{{ jenkins_jobs }}"
+          loop_control:
+            label: "{{ item.name }}"
+          register: jenkins_job_checks
+          no_log: true
+
+        - name: Create or update separate Jenkins CI and CD jobs
+          ansible.builtin.uri:
+            url: >-
+              {{ jenkins_url | regex_replace('/$', '') }}{{
+                '/job/' + item.item.name + '/config.xml'
+                if item.status == 200
+                else '/createItem?name=' + (item.item.name | urlencode)
+              }}
+            method: POST
+            user: "{{ jenkins_user }}"
+            password: "{{ jenkins_token }}"
+            force_basic_auth: true
+            body: >-
+              {{ lookup(
+                'ansible.builtin.template',
+                playbook_dir + '/../templates/jenkins-pipeline-job.xml.j2',
+                template_vars={'jenkins_job': item.item}
+              ) }}
+            body_format: raw
+            headers:
+              Content-Type: application/xml
+            status_code: [200, 201]
+          loop: "{{ jenkins_job_checks.results }}"
+          loop_control:
+            label: "{{ item.item.name }}"
+          no_log: true

@@ -75,6 +75,17 @@ superseded evidence belong in `misc/recovery/PROJECT_HISTORY.md`.
   the real RDS/S3/SNS settings and requires that Secret to exist. Local syntax,
   default-off, allow-list, wrapper, and worker chart checks pass; neither guarded
   path has been cloud-run.
+- Guarded EKS platform preparation now consumes Terraform cluster outputs, writes
+  an ignored mode-0600 target kubeconfig, verifies its API endpoint, installs the
+  pinned Jenkins chart through `kubernetes.core.helm`, and applies only Kubernetes
+  deployer RBAC. IAM, access-entry, and Pod Identity ownership remains Terraform.
+  The stage is default-off, confirmation-gated, and locally linted/validated; it
+  has not been cloud-run.
+- Ansible-native Jenkins job seeding now renders Jenkins job XML directly from
+  the separate CI/CD Jenkinsfiles, consumes only the prepared non-secret runtime
+  handoff, requires a loopback-only controller URL and environment API token, and
+  seeds CD before CI. Default-off render, syntax, and lint checks pass; no Jenkins
+  API call has been made.
 - Application integration is not hand-in complete.
 
 ## Current naming-inventory state
@@ -93,8 +104,8 @@ superseded evidence belong in `misc/recovery/PROJECT_HISTORY.md`.
 ## Immediate work queue
 
 1. Complete the guarded Ansible create lifecycle after infrastructure:
-   kubeconfig/prerequisites -> Jenkins -> identity/RBAC/job seeding -> initial S3
-   content -> application configuration/secrets -> standalone CD invocation.
+   initial S3 content -> application runtime/Secret preparation -> standalone CD
+   invocation and verification.
 2. Decide and implement the public frontend and controlled Jenkins administrative
    entry points, including required TLS/CIDR/authentication boundaries.
 3. Review the Terraform backend/state/cost boundary before any plan or mutation,
@@ -104,9 +115,10 @@ superseded evidence belong in `misc/recovery/PROJECT_HISTORY.md`.
 
 ## Exact resume point
 
-Resume with the guarded post-infrastructure create lifecycle:
-kubeconfig/prerequisites -> Jenkins Helm -> identity/RBAC -> job seeding -> initial
-content and application runtime preparation -> standalone CD invocation.
+Resume with guarded create-flow invocation after job seeding: orchestrate initial
+`index.html` seeding, application runtime/Secret preparation, and standalone FULL
+CD execution through the private Jenkins controller without merging CI/CD
+ownership.
 
 The focused worker, frontend runtime-content, and backend configuration slices are
 locally validated; do not repeat dependency setup or the name-collision inventory
