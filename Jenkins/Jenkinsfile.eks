@@ -127,7 +127,8 @@ spec:
                                 set -eu
                                 python3 -m venv .venv-jenkins
                                 . .venv-jenkins/bin/activate
-                                pip install --quiet --upgrade pip pytest flake8 bandit
+                                python -m pip install --quiet --upgrade pip
+                                pip install --quiet -r src/requirements-test.txt
                                 [ ! -f requirements.txt ] || pip install --quiet -r requirements.txt
                                 [ ! -f src/backend/requirements.txt ] || pip install --quiet -r src/backend/requirements.txt
                                 [ ! -f src/worker/requirements.txt ] || pip install --quiet -r src/worker/requirements.txt
@@ -166,7 +167,7 @@ spec:
                                   esac
                                   extra_args=''
                                   if [ "$component" = worker ]; then
-                                    extra_args='--set database.postgresEnabled=false --set env.POSTGRES_ENABLED=false --set env.S3_SYNC_ENABLED=false --set env.SNS_NOTIFICATIONS_ENABLED=false'
+                                    extra_args='--set database.postgresEnabled=false --set integrations.s3Enabled=false --set integrations.snsEnabled=false --set aws.s3BucketName= --set aws.snsTopicArn='
                                   fi
                                   helm lint "helm/${component}" \
                                     --set namespace="${DEPLOY_NAMESPACE}" \

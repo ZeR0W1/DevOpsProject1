@@ -24,11 +24,11 @@
       ansible.builtin.set_fact:
         terraform_name_prefix: >-
           {{ (terraform_example_content
-              | regex_search('(?m)^name_prefix\\s*=\\s*"([a-z0-9-]+)"', '\\1')
+              | regex_search('(?m)^name_prefix\s*=\s*"([a-z0-9-]+)"', '\1')
               | first) }}
         terraform_environment: >-
           {{ (terraform_example_content
-              | regex_search('(?m)^environment\\s*=\\s*"([a-z0-9-]+)"', '\\1')
+              | regex_search('(?m)^environment\s*=\s*"([a-z0-9-]+)"', '\1')
               | first) }}
 
     - name: Validate administrator email and derived identifiers

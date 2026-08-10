@@ -12,6 +12,8 @@ spec:
       {{- include "worker.selectorLabels" . | nindent 6 }}
   template:
     metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
       labels:
         {{- include "worker.selectorLabels" . | nindent 8 }}
     spec:
@@ -23,46 +25,17 @@ spec:
           ports:
             - containerPort: {{ .Values.service.targetPort }}
               name: http
+          envFrom:
+            - configMapRef:
+                name: {{ include "worker.fullname" . }}-config
           env:
-            - name: API_PORT
-              value: {{ .Values.env.API_PORT | quote }}
-            - name: BACKEND_HOST
-              value: {{ .Values.env.BACKEND_HOST | quote }}
-            - name: BACKEND_PORT
-              value: {{ .Values.env.BACKEND_PORT | quote }}
-            - name: POSTGRES_ENABLED
-              value: {{ .Values.env.POSTGRES_ENABLED | quote }}
             {{- if .Values.database.postgresEnabled }}
-            - name: POSTGRES_HOST
-              value: {{ .Values.database.host | quote }}
-            - name: POSTGRES_PORT
-              value: {{ .Values.database.port | quote }}
-            - name: POSTGRES_DB
-              value: {{ .Values.database.name | quote }}
-            - name: POSTGRES_USER
-              value: {{ .Values.database.user | quote }}
             - name: POSTGRES_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.database.existingSecretName | quote }}
                   key: {{ .Values.database.passwordSecretKey | quote }}
-            - name: POSTGRES_TABLE
-              value: {{ .Values.env.POSTGRES_TABLE | quote }}
-            - name: POSTGRES_SSLMODE
-              value: {{ .Values.database.sslMode | quote }}
             {{- end }}
-            - name: AWS_REGION
-              value: {{ .Values.aws.region | quote }}
-            - name: S3_BUCKET_NAME
-              value: {{ .Values.aws.s3BucketName | quote }}
-            - name: S3_SYNC_ENABLED
-              value: {{ .Values.env.S3_SYNC_ENABLED | quote }}
-            - name: S3_INSTANCES_OBJECT_KEY
-              value: {{ .Values.aws.s3InstancesObjectKey | quote }}
-            - name: SNS_NOTIFICATIONS_ENABLED
-              value: {{ .Values.env.SNS_NOTIFICATIONS_ENABLED | quote }}
-            - name: SNS_TOPIC_ARN
-              value: {{ .Values.aws.snsTopicArn | quote }}
           livenessProbe:
             {{- toYaml .Values.livenessProbe | nindent 12 }}
           readinessProbe:

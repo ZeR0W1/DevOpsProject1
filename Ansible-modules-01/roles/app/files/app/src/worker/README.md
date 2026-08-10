@@ -27,6 +27,14 @@ Install dependencies:
 pip install -r ./requirements.txt
 ```
 
+For local source checks from the application root, install the declared test
+tooling separately so it is not included in the production worker image:
+
+```bash
+python -m pip install -r ./src/requirements-test.txt
+python -m pytest -q ./src/worker/test_api.py
+```
+
 Run from the `src/worker/` directory:
 
 ```bash

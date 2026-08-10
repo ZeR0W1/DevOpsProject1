@@ -22,8 +22,11 @@ backendService:
 aws:
   region: us-east-1
   s3BucketName: your-bucket-name # replace with your real S3 bucket name
-  s3InstancesObjectKey: instances.json
   snsTopicArn: your-sns-topic-arn # replace with your real SNS topic ARN
+
+integrations:
+  s3Enabled: true
+  snsEnabled: true
 
 database:
   postgresEnabled: true
@@ -72,9 +75,3 @@ serviceAccount:
 
 env:
   API_PORT: "8000"
-  BACKEND_HOST: backend
-  BACKEND_PORT: "8000"
-  POSTGRES_ENABLED: "true"
-  POSTGRES_TABLE: machines
-  S3_SYNC_ENABLED: "true"
-  SNS_NOTIFICATIONS_ENABLED: "true"

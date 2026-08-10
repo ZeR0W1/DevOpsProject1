@@ -2,10 +2,9 @@ import json
 import logging
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 import httpx
 from psycopg import sql
-import boto3
 
 from config import (
     API_PORT,
@@ -81,9 +80,16 @@ def init_postgres_storage():
                 CREATE TABLE IF NOT EXISTS {} (
                     id INTEGER PRIMARY KEY,
                     machine_data JSONB NOT NULL,
-                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
                 )
                 """
+                ).format(sql.Identifier(POSTGRES_TABLE))
+            )
+            cursor.execute(
+                sql.SQL(
+                    "ALTER TABLE {} ADD COLUMN IF NOT EXISTS "
+                    "updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()"
                 ).format(sql.Identifier(POSTGRES_TABLE))
             )
         connection.commit()
@@ -110,50 +116,49 @@ def load_instances_from_postgres():
     if not POSTGRES_ENABLED:
         return []
 
-    try:
-        init_postgres_storage()
-        with get_postgres_connection() as connection:
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    sql.SQL("SELECT machine_data FROM {} ORDER BY id").format(
-                        sql.Identifier(POSTGRES_TABLE)
-                    )
+    init_postgres_storage()
+    with get_postgres_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                sql.SQL("SELECT machine_data FROM {} ORDER BY id").format(
+                    sql.Identifier(POSTGRES_TABLE)
                 )
-                rows = cursor.fetchall()
-        machines = []
-        for row in rows:
-            machine_data = row[0]
-            if isinstance(machine_data, str):
-                machine_data = json.loads(machine_data)
-            if isinstance(machine_data, dict):
-                machines.append(machine_data)
-        return machines
-    except Exception:
-        logger.exception("Worker failed to read machines from PostgreSQL")
-        return []
+            )
+            rows = cursor.fetchall()
+
+    machines = []
+    for row in rows:
+        machine_data = row[0]
+        if isinstance(machine_data, str):
+            machine_data = json.loads(machine_data)
+        if not isinstance(machine_data, dict):
+            raise ValueError("PostgreSQL contains an invalid machine record")
+        machines.append(machine_data)
+    return machines
 
 
 def load_authoritative_instances(filepath: Path = WORKER_INSTANCES_FILEPATH):
-    postgres_instances = load_instances_from_postgres()
-    if postgres_instances:
-        return postgres_instances
+    if POSTGRES_ENABLED:
+        return load_instances_from_postgres()
     return load_instances(filepath)
 
 
-def publish_sns_notification(subject: str, message: str):
+def publish_sns_notification(event: str, machine_count: int):
     if not SNS_NOTIFICATIONS_ENABLED or not SNS_TOPIC_ARN:
         return
 
-    try:
-        import boto3
+    import boto3
 
-        boto3.client("sns", region_name=AWS_REGION).publish(
-            TopicArn=SNS_TOPIC_ARN,
-            Subject=subject[:100],
-            Message=message,
-        )
-    except Exception:
-        logger.exception("Worker failed to publish SNS notification")
+    message = {
+        "event": event,
+        "machine_count": machine_count,
+        "object_key": S3_INSTANCES_OBJECT_KEY,
+    }
+    boto3.client("sns", region_name=AWS_REGION).publish(
+        TopicArn=SNS_TOPIC_ARN,
+        Subject="Machine catalog synchronized",
+        Message=json.dumps(message, sort_keys=True),
+    )
 
 
 def backup_machine_to_postgres(machine: dict):
@@ -164,47 +169,36 @@ def backup_machine_to_postgres(machine: dict):
     if machine_id is None:
         raise ValueError("Worker requires machine payloads with an id")
 
-    try:
-        init_postgres_storage()
-        with get_postgres_connection() as connection:
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    sql.SQL(
-                        """
-                    INSERT INTO {} (id, machine_data)
-                    VALUES (%s, %s::jsonb)
-                    ON CONFLICT (id)
-                    DO UPDATE SET machine_data = EXCLUDED.machine_data
+    init_postgres_storage()
+    with get_postgres_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                sql.SQL(
                     """
-                    ).format(sql.Identifier(POSTGRES_TABLE)),
-                    (machine_id, json.dumps(machine)),
-                )
-            connection.commit()
-
-        publish_sns_notification(
-            subject=f"Machine {machine_id} stored in database",
-            message=(
-                f"A machine record was written to PostgreSQL.\n"
-                f"Machine ID: {machine_id}\n"
-                f"Machine Name: {machine.get('name', 'unknown')}\n"
-                f"Table: {POSTGRES_TABLE}"
-            ),
-        )
-    except Exception:
-        logger.exception("Worker failed to back up machine %s to PostgreSQL", machine_id)
+                INSERT INTO {} (id, machine_data)
+                VALUES (%s, %s::jsonb)
+                ON CONFLICT (id)
+                DO UPDATE SET
+                    machine_data = EXCLUDED.machine_data,
+                    updated_at = NOW()
+                """
+                ).format(sql.Identifier(POSTGRES_TABLE)),
+                (machine_id, json.dumps(machine)),
+            )
+        connection.commit()
 
 
 def sync_instances_file_to_s3(filepath: str):
     if not S3_SYNC_ENABLED:
         return
 
-    try:
-        import boto3
+    import boto3
 
-        boto3.client("s3", region_name=AWS_REGION).upload_file(filepath, S3_BUCKET_NAME, S3_INSTANCES_OBJECT_KEY)
-    except Exception:
-        logger.exception("Worker failed to sync instances file to S3")
-        raise
+    boto3.client("s3", region_name=AWS_REGION).upload_file(
+        filepath,
+        S3_BUCKET_NAME,
+        S3_INSTANCES_OBJECT_KEY,
+    )
 
 
 def sync_json_instances_to_postgres(filepath: Path = WORKER_INSTANCES_FILEPATH):
@@ -228,7 +222,10 @@ def sync_json_instances_to_postgres(filepath: Path = WORKER_INSTANCES_FILEPATH):
         backup_machine_to_postgres(instance)
 
 
-def append_machine(machine: dict, filepath: Path = WORKER_INSTANCES_FILEPATH):
+def append_machine(machine: dict, filepath: Path | None = None):
+    if filepath is None:
+        filepath = WORKER_INSTANCES_FILEPATH
+
     machine_id = machine.get("id")
     if machine_id is None:
         raise ValueError("Worker requires machine payloads with an id")
@@ -241,10 +238,14 @@ def append_machine(machine: dict, filepath: Path = WORKER_INSTANCES_FILEPATH):
         response.raise_for_status()
         machine = response.json()
 
-    instances.append(machine)
+    if POSTGRES_ENABLED:
+        backup_machine_to_postgres(machine)
+        instances = load_instances_from_postgres()
+    else:
+        instances.append(machine)
+
     export_instances_to_json(instances, filepath)
-    backup_machine_to_postgres(machine)
-    return machine
+    return machine, len(instances)
 
 
 def replace_all_postgres_instances(instances: list[dict]):
@@ -278,19 +279,13 @@ def recatalogue_instances(filepath: Path = WORKER_INSTANCES_FILEPATH):
         updated["id"] = index
         recatalogued.append(updated)
 
-    export_instances_to_json(recatalogued, filepath)
     replace_all_postgres_instances(recatalogued)
+    if POSTGRES_ENABLED:
+        recatalogued = load_instances_from_postgres()
+    export_instances_to_json(recatalogued, filepath)
     sync_instances_file_to_s3(str(filepath))
 
-    publish_sns_notification(
-        subject="Machine catalog recatalogued",
-        message=(
-            f"The machine catalog was renumbered starting from 1.\n"
-            f"Total machines: {len(recatalogued)}\n"
-            f"Bucket: {S3_BUCKET_NAME}\n"
-            f"Object Key: {S3_INSTANCES_OBJECT_KEY}"
-        ),
-    )
+    publish_sns_notification("catalog.recatalogued", len(recatalogued))
 
     return {
         "status": "recatalogued",
@@ -306,29 +301,35 @@ def healthcheck():
 
 @app.get("/machines")
 def list_machines():
-    return load_authoritative_instances()
+    try:
+        return load_authoritative_instances()
+    except Exception:
+        logger.exception("Worker failed to load the authoritative machine catalog")
+        raise HTTPException(status_code=503, detail="Machine catalog unavailable")
 
 
 @app.post("/machines/process")
 def process_machine(machine: dict):
-    saved = append_machine(machine)
-    sync_instances_file_to_s3(str(WORKER_INSTANCES_FILEPATH))
-    publish_sns_notification(
-        subject=f"Machine {saved.get('id')} synced to S3",
-        message=(
-            f"The instances file was uploaded to S3 after processing a machine.\n"
-            f"Machine ID: {saved.get('id')}\n"
-            f"Machine Name: {saved.get('name', 'unknown')}\n"
-            f"Bucket: {S3_BUCKET_NAME}\n"
-            f"Object Key: {S3_INSTANCES_OBJECT_KEY}"
-        ),
-    )
-    return {"status": "accepted", "machine_id": saved.get("id")}
+    try:
+        saved, machine_count = append_machine(machine)
+        sync_instances_file_to_s3(str(WORKER_INSTANCES_FILEPATH))
+        publish_sns_notification("catalog.machine_processed", machine_count)
+        return {"status": "accepted", "machine_id": saved.get("id")}
+    except (ValueError, httpx.HTTPError) as exc:
+        logger.warning("Worker rejected a machine payload: %s", exc)
+        raise HTTPException(status_code=422, detail="Machine payload could not be processed")
+    except Exception:
+        logger.exception("Worker failed to persist and synchronize a machine")
+        raise HTTPException(status_code=503, detail="Machine persistence unavailable")
 
 
 @app.post("/machines/recatalogue")
 def recatalogue_machines():
-    return recatalogue_instances()
+    try:
+        return recatalogue_instances()
+    except Exception:
+        logger.exception("Worker failed to recatalogue and synchronize machines")
+        raise HTTPException(status_code=503, detail="Machine recatalogue unavailable")
 
 
 def main():
@@ -343,7 +344,6 @@ def main():
 
     if POSTGRES_ENABLED:
         init_postgres_storage()
-        sync_json_instances_to_postgres()
 
     logger.info("Worker API started on %s:%s", "0.0.0.0", API_PORT)
     uvicorn.run("api:app", host="0.0.0.0", port=API_PORT, reload=False)

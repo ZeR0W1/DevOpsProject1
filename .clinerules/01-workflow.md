@@ -3,27 +3,30 @@
 ## Gather context before acting
 
 - Treat the files in `/home/geeta/Project1/.clinerules/` as the authoritative
-  project instructions and rolling status.
-- Read `/home/geeta/Project1/misc/DevOps_on_AWS_-_-_k8s__Docker.pdf` before making
-  implementation or final-compliance decisions about the assignment. Do not rely
-  only on summaries of its requirements.
-- Read every file relevant to the next edit immediately before editing it.
-- Inspect relevant Git status and diffs before changing tracked work.
-- Gather enough context to follow existing conventions. Do not assume a user
-  handoff supersedes the repository, assignment, or current project rules.
-- If current external state matters, reverify it read-only rather than assuming a
-  dated status entry is still true.
+  project instructions and current rolling status.
+- Read `/home/geeta/Project1/misc/DevOps_on_AWS_-_-_k8s__Docker.pdf` when a
+  fresh task requires assignment interpretation, compliance decisions, or work
+  not already grounded by the current project rules/status. Do not reread it
+  routinely for implementation steps whose requirements are already established.
+- Gather only the context needed for the current task. Prefer targeted reads and
+  searches over broad repository rereads.
+- Do not assume a user handoff supersedes the repository, assignment, or current
+  project rules.
+- If current external state materially affects a decision, reverify only the
+  relevant state read-only rather than relying on dated status/history.
 
 ## Prefer integrated workspace tools
 
-- Prefer dedicated workspace tools over shell equivalents whenever possible:
-  use file-reading tools for file content, code-search tools for discovery, and
-  patch tools for edits.
-- Use terminal commands only when the operation genuinely requires a command,
-  such as Git inspection, Terraform validation, builds, or tests.
+- Prefer dedicated workspace tools over shell equivalents when they are more
+  precise or reduce unnecessary output: use file-reading tools for file content,
+  code-search tools for discovery, and patch tools for edits.
+- Shell commands, including `rm`, are allowed when appropriate, but all deletion
+  approval and ownership rules still apply.
 - Do not use inline Python, shell heredocs, or compound multi-line shell programs.
   For longer logic, create a readable script through the editor as a separate
   project-file edit, then invoke it with a short command.
+- Keep command output scoped to what is needed for the current decision. Avoid
+  broad listings, dumps, or recursive output when a narrower query is sufficient.
 - If execution completes but output capture fails, treat the command as completed
   but do not claim or infer output that was not captured.
 
@@ -31,48 +34,47 @@
 
 - Edit one workspace file per editor/patch tool call. This is a workaround for
   the legacy Cline multi-file approval UI bug, not a prohibition on concise,
-  explicitly approved batch filesystem operations. After the exact paths and
-  ownership boundary are verified, one short shell command may move or delete
-  multiple approved files.
+  explicitly approved batch filesystem operations.
+- After exact paths and ownership are verified, one short shell command may move
+  or delete multiple explicitly approved files.
 - Use exact, unique patch context; never rely on fuzzy patching.
-- Never issue a file or directory deletion action without first asking the user
-  and receiving explicit approval. This includes editor delete operations,
-  delete-and-recreate rewrites, shell deletion, cleanup, and removal of untracked
-  artifacts, even when the tool or UI would not normally pause for approval.
-- Normalize line endings only when needed and one project-owned file at a time.
-- Verify every edited or created file and run the relevant validation or tests.
+- Never delete a file or directory without first receiving explicit user
+  approval. This includes editor deletion, delete-and-recreate rewrites, shell
+  deletion, cleanup, and removal of untracked artifacts.
+- Normalize line endings only when needed and only for project-owned files.
+- Verify edited or created files to the extent needed for the change. Run the
+  smallest relevant validation or test set first; broaden validation only when
+  the change, failure, or dependency surface justifies it.
 - Do not modify imported Ansible roles unless the user explicitly changes that
   boundary.
 - Use absolute paths when referring to workspace files in task communication.
-- Compensate for legacy Cline bundle limitations with one-file patches, explicit
-  post-edit reads, short commands, Git inspection, and concise status updates. Do
-  not rely on checkpoints as the sole safety mechanism.
-- Avoid sequential multi-file editor/patch approval operations because legacy
-  approval buttons can become stuck. Tasks created under the `next` bundle may be
-  hidden in legacy, but workspace files remain authoritative.
+- Compensate for legacy Cline bundle limitations with one-file patches, short
+  commands, focused Git inspection, and concise status updates. Do not rely on
+  checkpoints as the sole safety mechanism.
 
 ## Preserve the mixed workspace
 
-- Assume the workspace can contain unrelated pre-existing staged, modified,
-  deleted, and untracked work.
-- Never broadly stage, revert, delete, clean, or attribute all current differences
-  to the active task.
-- Never use `git add .`; if staging is requested, stage explicit paths only.
+- Never broadly stage, revert, delete, clean, or attribute all current
+  differences to the active task.
 - Do not revert unrelated changes or remove untracked files without explicit
   approval after establishing their ownership and purpose.
 - Do not commit or push unless the user asks for it.
-- Never expose credentials, tokens, private keys, secret values, ignored variable
-  files, or sensitive command output. Inspect only specifically required,
-  non-secret values.
+- Follow the secret-handling and inspection rules in
+  `03-cloud-and-terraform-safety.md`. If unintended secret exposure is suspected,
+  stop exposing further output and alert the user.
 
-## Keep status useful
+## Keep current status and history separate
 
-- Maintain `90-current-project-status.md` as the rolling recovery/status record.
-- Preserve provenance: distinguish newly completed work from pre-existing changes.
-- Label dated inventories and milestones clearly. When a newer verification
-  supersedes an older one, retain only useful history and identify the current
-  boundary unambiguously.
-- At the end of every work session, including partial or interrupted sessions,
-  update `90-current-project-status.md` with completed work, validation performed,
-  the current safety/ownership boundary, unfinished work, and the exact resume
-  point. Keep task-local progress checklists consistent with that durable record.
+- Maintain `90-current-project-status.md` as the authoritative compact current
+  state and resume record. Follow its own maintenance rules when updating it.
+- Store completed milestones, dated evidence, superseded states, validation
+  history, and recovery provenance in
+  `/home/geeta/Project1/misc/recovery/PROJECT_HISTORY.md`.
+- Do not routinely read the full history file. Consult only the relevant
+  historical section when provenance, an earlier decision, or recovery context
+  is needed.
+- At the end of a work session, update the current-status file only when current
+  truth, blockers, active work, or the resume point materially changed. Add to
+  `PROJECT_HISTORY.md` only for durable milestones or useful provenance.
+- Keep task-local progress checklists consistent with the current-status file,
+  but do not copy full task transcripts or tool output into either recovery file.
