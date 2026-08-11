@@ -68,8 +68,10 @@
             {'type': 'string', 'name': 'REPO_BRANCH', 'default': 'aws3-containerized', 'description': 'Git branch, tag, or ref to build.'},
             {'type': 'string', 'name': 'GIT_CREDENTIALS_ID', 'default': '', 'description': 'Optional Jenkins Git credential ID.'},
             {'type': 'string', 'name': 'APP_DIR', 'default': 'Ansible-modules-01/roles/app/files/app', 'description': 'Application path in the repository.'},
+            {'type': 'choice', 'name': 'DELIVERY_MODE', 'choices': ['DEPLOY_DEFAULT', 'BUILD_AND_DEPLOY'], 'description': 'Deploy the fixed owner public images or build operator-owned images.'},
             {'type': 'string', 'name': 'IMAGE_TAG', 'default': '', 'description': 'Optional immutable image tag override.'},
             {'type': 'string', 'name': 'DOCKERHUB_CREDENTIALS_ID', 'default': 'dockerhub-creds', 'description': 'Jenkins Docker Hub credential ID.'},
+            {'type': 'string', 'name': 'DOCKERHUB_NAMESPACE', 'default': 'zer0w1', 'description': 'Docker Hub user or organization namespace that owns the three image repositories.'},
             {'type': 'boolean', 'name': 'VALIDATE_ONLY', 'default': false, 'description': 'Run checks without build, push, content upload, or deployment.'},
             {'type': 'boolean', 'name': 'RUN_TRIVY_SCAN', 'default': false, 'description': 'Run the opt-in Trivy filesystem scan.'},
             {'type': 'boolean', 'name': 'DEPLOY_TO_EKS', 'default': false, 'description': 'Trigger the standalone CD job after image publication.'},
@@ -209,12 +211,15 @@
                         command: [python, -c]
                         args:
                           - |
-                            import base64, json, os, pathlib, urllib.error, urllib.parse, urllib.request
+                            import base64, http.cookiejar, json, os, pathlib, urllib.error, urllib.parse, urllib.request
 
                             root = os.environ["JENKINS_URL"].rstrip("/")
                             auth = base64.b64encode(
                                 f'{os.environ["JENKINS_USER"]}:{os.environ["JENKINS_PASSWORD"]}'.encode()
                             ).decode()
+                            opener = urllib.request.build_opener(
+                                urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar())
+                            )
 
                             def request(path, method="GET", body=None, headers=None, expected=(200,)):
                                 request_headers = {"Authorization": f"Basic {auth}"}
@@ -226,7 +231,7 @@
                                     method=method,
                                 )
                                 try:
-                                    with urllib.request.urlopen(req, timeout=30) as response:
+                                    with opener.open(req, timeout=30) as response:
                                         if response.status not in expected:
                                             raise RuntimeError(f"Unexpected Jenkins status {response.status}")
                                         return response.read()

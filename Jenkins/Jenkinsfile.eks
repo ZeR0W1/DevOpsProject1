@@ -9,32 +9,6 @@ pipeline {
         skipDefaultCheckout(true)
     }
 
-    parameters {
-        string(name: 'REPO_URL', defaultValue: 'https://github.com/ZeR0W1/DevOpsProject1.git', description: 'Git repository URL.')
-        string(name: 'REPO_BRANCH', defaultValue: 'aws3-containerized', description: 'Git branch, tag, or ref to build.')
-        string(name: 'GIT_CREDENTIALS_ID', defaultValue: '', description: 'Optional Jenkins Git credential ID.')
-        string(name: 'APP_DIR', defaultValue: 'Ansible-modules-01/roles/app/files/app', description: 'Application path in the checked-out repository.')
-        string(name: 'IMAGE_TAG', defaultValue: '', description: 'Optional shared image tag; default is BUILD_NUMBER-shortSHA.')
-        string(name: 'DOCKERHUB_CREDENTIALS_ID', defaultValue: 'dockerhub-creds', description: 'Jenkins username/password Docker Hub credential ID.')
-        booleanParam(name: 'VALIDATE_ONLY', defaultValue: false, description: 'Stop after source checks and Helm validation; do not build, push, or deploy images.')
-        booleanParam(name: 'RUN_TRIVY_SCAN', defaultValue: false, description: 'Run opt-in Trivy filesystem scan before image push.')
-        booleanParam(name: 'DEPLOY_TO_EKS', defaultValue: false, description: 'Trigger the standalone three-service CD job after all images are pushed.')
-        string(name: 'CD_JOB_NAME', defaultValue: 'devops-project1-eks-deploy', description: 'Standalone Jenkins CD job to trigger.')
-        string(name: 'AWS_REGION', defaultValue: 'us-east-1', description: 'AWS region containing the target EKS cluster.')
-        string(name: 'EKS_CLUSTER_NAME', defaultValue: 'devops-app-eks', description: 'Target EKS cluster name.')
-        string(name: 'DEPLOY_NAMESPACE', defaultValue: 'devops-app', description: 'Namespace containing application Helm releases.')
-        string(name: 'FRONTEND_CONTENT_BUCKET', defaultValue: '', description: 'Terraform-owned application bucket containing index.html.')
-        string(name: 'FRONTEND_CONTENT_KEY', defaultValue: 'index.html', description: 'Stable S3 key used as the runtime frontend content source.')
-        booleanParam(name: 'OVERWRITE_FRONTEND_CONTENT', defaultValue: false, description: 'Replace an existing S3 index.html with the repository default. Missing content is always seeded.')
-        string(name: 'WORKER_DB_HOST', defaultValue: '', description: 'Terraform RDS hostname passed to FULL CD runs.')
-        string(name: 'WORKER_DB_PORT', defaultValue: '5432', description: 'Terraform RDS PostgreSQL port passed to FULL CD runs.')
-        string(name: 'WORKER_DB_NAME', defaultValue: '', description: 'Terraform PostgreSQL database name passed to FULL CD runs.')
-        string(name: 'WORKER_DB_USER', defaultValue: '', description: 'Terraform PostgreSQL username passed to FULL CD runs.')
-        string(name: 'WORKER_DB_SECRET_NAME', defaultValue: 'worker-db-secret', description: 'Existing Ansible-managed Kubernetes Secret name passed to FULL CD runs.')
-        string(name: 'WORKER_S3_BUCKET', defaultValue: '', description: 'Terraform-owned bucket used for worker instances.json synchronization.')
-        string(name: 'WORKER_SNS_TOPIC_ARN', defaultValue: '', description: 'Terraform-owned worker SNS topic ARN.')
-    }
-
     stages {
         stage('Kubernetes Build and Deploy') {
             agent {
@@ -120,10 +94,19 @@ spec:
                             }
                             env.GIT_FULL_SHA = sh(script: 'git rev-parse HEAD', returnStdout: true).trim()
                             env.GIT_SHORT_SHA = env.GIT_FULL_SHA.take(12)
-                            env.IMAGE_TAG_RESOLVED = params.IMAGE_TAG?.trim() ? params.IMAGE_TAG.trim() : "${env.BUILD_NUMBER}-${env.GIT_SHORT_SHA}"
-                            env.FRONTEND_IMAGE_REPOSITORY = 'zer0w1/devops-project1-frontend'
-                            env.BACKEND_IMAGE_REPOSITORY = 'zer0w1/devops-project1-backend'
-                            env.WORKER_IMAGE_REPOSITORY = 'zer0w1/devops-project1-worker'
+                            def deployDefault = params.DELIVERY_MODE == 'DEPLOY_DEFAULT'
+                            def requestedTag = params.IMAGE_TAG?.trim()
+                            env.IMAGE_TAG_RESOLVED = deployDefault ? (requestedTag ?: '3-c896ff25891a') : (requestedTag ?: "${env.BUILD_NUMBER}-${env.GIT_SHORT_SHA}")
+                            if (env.IMAGE_TAG_RESOLVED == 'latest' || !(env.IMAGE_TAG_RESOLVED ==~ /[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}/)) {
+                                error('IMAGE_TAG must be an immutable valid container tag and cannot be latest.')
+                            }
+                            def dockerhubNamespace = deployDefault ? 'zer0w1' : params.DOCKERHUB_NAMESPACE?.trim()?.toLowerCase()
+                            if (!dockerhubNamespace || !(dockerhubNamespace ==~ /[a-z0-9]+(?:[._-][a-z0-9]+)*/)) {
+                                error('DOCKERHUB_NAMESPACE must be a valid lowercase Docker Hub user or organization namespace.')
+                            }
+                            env.FRONTEND_IMAGE_REPOSITORY = "${dockerhubNamespace}/devops-project1-frontend"
+                            env.BACKEND_IMAGE_REPOSITORY = "${dockerhubNamespace}/devops-project1-backend"
+                            env.WORKER_IMAGE_REPOSITORY = "${dockerhubNamespace}/devops-project1-worker"
                             env.FRONTEND_CONTENT_SOURCE = "${env.APP_DIR_RESOLVED}/src/frontend/index.html"
                             if (!params.VALIDATE_ONLY) {
                                 def contentBucket = params.FRONTEND_CONTENT_BUCKET?.trim()
@@ -135,13 +118,14 @@ spec:
                                     error('FRONTEND_CONTENT_KEY is restricted to index.html.')
                                 }
                             }
-                            currentBuild.displayName = "#${env.BUILD_NUMBER} app:${env.IMAGE_TAG_RESOLVED}"
-                            echo "Building frontend, backend, and worker with tag ${env.IMAGE_TAG_RESOLVED}"
+                            currentBuild.displayName = "#${env.BUILD_NUMBER} ${params.DELIVERY_MODE}:${env.IMAGE_TAG_RESOLVED}"
+                            echo "Resolved ${params.DELIVERY_MODE} images with tag ${env.IMAGE_TAG_RESOLVED}"
                         }
                     }
                 }
 
                 stage('Python Checks') {
+                    when { expression { params.DELIVERY_MODE == 'BUILD_AND_DEPLOY' } }
                     steps {
                         dir(params.APP_DIR) {
                             sh '''#!/bin/sh
@@ -163,7 +147,7 @@ spec:
                 }
 
                 stage('Trivy Filesystem Scan') {
-                    when { expression { params.RUN_TRIVY_SCAN } }
+                    when { expression { params.DELIVERY_MODE == 'BUILD_AND_DEPLOY' && params.RUN_TRIVY_SCAN } }
                     steps {
                         container('trivy') {
                             sh '''#!/bin/sh
@@ -220,7 +204,7 @@ spec:
                 }
 
                 stage('Kaniko Build and Push All Images') {
-                    when { expression { !params.VALIDATE_ONLY } }
+                    when { expression { !params.VALIDATE_ONLY && params.DELIVERY_MODE == 'BUILD_AND_DEPLOY' } }
                     steps {
                         withCredentials([usernamePassword(credentialsId: params.DOCKERHUB_CREDENTIALS_ID, usernameVariable: 'DOCKERHUB_USERNAME', passwordVariable: 'DOCKERHUB_TOKEN')]) {
                             container('kaniko') {
@@ -259,11 +243,13 @@ spec:
                                 set -eu
                                 test -n "${FRONTEND_CONTENT_BUCKET}"
                                 test "${FRONTEND_CONTENT_KEY}" = index.html
+                                overwrite="${OVERWRITE_FRONTEND_CONTENT}"
+                                [ "${DELIVERY_MODE}" != DEPLOY_DEFAULT ] || overwrite=false
                                 sh scripts/manage_frontend_content.sh seed \
                                   "${FRONTEND_CONTENT_SOURCE}" \
                                   "${FRONTEND_CONTENT_BUCKET}" \
                                   "${FRONTEND_CONTENT_KEY}" \
-                                  "${OVERWRITE_FRONTEND_CONTENT}" \
+                                  "$overwrite" \
                                   "${AWS_REGION}"
                             '''
                         }

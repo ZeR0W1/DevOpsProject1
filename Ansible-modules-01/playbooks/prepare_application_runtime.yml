@@ -1,0 +1,90 @@
+---
+- name: Prepare non-secret application runtime values
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    terraform_dir: "{{ playbook_dir }}/../../terraform"
+    runtime_values_file: "{{ playbook_dir }}/../recovery/application-runtime.yml"
+    worker_db_secret_name: worker-db-secret
+    prepare_application_runtime: >-
+      {{ lookup('ansible.builtin.env', 'PREPARE_APPLICATION_RUNTIME')
+         | default('false', true)
+         | bool }}
+
+  tasks:
+    - name: Report skipped application runtime preparation
+      ansible.builtin.debug:
+        msg: >-
+          Application runtime preparation is disabled. Set
+          PREPARE_APPLICATION_RUNTIME=true only after Terraform state is
+          initialized and the intended stack outputs have been reviewed.
+      when: not prepare_application_runtime
+
+    - name: Prepare application runtime values when explicitly enabled
+      when: prepare_application_runtime
+      block:
+        - name: Read Terraform outputs without displaying sensitive values
+          ansible.builtin.command:
+            argv:
+              - terraform
+              - "-chdir={{ terraform_dir }}"
+              - output
+              - -json
+          register: terraform_outputs_json
+          changed_when: false
+          no_log: true
+
+        - name: Parse required application runtime outputs
+          ansible.builtin.set_fact:
+            application_runtime:
+              aws_region: "{{ (terraform_outputs_json.stdout | from_json).aws_region.value }}"
+              eks_cluster_name: "{{ (terraform_outputs_json.stdout | from_json).eks_cluster_name.value }}"
+              rds_hostname: "{{ (terraform_outputs_json.stdout | from_json).rds_hostname.value }}"
+              db_port: "{{ (terraform_outputs_json.stdout | from_json).db_port.value }}"
+              db_name: "{{ (terraform_outputs_json.stdout | from_json).db_name.value }}"
+              db_username: "{{ (terraform_outputs_json.stdout | from_json).db_username.value }}"
+              db_password_secret_name: "{{ (terraform_outputs_json.stdout | from_json).db_password_secret_name.value }}"
+              application_s3_bucket: "{{ (terraform_outputs_json.stdout | from_json).s3_bucket_name.value }}"
+              sns_topic_arn: "{{ (terraform_outputs_json.stdout | from_json).sns_topic_arn.value }}"
+          no_log: true
+
+        - name: Validate required application runtime outputs
+          ansible.builtin.assert:
+            that:
+              - application_runtime.aws_region | length > 0
+              - application_runtime.eks_cluster_name | length > 0
+              - application_runtime.rds_hostname | length > 0
+              - application_runtime.db_port | string | length > 0
+              - application_runtime.db_name | length > 0
+              - application_runtime.db_username | length > 0
+              - application_runtime.db_password_secret_name | length > 0
+              - application_runtime.application_s3_bucket | length > 0
+              - application_runtime.sns_topic_arn | length > 0
+            fail_msg: Required Terraform application runtime outputs are missing.
+          no_log: true
+
+        - name: Create ignored runtime handoff directory
+          ansible.builtin.file:
+            path: "{{ runtime_values_file | dirname }}"
+            state: directory
+            mode: "0700"
+
+        - name: Write non-password application runtime handoff
+          ansible.builtin.copy:
+            dest: "{{ runtime_values_file }}"
+            mode: "0600"
+            content: |
+              ---
+              aws_region: {{ application_runtime.aws_region | to_json }}
+              eks_cluster_name: {{ application_runtime.eks_cluster_name | to_json }}
+              rds_hostname: {{ application_runtime.rds_hostname | to_json }}
+              db_port: {{ application_runtime.db_port | to_json }}
+              db_name: {{ application_runtime.db_name | to_json }}
+              db_username: {{ application_runtime.db_username | to_json }}
+              db_password_secret_name: {{ application_runtime.db_password_secret_name | to_json }}
+              worker_db_secret_name: {{ worker_db_secret_name | to_json }}
+              application_s3_bucket: {{ application_runtime.application_s3_bucket | to_json }}
+              sns_topic_arn: {{ application_runtime.sns_topic_arn | to_json }}
+          no_log: true

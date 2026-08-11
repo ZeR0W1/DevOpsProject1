@@ -1,0 +1,5 @@
+ansible-core==2.20.5
+boto3==1.43.9
+botocore==1.43.9
+awscli==1.45.9
+kubernetes==36.0.3

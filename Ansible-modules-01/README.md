@@ -20,12 +20,11 @@ Main project documentation: [../README.md](../README.md)
 - creates encrypted local environment inputs and, only when enabled, regenerates
   effective Terraform inputs from the committed example
 - optionally writes reviewed, non-password Terraform runtime outputs to ignored
-  mode-0600 `recovery/application-runtime.yml`, then reads the Terraform-owned
-  RDS password from AWS Secrets Manager and synchronizes it into the
-  namespace-scoped `worker-db-secret`
-- will grow into the authoritative EKS/Jenkins/application create lifecycle;
-  obsolete EC2 inventory/nginx/systemd playbooks have been removed and archived
-  transitional shell helpers are not imported by `site.yml`
+  mode-0600 `recovery/application-runtime.yml`, then independently synchronizes
+  the Terraform-owned RDS password into namespace-scoped `worker-db-secret`
+- seeds private Jenkins CI/CD jobs and can queue CI through a short-lived
+  in-cluster Job; CI owns image publication and initial `index.html`, then hands
+  off to standalone FULL CD when `DEPLOY_TO_EKS=true`
 
 ## Main playbooks
 
@@ -38,10 +37,14 @@ Main project documentation: [../README.md](../README.md)
   Terraform lifecycle tasks
 - `playbooks/configure_eks_platform.yml` — guarded Terraform-output kubeconfig,
   pinned Jenkins Helm release, and namespace-scoped deployer RBAC lifecycle
-- `playbooks/prepare_application_secret.yml` — independently gated runtime-output
-  preparation and Secrets Manager to Kubernetes Secret synchronization
+- `playbooks/prepare_application_runtime.yml` — independently gated non-secret
+  Terraform-output handoff preparation
+- `playbooks/prepare_application_secret.yml` — independently gated Secrets Manager
+  to Kubernetes Secret synchronization from the prepared handoff
 - `playbooks/seed_jenkins_jobs.yml` — Ansible-native in-cluster Jenkins HTTP API
   seeding for separate inline CI and CD jobs from the non-secret runtime handoff
+- `playbooks/trigger_jenkins_ci.yml` — guarded in-cluster queue handoff to CI with
+  `DEPLOY_TO_EKS=true`; Jenkins owns all subsequent CI and standalone CD work
 - `playbooks/destroy.yml` — separate dependency-ordered full-stack teardown; it is
   intentionally not imported by `site.yml`
 
@@ -89,13 +92,22 @@ kubectl --kubeconfig recovery/target-kubeconfig \
 # Safe destroy validation; defaults to local assertions/debug only
 ANSIBLE_CONFIG=ansible.cfg ansible-playbook playbooks/destroy.yml
 
-# After reviewing Terraform outputs, write the ignored non-password runtime
-# handoff. Add SYNC_APPLICATION_SECRET=true only after separately reviewing AWS
-# identity, kubeconfig context, namespace, and password-rotation impact.
+# After reviewing Terraform outputs, write the ignored non-password handoff.
 PREPARE_APPLICATION_RUNTIME=true \
-  SYNC_APPLICATION_SECRET=true \
+  ANSIBLE_CONFIG=ansible.cfg \
+  ansible-playbook playbooks/prepare_application_runtime.yml
+
+# After the namespace exists, synchronize the database Secret from the prepared
+# handoff, seed Jenkins jobs, then queue CI. CI seeds missing index.html and its
+# DEPLOY_TO_EKS=true run waits for standalone FULL CD.
+SYNC_APPLICATION_SECRET=true \
+  APPLICATION_SECRET_MUTATION_CONFIRMATION=APPLICATION_SECRET_MUTATION_APPROVED \
   ANSIBLE_CONFIG=ansible.cfg \
   ansible-playbook playbooks/prepare_application_secret.yml
+TRIGGER_JENKINS_CI=true \
+  JENKINS_CI_TRIGGER_CONFIRMATION=JENKINS_CI_TRIGGER_APPROVED \
+  ANSIBLE_CONFIG=ansible.cfg \
+  ansible-playbook playbooks/trigger_jenkins_ci.yml
 ```
 
 ## Full-stack destroy
@@ -161,9 +173,8 @@ RBAC access to the Secret and use EKS encryption at rest for Kubernetes Secrets.
 
 - This is a control-node workflow; do not run the lifecycle on cluster nodes.
 - `PREPARE_APPLICATION_RUNTIME=true` reads Terraform outputs and writes only the
-  ignored non-password handoff; `SYNC_APPLICATION_SECRET=true` additionally
-  performs the AWS secret read and Kubernetes mutation. Both default off, and
-  secret synchronization requires both flags in the same run.
+  ignored non-password handoff. `SYNC_APPLICATION_SECRET=true` later performs the
+  AWS secret read and Kubernetes mutation from that handoff; both default off.
 - `PREPARE_TERRAFORM_INPUTS=true` rewrites only the ignored effective tfvars and
   performs a read-only AWS identity check; it does not apply Terraform.
 - `configure_eks_platform.yml` never creates IAM roles, EKS access entries, or Pod
@@ -173,6 +184,10 @@ RBAC access to the Secret and use EKS encryption at rest for Kubernetes Secrets.
   Its short-lived non-root Job reads the chart admin Secret through `secretKeyRef`,
   calls only the private Jenkins Service, and never places the database password
   in Jenkins parameters, job XML, ConfigMaps, logs, or control-node environment.
+- `trigger_jenkins_ci.yml` only queues the seeded CI job with
+  `DEPLOY_TO_EKS=true`; it does not duplicate Jenkins build, S3, Helm, or CD logic.
+  A successful trigger Job proves queue handoff, while Jenkins build results are
+  the authoritative evidence for CI and the synchronous standalone CD run.
 - Never add secret-value debug tasks or remove `no_log: true` from secret handling.
 - Archived direct Terraform/eksctl/Helm helpers live under `../scripts/legacy/`
   for provenance only. They are not supported lifecycle entry points.

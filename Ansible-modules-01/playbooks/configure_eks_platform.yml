@@ -14,6 +14,9 @@
     jenkins_chart_version: 5.8.114
     jenkins_release_name: jenkins
     jenkins_namespace: jenkins
+    jenkins_helm_binary: >-
+      {{ lookup('ansible.builtin.env', 'JENKINS_HELM_BINARY')
+         | default('helm', true) }}
     prepare_eks_prerequisites: >-
       {{ lookup('ansible.builtin.env', 'PREPARE_EKS_PREREQUISITES')
          | default('false', true)
@@ -142,6 +145,7 @@
 
     - name: Install or upgrade the pinned Jenkins Helm release
       kubernetes.core.helm:
+        binary_path: "{{ jenkins_helm_binary }}"
         name: "{{ jenkins_release_name }}"
         chart_ref: "{{ jenkins_chart_ref }}"
         chart_version: "{{ jenkins_chart_version }}"

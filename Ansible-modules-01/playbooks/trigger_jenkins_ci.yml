@@ -1,0 +1,201 @@
+---
+- name: Trigger Jenkins CI for the initial application delivery
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    kubeconfig_file: "{{ playbook_dir }}/../recovery/target-kubeconfig"
+    jenkins_namespace: jenkins
+    jenkins_service_url: http://jenkins.jenkins.svc.cluster.local:8080
+    jenkins_admin_secret_name: jenkins
+    jenkins_ci_job_name: devops-project1-eks-pipeline
+    delivery_mode: >-
+      {{ lookup('ansible.builtin.env', 'DELIVERY_MODE')
+         | default('DEPLOY_DEFAULT', true)
+         | upper }}
+    dockerhub_namespace: >-
+      {{ lookup('ansible.builtin.env', 'DOCKERHUB_NAMESPACE')
+         | default('', true)
+         | lower }}
+    deploy_image_tag: >-
+      {{ lookup('ansible.builtin.env', 'DEPLOY_IMAGE_TAG')
+         | default('', true) }}
+    trigger_jenkins_delivery: >-
+      {{ lookup('ansible.builtin.env', 'TRIGGER_JENKINS_DELIVERY')
+         | default('false', true)
+         | bool }}
+    jenkins_delivery_confirmation: >-
+      {{ lookup('ansible.builtin.env', 'JENKINS_DELIVERY_CONFIRMATION')
+         | default('', true) }}
+
+  tasks:
+    - name: Report skipped Jenkins CI trigger
+      ansible.builtin.debug:
+        msg: >-
+          Jenkins delivery is disabled. Set TRIGGER_JENKINS_DELIVERY=true only
+          after jobs and prerequisites are ready; DELIVERY_MODE defaults to the
+          credential-free DEPLOY_DEFAULT path.
+      when: not trigger_jenkins_delivery
+
+    - name: Trigger Jenkins CI when explicitly enabled
+      when: trigger_jenkins_delivery
+      block:
+        - name: Validate Jenkins CI trigger boundary
+          ansible.builtin.assert:
+            that:
+              - jenkins_delivery_confirmation == 'JENKINS_DELIVERY_MUTATION_APPROVED'
+              - kubeconfig_file is file
+              - delivery_mode in ['BUILD_AND_DEPLOY', 'DEPLOY_DEFAULT']
+              - delivery_mode == 'DEPLOY_DEFAULT' or dockerhub_namespace is match('^[a-z0-9]+([._-][a-z0-9]+)*$')
+              - deploy_image_tag == '' or deploy_image_tag != 'latest'
+              - deploy_image_tag == '' or deploy_image_tag is match('^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$')
+            fail_msg: >-
+              Jenkins CI triggering requires the exact confirmation and prepared
+              target kubeconfig.
+
+        - name: Verify the worker database Secret is ready for FULL CD
+          kubernetes.core.k8s_info:
+            api_version: v1
+            kind: Secret
+            name: worker-db-secret
+            namespace: devops-app
+            kubeconfig: "{{ kubeconfig_file }}"
+          register: worker_db_secret_status
+
+        - name: Require the worker database Secret before CI handoff
+          ansible.builtin.assert:
+            that:
+              - worker_db_secret_status.resources | length == 1
+            fail_msg: >-
+              worker-db-secret must exist in devops-app before CI can hand off to
+              standalone FULL CD.
+
+        - name: Launch short-lived in-cluster Jenkins CI trigger
+          kubernetes.core.k8s:
+            state: present
+            kubeconfig: "{{ kubeconfig_file }}"
+            definition:
+              apiVersion: batch/v1
+              kind: Job
+              metadata:
+                generateName: jenkins-ci-trigger-
+                namespace: "{{ jenkins_namespace }}"
+                labels:
+                  app.kubernetes.io/name: jenkins-ci-trigger
+                  app.kubernetes.io/managed-by: ansible
+              spec:
+                activeDeadlineSeconds: 300
+                backoffLimit: 2
+                ttlSecondsAfterFinished: 300
+                template:
+                  metadata:
+                    labels:
+                      app.kubernetes.io/name: jenkins-ci-trigger
+                  spec:
+                    automountServiceAccountToken: false
+                    restartPolicy: Never
+                    securityContext:
+                      runAsNonRoot: true
+                      runAsUser: 65532
+                      runAsGroup: 65532
+                      fsGroup: 65532
+                      seccompProfile:
+                        type: RuntimeDefault
+                    containers:
+                      - name: trigger
+                        image: python:3.12.11-alpine3.22@sha256:5e511b0e940def74dd23389510300c76017ca9bbc92484c40cff0951adf32245
+                        imagePullPolicy: IfNotPresent
+                        env:
+                          - {name: JENKINS_URL, value: "{{ jenkins_service_url }}"}
+                          - {name: JENKINS_JOB, value: "{{ jenkins_ci_job_name }}"}
+                          - {name: DELIVERY_MODE, value: "{{ delivery_mode }}"}
+                          - {name: DOCKERHUB_NAMESPACE, value: "{{ dockerhub_namespace }}"}
+                          - {name: DEPLOY_IMAGE_TAG, value: "{{ deploy_image_tag }}"}
+                          - name: JENKINS_USER
+                            valueFrom:
+                              secretKeyRef:
+                                name: "{{ jenkins_admin_secret_name }}"
+                                key: jenkins-admin-user
+                          - name: JENKINS_PASSWORD
+                            valueFrom:
+                              secretKeyRef:
+                                name: "{{ jenkins_admin_secret_name }}"
+                                key: jenkins-admin-password
+                        command: [python, -c]
+                        args:
+                          - |
+                            import base64, http.cookiejar, json, os, urllib.parse, urllib.request
+
+                            root = os.environ["JENKINS_URL"].rstrip("/")
+                            job = urllib.parse.quote(os.environ["JENKINS_JOB"], safe="")
+                            auth = base64.b64encode(
+                                f'{os.environ["JENKINS_USER"]}:{os.environ["JENKINS_PASSWORD"]}'.encode()
+                            ).decode()
+                            opener = urllib.request.build_opener(
+                                urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar())
+                            )
+
+                            def request(path, method="GET", body=None, headers=None):
+                                request_headers = {"Authorization": f"Basic {auth}"}
+                                request_headers.update(headers or {})
+                                req = urllib.request.Request(
+                                    root + path,
+                                    data=body,
+                                    headers=request_headers,
+                                    method=method,
+                                )
+                                with opener.open(req, timeout=30) as response:
+                                    return response.status, response.read()
+
+                            crumb = json.loads(request("/crumbIssuer/api/json")[1])
+                            parameters = {
+                                "DELIVERY_MODE": os.environ["DELIVERY_MODE"],
+                                "IMAGE_TAG": os.environ["DEPLOY_IMAGE_TAG"],
+                                "DEPLOY_TO_EKS": "true",
+                            }
+                            if os.environ["DELIVERY_MODE"] == "BUILD_AND_DEPLOY":
+                                parameters["DOCKERHUB_NAMESPACE"] = os.environ["DOCKERHUB_NAMESPACE"]
+                            status, _ = request(
+                                f"/job/{job}/buildWithParameters",
+                                "POST",
+                                urllib.parse.urlencode(parameters).encode(),
+                                {
+                                    "Content-Type": "application/x-www-form-urlencoded",
+                                    crumb["crumbRequestField"]: crumb["crumb"],
+                                },
+                            )
+                            if status != 201:
+                                raise RuntimeError(f"Unexpected Jenkins queue status {status}")
+                            print(f'Queued Jenkins CI in {os.environ["DELIVERY_MODE"]} mode.')
+                        resources:
+                          requests: {cpu: 50m, memory: 64Mi}
+                          limits: {cpu: 200m, memory: 128Mi}
+                        securityContext:
+                          allowPrivilegeEscalation: false
+                          capabilities: {drop: [ALL]}
+                          readOnlyRootFilesystem: true
+          register: jenkins_ci_trigger_job
+
+        - name: Wait for the in-cluster Jenkins CI trigger to finish
+          kubernetes.core.k8s_info:
+            api_version: batch/v1
+            kind: Job
+            name: "{{ jenkins_ci_trigger_job.result.metadata.name }}"
+            namespace: "{{ jenkins_namespace }}"
+            kubeconfig: "{{ kubeconfig_file }}"
+          register: jenkins_ci_trigger_status
+          until: >-
+            jenkins_ci_trigger_status.resources | length == 1 and
+            (jenkins_ci_trigger_status.resources[0].status.conditions | default([]) |
+             selectattr('type', 'in', ['Complete', 'Failed']) |
+             selectattr('status', 'equalto', 'True') | list | length) > 0
+          retries: 30
+          delay: 10
+
+        - name: Require successful Jenkins CI queue handoff
+          ansible.builtin.assert:
+            that:
+              - (jenkins_ci_trigger_status.resources[0].status.succeeded | default(0) | int) == 1
+            fail_msg: >-
+              The in-cluster Jenkins CI trigger failed before queue handoff.

@@ -96,8 +96,9 @@ must remain explicitly approved, cost-aware, and dependency-ordered.
 
 ## 7. Create and destroy automation
 
-- [ ] Complete the Ansible create order: inputs/state -> Terraform infrastructure ->
-  kubeconfig/prerequisites -> Jenkins -> initial S3 content -> application config -> CD.
+- [x] Implement the guarded Ansible create order: inputs/state -> Terraform
+  infrastructure -> kubeconfig/Jenkins -> runtime handoff -> job seeding ->
+  database Secret -> CI queue handoff; enabled execution remains pending.
 - [x] Implement a separate statically validated destroy playbook; never import
   destroy into `site.yml`.
 - [x] Require nonempty Terraform ownership, the active Kubernetes target, and an
@@ -116,6 +117,10 @@ must remain explicitly approved, cost-aware, and dependency-ordered.
 
 ## 8. Approved future cloud verification and evidence
 
+- [ ] Execute the final acceptance sequence in this exact order: repository
+  cleanup -> `./setup.sh` from a clean local setup -> `playbooks/create.yml` ->
+  public user access and full application/service functionality tests -> evidence
+  capture/documentation -> guarded `playbooks/destroy.yml` and residual-cost audit.
 - [ ] Verify AWS identity and kubeconfig context before every approved mutation.
 - [ ] Capture non-secret evidence for EKS nodes, namespaces, workloads, Services,
   entry points, pod details, logs, scaling, and self-healing.
@@ -151,7 +156,8 @@ must remain explicitly approved, cost-aware, and dependency-ordered.
 
 ## Current readiness warning
 
-The repository is **not hand-in ready**. Local static validation has passed for
-completed Terraform/Ansible slices, but the end-to-end create lifecycle, live
-application integrations, enabled destroy path, and target cloud deployment have
-not been executed or proven.
+The repository is **not hand-in ready**. The target deployment and focused live
+integrations are proven, but the final clean-state setup/create acceptance run,
+user-facing and full service-functionality verification, evidence capture, and
+enabled destroy/residual-cost audit must still be completed in the exact sequence
+defined above.

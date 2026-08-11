@@ -1,6 +1,6 @@
 resource "aws_s3_bucket" "machine_catalog" {
   bucket        = var.bucket_name
-  force_destroy = false
+  force_destroy = true
 
   tags = merge(var.common_tags, {
     Name        = var.bucket_name

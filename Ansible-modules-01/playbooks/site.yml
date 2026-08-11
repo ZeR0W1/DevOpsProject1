@@ -2,10 +2,10 @@
 # Top-level control-node orchestrator.
 #
 # Terraform Phase 1 exposes guarded input, infrastructure, EKS/Jenkins platform,
-# application-runtime, and Jenkins job-seeding stages. Initial S3 content and
-# standalone CD invocation will be added here as separately validated stages. Do
-# not append the legacy EC2 inventory/nginx/systemd flow: the EKS root
-# intentionally no longer exports its required EC2 host outputs.
+# runtime/Secret preparation, and Jenkins job-seeding stages. After this control
+# plane flow succeeds, Jenkins CI owns image publication and initial S3 content;
+# its explicit DEPLOY_TO_EKS handoff invokes standalone FULL CD. Do not append the
+# legacy EC2 inventory/nginx/systemd flow.
 - name: Prepare effective Terraform inputs
   ansible.builtin.import_playbook: prepare_terraform_inputs.yml
 
@@ -15,8 +15,17 @@
 - name: Configure EKS prerequisites and Jenkins platform lifecycle
   ansible.builtin.import_playbook: configure_eks_platform.yml
 
-- name: Prepare application runtime secrets
-  ansible.builtin.import_playbook: prepare_application_secret.yml
+- name: Prepare non-secret application runtime handoff
+  ansible.builtin.import_playbook: prepare_application_runtime.yml
 
 - name: Seed separate Jenkins CI and CD jobs
   ansible.builtin.import_playbook: seed_jenkins_jobs.yml
+
+- name: Synchronize the worker database Kubernetes Secret
+  ansible.builtin.import_playbook: prepare_application_secret.yml
+
+- name: Configure optional operator-owned Jenkins registry credential
+  ansible.builtin.import_playbook: configure_jenkins_registry_credential.yml
+
+- name: Trigger Jenkins CI for initial delivery and FULL CD handoff
+  ansible.builtin.import_playbook: trigger_jenkins_ci.yml

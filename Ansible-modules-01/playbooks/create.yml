@@ -1,0 +1,184 @@
+---
+- name: Review and authorize the complete platform creation lifecycle
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars_prompt:
+    - name: requested_delivery_mode
+      prompt: "Delivery mode: DEPLOY_DEFAULT or BUILD_AND_DEPLOY"
+      private: false
+
+  vars:
+    project_root: "{{ playbook_dir }}/../.."
+    terraform_dir: "{{ project_root }}/terraform"
+    bootstrap_dir: "{{ terraform_dir }}/state-bootstrap"
+    terraform_example: "{{ terraform_dir }}/terraform.tfvars.example"
+    bootstrap_inputs: "{{ bootstrap_dir }}/terraform.tfvars"
+    local_environment_file: "{{ playbook_dir }}/../vault/local-environment.yml"
+
+  tasks:
+    - name: Require project-local setup artifacts and tools
+      ansible.builtin.assert:
+        that:
+          - local_environment_file is file
+          - "(project_root ~ '/.venv/bin/terraform') is file"
+          - "(project_root ~ '/.venv/bin/kubectl') is file"
+          - "(project_root ~ '/.venv/bin/helm') is file"
+          - requested_delivery_mode | upper in ['DEPLOY_DEFAULT', 'BUILD_AND_DEPLOY']
+        fail_msg: "Run ../../setup.sh first and select a supported delivery mode."
+
+    - name: Read committed non-secret Terraform defaults
+      ansible.builtin.set_fact:
+        terraform_example_content: "{{ lookup('ansible.builtin.file', terraform_example) }}"
+
+    - name: Derive reviewed target identifiers
+      ansible.builtin.set_fact:
+        create_name_prefix: >-
+          {{ (terraform_example_content |
+              regex_search('(?m)^name_prefix\s*=\s*"([a-z0-9-]+)"', '\1') |
+              first) }}
+        create_environment: >-
+          {{ (terraform_example_content |
+              regex_search('(?m)^environment\s*=\s*"([a-z0-9-]+)"', '\1') |
+              first) }}
+        create_aws_region: >-
+          {{ (terraform_example_content |
+              regex_search('(?m)^aws_region\s*=\s*"([a-z0-9-]+)"', '\1') |
+              first) }}
+        create_delivery_mode: "{{ requested_delivery_mode | upper }}"
+
+    - name: Read current AWS account identity
+      ansible.builtin.command:
+        argv: [aws, sts, get-caller-identity, --query, Account, --output, text]
+      register: create_account_command
+      changed_when: false
+      no_log: true
+
+    - name: Derive deterministic cloud resource names
+      ansible.builtin.set_fact:
+        create_account_id: "{{ create_account_command.stdout }}"
+        create_cluster_name: "{{ create_name_prefix }}-{{ create_environment }}-eks"
+        create_application_bucket: >-
+          {{ create_name_prefix }}-{{ create_environment }}-app-{{ create_account_command.stdout }}-{{ create_aws_region }}
+        create_state_bucket: >-
+          devops-project1-terraform-state-{{ create_account_command.stdout }}-{{ create_aws_region }}
+      no_log: true
+
+    - name: Initialize the separate state-bootstrap root locally
+      ansible.builtin.command:
+        argv: [terraform, "-chdir={{ bootstrap_dir }}", init, -input=false, -no-color]
+      changed_when: false
+
+    - name: Inspect state-bootstrap ownership
+      ansible.builtin.command:
+        argv: [terraform, "-chdir={{ bootstrap_dir }}", state, list]
+      register: bootstrap_state
+      changed_when: false
+
+    - name: Check whether the derived state bucket already exists
+      ansible.builtin.command:
+        argv: [aws, s3api, head-bucket, --bucket, "{{ create_state_bucket }}"]
+      register: state_bucket_check
+      changed_when: false
+      failed_when: false
+      no_log: true
+      when: bootstrap_state.stdout_lines | length == 0
+
+    - name: Reject unowned state-bucket collisions
+      ansible.builtin.assert:
+        that:
+          - bootstrap_state.stdout_lines | length > 0 or state_bucket_check.rc != 0
+        fail_msg: >-
+          The derived remote-state bucket already exists but the separate
+          state-bootstrap state does not own it; refusing implicit adoption.
+
+    - name: Select fresh-account bootstrap behavior
+      ansible.builtin.set_fact:
+        create_bootstrap_apply: "{{ bootstrap_state.stdout_lines | length == 0 }}"
+
+    - name: Load optional stored registry values
+      ansible.builtin.include_vars:
+        file: "{{ local_environment_file }}"
+        name: create_local_environment
+      no_log: true
+
+    - name: Select on-demand registry credential preparation
+      ansible.builtin.set_fact:
+        create_prepare_registry_credentials: >-
+          {{
+            create_delivery_mode == 'BUILD_AND_DEPLOY' and
+            (
+              create_local_environment.dockerhub_username | default('') | length == 0 or
+              create_local_environment.dockerhub_token | default('') | length < 16
+            )
+          }}
+
+    - name: Display billable creation scope and ownership boundaries
+      ansible.builtin.debug:
+        msg:
+          - "AWS account: {{ create_account_id }}; region: {{ create_aws_region }}"
+          - "Target EKS cluster: {{ create_cluster_name }}"
+          - "Application-data bucket: {{ create_application_bucket }}"
+          - "Remote-state bucket: {{ create_state_bucket }} (retained on normal destroy)"
+          - "Delivery mode: {{ create_delivery_mode }}"
+          - >-
+            This creates billable VPC/NAT, three t3.medium EKS nodes, private RDS
+            db.t4g.micro, S3/SNS/IAM resources, private Jenkins, and application
+            workloads; Terraform owns AWS resources and Ansible owns ordering.
+
+    - name: Require exact creation confirmation
+      ansible.builtin.pause:
+        prompt: >-
+          Type CREATE {{ create_cluster_name }} {{ create_application_bucket }} to
+          authorize the complete documented creation lifecycle
+      register: create_confirmation
+
+    - name: Validate exact creation confirmation
+      ansible.builtin.assert:
+        that:
+          - >-
+            create_confirmation.user_input ==
+            'CREATE ' ~ create_cluster_name ~ ' ' ~ create_application_bucket
+        fail_msg: "Creation cancelled; no cloud mutation was performed."
+
+    - name: Write deterministic state-bootstrap inputs
+      ansible.builtin.copy:
+        dest: "{{ bootstrap_inputs }}"
+        mode: "0600"
+        content: |
+          state_bucket_name = "{{ create_state_bucket }}"
+          aws_region       = "{{ create_aws_region }}"
+          project_name     = "devops-project1"
+          environment      = "shared"
+
+- name: Prepare on-demand registry credentials
+  ansible.builtin.import_playbook: prepare_registry_credentials.yml
+  vars:
+    prepare_registry_credentials: "{{ hostvars['localhost']['create_prepare_registry_credentials'] }}"
+    registry_delivery_required: "{{ hostvars['localhost']['create_delivery_mode'] == 'BUILD_AND_DEPLOY' }}"
+
+- name: Run the complete composable platform lifecycle
+  ansible.builtin.import_playbook: site.yml
+  vars:
+    prepare_terraform_inputs: true
+    terraform_state_bootstrap_apply: "{{ hostvars['localhost']['create_bootstrap_apply'] }}"
+    terraform_main_init: true
+    terraform_main_migrate_state: false
+    terraform_main_apply: true
+    terraform_mutation_confirmation: TERRAFORM_MUTATION_APPROVED
+    prepare_eks_prerequisites: true
+    deploy_jenkins_platform: true
+    apply_jenkins_rbac: true
+    eks_platform_mutation_confirmation: EKS_PLATFORM_MUTATION_APPROVED
+    jenkins_helm_binary: "{{ playbook_dir }}/../../.venv/bin/helm"
+    prepare_application_runtime: true
+    seed_jenkins_jobs: true
+    jenkins_job_mutation_confirmation: JENKINS_JOB_MUTATION_APPROVED
+    sync_application_secret: true
+    application_secret_mutation_confirmation: APPLICATION_SECRET_MUTATION_APPROVED
+    configure_jenkins_registry_credential: "{{ hostvars['localhost']['create_delivery_mode'] == 'BUILD_AND_DEPLOY' }}"
+    jenkins_registry_mutation_confirmation: JENKINS_REGISTRY_MUTATION_APPROVED
+    trigger_jenkins_delivery: true
+    delivery_mode: "{{ hostvars['localhost']['create_delivery_mode'] }}"
+    jenkins_delivery_confirmation: JENKINS_DELIVERY_MUTATION_APPROVED

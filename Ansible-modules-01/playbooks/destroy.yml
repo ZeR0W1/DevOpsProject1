@@ -8,6 +8,10 @@
     project_root: "{{ playbook_dir }}/../.."
     terraform_dir: "{{ project_root }}/terraform"
     recovery_root: "{{ playbook_dir }}/../recovery"
+    project_terraform_binary: "{{ project_root }}/.venv/bin/terraform"
+    project_helm_binary: "{{ project_root }}/.venv/bin/helm"
+    project_kubectl_binary: "{{ project_root }}/.venv/bin/kubectl"
+    teardown_kubeconfig_path: "{{ playbook_dir }}/../recovery/target-kubeconfig"
 
     application_namespace: devops-app
     application_releases: [frontend, backend, worker]
@@ -17,9 +21,6 @@
 
     destroy_execute: "{{ lookup('ansible.builtin.env', 'DESTROY_EXECUTE') | default('false', true) | bool }}"
     retain_application_data: "{{ lookup('ansible.builtin.env', 'RETAIN_APPLICATION_DATA') | default('false', true) | bool }}"
-
-    expected_kube_context: "{{ lookup('ansible.builtin.env', 'EXPECTED_KUBE_CONTEXT') | default('', true) }}"
-    destroy_confirmation: "{{ lookup('ansible.builtin.env', 'DESTROY_CONFIRMATION') | default('', true) }}"
 
   tasks:
     - name: Validate destroy flags locally
@@ -39,15 +40,24 @@
     - name: Verify Terraform ownership before destroy
       when: destroy_execute
       block:
+        - name: Require project-local teardown tools and kubeconfig
+          ansible.builtin.assert:
+            that:
+              - project_terraform_binary is file
+              - project_helm_binary is file
+              - project_kubectl_binary is file
+              - teardown_kubeconfig_path is file
+            fail_msg: "Run ../../setup.sh and create.yml before teardown."
+
         - name: List Terraform-owned resources
           ansible.builtin.command:
-            argv: [terraform, "-chdir={{ terraform_dir }}", state, list]
+            argv: ["{{ project_terraform_binary }}", "-chdir={{ terraform_dir }}", state, list]
           register: terraform_resources
           changed_when: false
 
         - name: Read Terraform lifecycle outputs
           ansible.builtin.command:
-            argv: [terraform, "-chdir={{ terraform_dir }}", output, -json]
+            argv: ["{{ project_terraform_binary }}", "-chdir={{ terraform_dir }}", output, -json]
           register: terraform_output_command
           changed_when: false
           no_log: true
@@ -72,27 +82,44 @@
           ansible.builtin.command:
             argv: "{{ item }}"
           loop:
-            - [kubectl, config, current-context]
-            - [kubectl, config, view, --minify, -o, "jsonpath={.clusters[0].cluster.server}"]
+            - ["{{ project_kubectl_binary }}", --kubeconfig, "{{ teardown_kubeconfig_path }}", config, current-context]
+            - ["{{ project_kubectl_binary }}", --kubeconfig, "{{ teardown_kubeconfig_path }}", config, view, --minify, -o, "jsonpath={.clusters[0].cluster.server}"]
           register: kubernetes_target
           changed_when: false
           no_log: true
 
-        - name: Verify Kubernetes target and exact confirmation
+        - name: Verify explicit kubeconfig targets the Terraform-owned API
           ansible.builtin.assert:
             that:
-              - expected_kube_context | length > 0
-              - kubernetes_target.results[0].stdout == expected_kube_context
               - kubernetes_target.results[1].stdout == terraform_outputs.eks_cluster_endpoint.value
+            fail_msg: >-
+              The ignored project kubeconfig does not target the Terraform-owned
+              EKS API endpoint. Nothing was changed.
+          no_log: true
+
+        - name: Display destructive scope and retained boundary
+          ansible.builtin.debug:
+            msg:
+              - "EKS cluster: {{ terraform_outputs.eks_cluster_name.value }}"
+              - "Application bucket: {{ terraform_outputs.s3_bucket_name.value }}"
+              - "Terraform-owned resources: {{ terraform_resources.stdout_lines | length }}"
+              - "The separate remote-state bucket is retained."
+
+        - name: Require exact teardown confirmation
+          ansible.builtin.pause:
+            prompt: >-
+              Type DESTROY {{ terraform_outputs.eks_cluster_name.value }}
+              {{ terraform_outputs.s3_bucket_name.value }} to authorize teardown
+          register: teardown_confirmation
+
+        - name: Validate exact teardown confirmation
+          ansible.builtin.assert:
+            that:
               - >-
-                destroy_confirmation == 'DESTROY ' ~
+                teardown_confirmation.user_input == 'DESTROY ' ~
                 terraform_outputs.eks_cluster_name.value ~ ' ' ~
                 terraform_outputs.s3_bucket_name.value
-            fail_msg: >-
-              EXPECTED_KUBE_CONTEXT must match the active Terraform-owned EKS
-              context, and DESTROY_CONFIRMATION must exactly identify the
-              Terraform cluster and application bucket.
-          no_log: true
+            fail_msg: "Teardown cancelled; nothing was changed."
 
     - name: Back up optional application data and destroy the platform
       when: destroy_execute
@@ -149,6 +176,10 @@
                   jenkins_release
                 ] + application_releases
               }}
+          environment:
+            HELM_BIN: "{{ project_helm_binary }}"
+            KUBECTL_BIN: "{{ project_kubectl_binary }}"
+            KUBECONFIG_PATH: "{{ teardown_kubeconfig_path }}"
 
         - name: Delete the two application bucket objects
           ansible.builtin.command:
@@ -158,11 +189,11 @@
 
         - name: Destroy the verified Terraform-owned main stack
           ansible.builtin.command:
-            argv: [terraform, "-chdir={{ terraform_dir }}", destroy, -auto-approve, -input=false, -no-color]
+            argv: ["{{ project_terraform_binary }}", "-chdir={{ terraform_dir }}", destroy, -auto-approve, -input=false, -no-color]
 
         - name: Verify main Terraform state is empty
           ansible.builtin.command:
-            argv: [terraform, "-chdir={{ terraform_dir }}", state, list]
+            argv: ["{{ project_terraform_binary }}", "-chdir={{ terraform_dir }}", state, list]
           register: post_destroy_state
           changed_when: false
           failed_when: post_destroy_state.stdout_lines | length > 0

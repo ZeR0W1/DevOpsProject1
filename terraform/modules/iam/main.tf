@@ -106,14 +106,26 @@ resource "aws_iam_role_policy" "jenkins_ci_frontend_content" {
 
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [{
-      Effect = "Allow"
-      Action = [
-        "s3:GetObject",
-        "s3:PutObject"
-      ]
-      Resource = "arn:aws:s3:::${var.bucket_name}/index.html"
-    }]
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:GetObject",
+          "s3:PutObject"
+        ]
+        Resource = "arn:aws:s3:::${var.bucket_name}/index.html"
+      },
+      {
+        Effect   = "Allow"
+        Action   = "s3:ListBucket"
+        Resource = "arn:aws:s3:::${var.bucket_name}"
+        Condition = {
+          StringEquals = {
+            "s3:prefix" = "index.html"
+          }
+        }
+      }
+    ]
   })
 }
 

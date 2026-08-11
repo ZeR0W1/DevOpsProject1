@@ -1,11 +1,11 @@
 # DevOps on AWS: Kubernetes, EKS, and Jenkins
 
-> **Repository status: implementation in progress — not hand-in ready.**
+> **Repository status: deployed and integration-validated — documentation and
+> hand-in evidence remain in progress.**
 >
-> The target Terraform-owned, Ansible-orchestrated EKS lifecycle has not been
-> created or verified end to end. Current validation is local/static unless a
-> dated evidence section says otherwise. Do not run mutation stages without
-> reviewing the safety gates and current ownership boundary.
+> The Terraform-owned target stack and Jenkins delivery path have been verified
+> live. The new professor-facing setup/create/destroy wrappers are locally
+> validated but have not themselves been used to recreate or destroy the stack.
 
 ## Project goal
 
@@ -30,8 +30,8 @@ safety and recovery record is
 - **Terraform owns AWS infrastructure**: VPC networking, EKS, RDS, S3, SNS,
   Secrets Manager, and AWS identity integrations.
 - **Ansible is the routine lifecycle orchestrator**. The guarded create flow is
-  still incomplete; default execution performs local checks and leaves mutations
-  disabled.
+  implemented through the reviewed `create.yml` wrapper; lower-level stages stay
+  composable and default-off when invoked independently.
 - **Jenkins CI and CD remain separate**. `Jenkins/Jenkinsfile.eks` checks code and
   charts and builds one immutable tag for all three images. CD through
   `Jenkins/Jenkinsfile-deploy` is optional and is the only Jenkins job allowed to
@@ -105,7 +105,9 @@ trust boundary.
 | --- | --- |
 | `terraform/` | Main AWS stack; partial S3 backend configuration |
 | `terraform/state-bootstrap/` | Separate retained Terraform-state bucket root |
-| `Ansible-modules-01/playbooks/site.yml` | Guarded create entry point; incomplete |
+| `setup.sh` | One-time pinned local tool and private-input setup |
+| `Ansible-modules-01/playbooks/create.yml` | Professor-facing complete create lifecycle |
+| `Ansible-modules-01/playbooks/site.yml` | Composable internal lifecycle orchestrator |
 | `Ansible-modules-01/playbooks/destroy.yml` | Separate guarded destroy entry point |
 | `Jenkins/Jenkinsfile.eks` | Mandatory EKS-native CI pipeline |
 | `Jenkins/Jenkinsfile-deploy` | Optional standalone CD pipeline |
@@ -180,6 +182,44 @@ Public custom Jenkins images are reproducible from:
 Users can pull public images without the repository owner's Docker Hub
 credentials. Credentials are needed only to publish replacement images.
 
+## Setup, create, and destroy
+
+The supported lifecycle uses project-local pinned tools. From the repository root:
+
+```bash
+./setup.sh
+source .venv/bin/activate
+cd Ansible-modules-01
+ansible-playbook -i localhost, --connection=local playbooks/create.yml
+```
+
+`setup.sh` installs pinned Python/controller dependencies, Terraform, kubectl,
+Helm, and Ansible collections under the repository. It then creates or retains an
+ignored mode-`0600` `.vault-password` and prompts for the local environment
+values stored as individually Ansible-Vault-encrypted entries in the ignored
+mode-`0600` `vault/local-environment.yml`.
+
+`create.yml` prompts for `DEPLOY_DEFAULT` or `BUILD_AND_DEPLOY`, derives the AWS
+account/region resource scope, rejects an unowned remote-state bucket collision,
+and displays the billable boundary before requiring one exact typed confirmation.
+Default delivery uses promoted public images and needs no Docker Hub credential.
+Build delivery prompts for a Docker Hub owner/token only when they are absent,
+verifies them, and adds an idempotent encrypted block to the same local environment
+file. The token is never committed or printed.
+
+The destroy lifecycle remains default-off. A harmless inspection run is:
+
+```bash
+ansible-playbook -i localhost, --connection=local playbooks/destroy.yml
+```
+
+To deliberately enable teardown, set `DESTROY_EXECUTE=true`; optionally set
+`RETAIN_APPLICATION_DATA=true` to copy `index.html` and `instances.json` into the
+ignored private recovery directory first. The enabled path verifies Terraform
+ownership and the explicit project kubeconfig, displays the exact scope, and asks
+for the cluster/bucket confirmation before removing Kubernetes/Jenkins state and
+running one Terraform destroy. The separate remote-state bucket is retained.
+
 ## Safe local validation
 
 The following commands are intended for local/static validation. They do not
@@ -193,9 +233,11 @@ terraform -chdir=terraform/state-bootstrap fmt -check
 terraform -chdir=terraform/state-bootstrap validate
 
 ANSIBLE_CONFIG=Ansible-modules-01/ansible.cfg \
-  ansible-playbook --syntax-check Ansible-modules-01/playbooks/site.yml
+  .venv/bin/ansible-playbook -i localhost, --connection=local \
+  --syntax-check Ansible-modules-01/playbooks/create.yml
 ANSIBLE_CONFIG=Ansible-modules-01/ansible.cfg \
-  ansible-playbook --syntax-check Ansible-modules-01/playbooks/destroy.yml
+  .venv/bin/ansible-playbook -i localhost, --connection=local \
+  --syntax-check Ansible-modules-01/playbooks/destroy.yml
 
 helm lint helm/frontend
 helm lint helm/backend
@@ -211,17 +253,21 @@ lifecycle stage.
 
 ## Create and destroy status
 
-`Ansible-modules-01/playbooks/site.yml` currently orchestrates guarded local input
-preparation, Terraform lifecycle gates, EKS/Jenkins platform preparation,
-application runtime/Secret preparation, and in-cluster Jenkins job seeding. The
-remaining create-flow gap is initial S3 content invocation followed by standalone
-CD invocation and verification. Implemented stages remain default-off and have
-not been cloud-run.
+`Ansible-modules-01/playbooks/create.yml` is the supported complete entry point;
+`site.yml` remains its composable internal orchestrator for local input
+preparation, Terraform lifecycle, EKS/Jenkins platform preparation,
+non-secret runtime preparation, in-cluster Jenkins job seeding, database Secret
+synchronization, and an in-cluster CI queue handoff. CI then owns immutable image
+publication and seed-if-missing `index.html`; delivery hands off to the separate
+FULL CD job. Manual invocation plus its typed scope prompt authorize that
+documented lifecycle; automation agents still require explicit user approval
+before invoking it.
 
 `Ansible-modules-01/playbooks/destroy.yml` is a separate dependency-ordered
 workflow. Its default invocation performs only local assertions/debug. The enabled
-path requires explicit flags, Terraform ownership checks, exact cluster/bucket
-confirmation, and a reviewed state boundary before it can remove application
+path requires `DESTROY_EXECUTE=true`, project-local tools/kubeconfig, Terraform
+ownership checks, exact cluster/bucket confirmation, and a reviewed state boundary
+before it can remove application
 releases, Jenkins data, the application bucket contents, or the main stack. The
 Terraform state bucket remains retained by default.
 
@@ -237,12 +283,11 @@ Terraform state bucket remains retained by default.
 
 ## Current limitations
 
-- PostgreSQL/S3/SNS worker behavior and focused automated tests are implemented
-  locally but still require live integration verification.
-- The selected frontend `LoadBalancer` and private Jenkins in-cluster seeding/UI
-  fallback still need live implementation verification.
-- The final Ansible create-flow orchestration and all live deployment verification
-  remain incomplete.
+- The setup/create/destroy wrappers are locally validated but have not been used
+  for a full fresh-account create or an enabled teardown.
+- PostgreSQL currently uses TLS `require`; packaging the AWS RDS CA bundle for
+  `verify-full` remains future hardening.
+- The promoted Jenkins fallback should be reseeded before a later delivery run.
 - Assignment-complete evidence and the final architecture/security narrative are
   still pending.
 

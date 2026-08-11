@@ -135,14 +135,6 @@ resource "aws_security_group" "db" {
   description = "Project database access group"
   vpc_id      = aws_vpc.project.id
 
-  ingress {
-    # Admin-path DB access (e.g., pgAdmin) from approved CIDR only.
-    from_port   = 5432
-    to_port     = 5432
-    protocol    = "tcp"
-    cidr_blocks = [var.admin_cidr]
-  }
-
   egress {
     from_port   = 0
     to_port     = 0
@@ -157,4 +149,14 @@ resource "aws_security_group" "db" {
     Role        = "database"
     ManagedBy   = "Terraform"
   })
+}
+
+resource "aws_security_group_rule" "admin_to_db" {
+  description       = "Allow approved administrator CIDR to PostgreSQL"
+  type              = "ingress"
+  from_port         = 5432
+  to_port           = 5432
+  protocol          = "tcp"
+  cidr_blocks       = [var.admin_cidr]
+  security_group_id = aws_security_group.db.id
 }

@@ -12,6 +12,8 @@ logs/
 !.env.example
 !.env*.example
 .vscode/
+/.tools/
+Ansible-modules-01/.ansible/collections/
 
 # Local Cline command/recovery artifacts (project rules remain tracked)
 /.command-logs/

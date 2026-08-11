@@ -9,7 +9,17 @@ superseded evidence belong in `misc/recovery/PROJECT_HISTORY.md`.
 
 ## Current environment and ownership state
 
-- Terraform Phase 1 remains active.
+- Terraform Phase 1 ended by explicit user approval on 2026-08-11.
+- The separate retained, versioned, encrypted state bucket was created and the
+  main stack now uses its S3 backend with native lock files.
+- The fresh Terraform-owned target stack was applied in AWS account
+  `058264247987`, region `us-east-1`. Remote state owns 63 resources and a final
+  read-only plan returned zero drift.
+- Target EKS `doa-staging-eks` 1.34 and its three-node private `t3.medium` group
+  are ACTIVE. RDS PostgreSQL 17.6 on `db.t4g.micro` is available and private.
+- EKS authentication is `API_AND_CONFIG_MAP`; the Jenkins deployer access entry,
+  worker/CI/deployer Pod Identity associations, NAT path, application S3/SNS,
+  Secrets Manager secret, and DB security boundaries exist in Terraform state.
 - The live `devops-app-eks` environment remains externally owned by
   `eksctl`/CloudFormation and outside Terraform state. It is a lecture-lab cluster
   containing only a Jenkins controller/plugins setup; disregard it when reasoning
@@ -44,56 +54,78 @@ superseded evidence belong in `misc/recovery/PROJECT_HISTORY.md`.
 
 - Main Terraform configuration, partial S3 backend, and separate
   `terraform/state-bootstrap` root are present.
+- Terraform now explicitly configures EKS API authentication required by the
+  deployer access entry. DB ingress rules use consistent standalone Terraform
+  ownership for the approved admin CIDR and EKS-node PostgreSQL access.
 - Guarded Ansible lifecycle orchestration is present with mutation stages
   disabled by default.
 - Worker Pod Identity, EBS CSI IRSA, and separate least-privilege Jenkins CI/CD
-  Pod Identity roles/associations are implemented in Terraform configuration.
-  The deployer EKS access entry is defined. The post-infrastructure Ansible create
-  stages remain incomplete.
+  Pod Identity roles/associations are active with the Terraform-owned target.
 - A dependency-ordered destroy workflow exists and has only been
-  statically/default-run validated.
+  statically/default-run validated. It now uses project-local Terraform, Helm,
+  kubectl, and an explicit ignored kubeconfig, verifies Terraform ownership and
+  the target API endpoint, and requires exact interactive scope confirmation.
+- The supported professor-facing lifecycle is now `./setup.sh`, followed by
+  `playbooks/create.yml`, with `playbooks/destroy.yml` as the separate default-off
+  teardown. Setup installs pinned project-local tools and collections; create
+  detects fresh-account state bootstrap, rejects unowned bucket collisions,
+  displays billable scope, and requires one exact confirmation before enabling
+  the composable lifecycle stages.
+- Docker Hub credentials remain optional operator-bootstrap secrets. Default
+  delivery requires none; BUILD_AND_DEPLOY prompts only when values are absent,
+  verifies them, and maintains an idempotent per-value Ansible Vault block in the
+  ignored mode-0600 `vault/local-environment.yml`.
 - Worker integration implements PostgreSQL-first reads and
   writes, JSON export to fixed S3 object `instances.json`, metadata-only SNS
   notifications, error propagation, and Helm ConfigMap/Secret wiring.
 - Focused worker tests pass (`7 passed`), worker Helm lint/render checks pass,
   and source-controlled test dependencies are installed by the active EKS CI
-  pipeline from `src/requirements-test.txt`. Live RDS/S3/SNS integration is not
-  yet runtime-validated.
+  pipeline from `src/requirements-test.txt`. Live RDS/S3/SNS integration is
+  runtime-validated through one authorized synthetic record.
 - Frontend runtime-content work enables S3 versioning, CI
   seed-if-missing/explicit reset of fixed `index.html`, CD `FULL` and
   `CONTENT_ONLY` modes, a CD-owned `frontend-runtime-content` ConfigMap, and a
   frontend-only read-only directory mount/rolling activation. The helper, chart,
-  Terraform, and focused pipeline assertions pass locally; no cloud/Jenkins run
-  has validated the path.
+  Terraform, and focused pipeline assertions pass locally; FULL cloud/Jenkins
+  delivery and external frontend content serving are validated.
 - Backend non-secret runtime configuration now has one worker Service DNS/port
   source, an immutable container bind contract on port 8000, and no ignored
   `API_*` Helm variables. All three chart default repositories match CI/CD, and
   focused lint/render assertions pass with immutable tags.
-- Guarded application runtime preparation now maps reviewed Terraform outputs to
-  an ignored mode-0600 non-password handoff and can independently synchronize
-  the namespace-scoped `worker-db-secret` from Secrets Manager. FULL CD consumes
-  the real RDS/S3/SNS settings and requires that Secret to exist. Local syntax,
-  default-off, allow-list, wrapper, and worker chart checks pass; neither guarded
-  path has been cloud-run.
-- Guarded EKS platform preparation now consumes Terraform cluster outputs, writes
-  an ignored mode-0600 target kubeconfig, verifies its API endpoint, installs the
-  pinned Jenkins chart through `kubernetes.core.helm`, and applies only Kubernetes
-  deployer RBAC. IAM, access-entry, and Pod Identity ownership remains Terraform.
-  The stage is default-off, confirmation-gated, and locally linted/validated; it
-  has not been cloud-run.
-- Ansible-native Jenkins job seeding now renders Jenkins job XML directly from
-  the separate CI/CD Jenkinsfiles, consumes only the prepared non-secret runtime
-  handoff, and launches a hardened short-lived in-cluster Job that reads the chart
-  admin Secret without exporting credentials. It seeds CD before CI through the
-  private ClusterIP Service. Pinned-chart assumptions and default-off syntax,
-  render, and lint checks pass; no Kubernetes Job or Jenkins API call has run.
+- The guarded platform stage produced the ignored mode-0600 target kubeconfig,
+  installed Jenkins chart `5.8.114` using project-local Helm `3.18.4`, and applied
+  namespace deployer RBAC. Jenkins is ready, private ClusterIP-only, and uses a
+  bound 8 GiB PVC; Terraform retains IAM and workload-identity ownership.
+- The ignored mode-0600 runtime handoff exists, separate CI/CD jobs were seeded
+  through the private Jenkins Service, and namespace-scoped `worker-db-secret`
+  synchronization succeeded without exposing its value.
+- CI now supports `DEPLOY_DEFAULT` and `BUILD_AND_DEPLOY` in the existing job.
+  Default mode uses public `zer0w1` images at promoted immutable tag
+  `3-c896ff25891a`, never needs registry credentials, seeds only missing
+  `index.html`, and hands off to standalone FULL CD. `DEPLOY_IMAGE_TAG` may
+  select another immutable tag without enabling build/push. Build mode derives
+  repositories from the operator's Docker Hub namespace and retains CI
+  build/push/check stages.
+- A default-off guarded registry stage privately prompts for operator Docker Hub
+  credentials, stores them in a namespace Secret with suppressed output, and uses
+  a hardened in-cluster Jenkins API Job to create or update `dockerhub-creds`.
+  Two-mode orchestration, lint, syntax, default-off, and focused invariants pass;
+  the credential stage and both delivery paths have been live-run.
 - The frontend `LoadBalancer` Service remains the only public application endpoint.
   Jenkins remains ClusterIP-only with no public load balancer or Ingress; an
   operator may use `kubectl port-forward` only when UI access is needed.
-- Keep the transitional Jenkins job shell helpers in place until an authorized
-  Ansible seeding run succeeds. After that evidence exists, move the generic job
-  helper and both EKS job wrappers to `scripts/legacy/`; keep the CLI-auth helper
-  in `scripts/` as a supported standalone credential utility.
+- Authorized Jenkins CI build 3 built and pushed all three public images with
+  immutable tag `3-c896ff25891a`. Corrected standalone CD build 2 succeeded, and
+  credential-free override CI build 4 plus CD build 3 succeeded with that tag.
+- Frontend, backend, and worker each run two ready replicas. Frontend external
+  HTTP is verified through its AWS load balancer; backend, worker, and Jenkins
+  remain ClusterIP-only.
+- Worker PostgreSQL uses TLS `require` because the current image has no bundled
+  RDS CA file. An authorized synthetic record verified RDS-primary reads/writes,
+  versioned S3 `instances.json`, and one metadata-only SNS publication.
+- Authorized Ansible job seeding now succeeds. The generic job helper and both
+  EKS job wrappers are eligible to move to `scripts/legacy/` after explicit
+  deletion/move approval; keep the CLI-auth helper in `scripts/` as supported.
 - Application integration is not hand-in complete.
 
 ## Current naming-inventory state
@@ -111,22 +143,33 @@ superseded evidence belong in `misc/recovery/PROJECT_HISTORY.md`.
 
 ## Immediate work queue
 
-1. Complete the guarded Ansible create lifecycle after infrastructure:
-   initial S3 content -> application runtime/Secret preparation -> standalone CD
-   invocation and verification.
-2. Implement and verify the public frontend `LoadBalancer`; keep Jenkins private
-   and verify only the optional operator `kubectl port-forward` UI path.
-3. Review the Terraform backend/state/cost boundary before any plan or mutation,
-   then collect live RDS/S3/SNS evidence only during an authorized deployment.
-4. Finish the assignment-complete README, architecture diagram, validation
-   evidence, and hand-in readiness work.
+1. Execute the final acceptance sequence in this exact order: repository cleanup;
+   `./setup.sh` from a clean local setup; `playbooks/create.yml`; public user
+   access and full application/service functionality tests; evidence capture and
+   documentation; guarded `playbooks/destroy.yml`; residual billable-resource
+   audit.
+2. During that sequence, reseed the promoted default job definition before the
+   delivery run; live jobs currently contain the verified override-capable logic
+   but the promoted fallback exists only in the local Jenkinsfile.
+3. Replace TLS `require` with `verify-full` by deliberately packaging or mounting
+   the AWS RDS CA bundle in a future rebuilt worker image.
+4. Finish the assignment-complete README and architecture diagram before the
+   acceptance sequence, then add the resulting validation evidence.
+5. Decide during cleanup whether to retain or remove the authorized synthetic
+   integration record
+   and its versioned S3 backup; deletion requires separate explicit approval.
 
 ## Exact resume point
 
-Resume with guarded create-flow invocation after job seeding: orchestrate initial
-`index.html` seeding, application runtime/Secret preparation, and standalone FULL
-CD execution through the private Jenkins controller without merging CI/CD
-ownership.
+Resume with repository cleanup. Then follow the final acceptance sequence without
+reordering it: clean local setup -> setup -> create -> user access and full
+application/service tests -> evidence documentation -> destroy -> residual-cost
+audit. Treat the current working tree as the integrated implementation to review,
+not unrelated work to preserve automatically. Before deleting or moving any
+obsolete asset, obtain explicit path approval. Before the acceptance delivery,
+reseed the local promoted fallback `3-c896ff25891a`. The live target currently
+runs that tag, all three application workloads are ready, the frontend load
+balancer is public, and Jenkins/backend/worker remain private.
 
 The focused worker, frontend runtime-content, and backend configuration slices are
 locally validated; do not repeat dependency setup or the name-collision inventory
