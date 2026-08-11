@@ -40,8 +40,8 @@ Main project documentation: [../README.md](../README.md)
   pinned Jenkins Helm release, and namespace-scoped deployer RBAC lifecycle
 - `playbooks/prepare_application_secret.yml` — independently gated runtime-output
   preparation and Secrets Manager to Kubernetes Secret synchronization
-- `playbooks/seed_jenkins_jobs.yml` — Ansible-native Jenkins HTTP API seeding for
-  the separate inline CI and CD jobs from the prepared non-secret runtime handoff
+- `playbooks/seed_jenkins_jobs.yml` — Ansible-native in-cluster Jenkins HTTP API
+  seeding for separate inline CI and CD jobs from the non-secret runtime handoff
 - `playbooks/destroy.yml` — separate dependency-ordered full-stack teardown; it is
   intentionally not imported by `site.yml`
 
@@ -74,16 +74,17 @@ PREPARE_EKS_PREREQUISITES=true \
   ANSIBLE_CONFIG=ansible.cfg \
   ansible-playbook playbooks/configure_eks_platform.yml
 
-# With a separate loopback-only port-forward to the private Jenkins Service and
-# an API token supplied only in the process environment, create or update CD
-# first and then CI. No Jenkins password or token is written by this playbook.
+# Launch a short-lived hardened Kubernetes Job that reads the official chart's
+# admin Secret inside the jenkins namespace and seeds CD first, then CI, through
+# the private ClusterIP Service. No credential is passed from the control node.
 SEED_JENKINS_JOBS=true \
   JENKINS_JOB_MUTATION_CONFIRMATION=JENKINS_JOB_MUTATION_APPROVED \
-  JENKINS_URL=http://127.0.0.1:18080 \
-  JENKINS_ADMIN_USER=admin \
-  JENKINS_API_TOKEN='<temporary-api-token>' \
   ANSIBLE_CONFIG=ansible.cfg \
   ansible-playbook playbooks/seed_jenkins_jobs.yml
+
+# Optional interactive UI fallback; Jenkins has no public load balancer/Ingress.
+kubectl --kubeconfig recovery/target-kubeconfig \
+  -n jenkins port-forward svc/jenkins 18080:8080
 
 # Safe destroy validation; defaults to local assertions/debug only
 ANSIBLE_CONFIG=ansible.cfg ansible-playbook playbooks/destroy.yml
@@ -169,8 +170,9 @@ RBAC access to the Secret and use EKS encryption at rest for Kubernetes Secrets.
   Identity associations; those remain Terraform-owned. Its mutating scope is the
   pinned Jenkins Helm release and reviewed Kubernetes RBAC only.
 - `seed_jenkins_jobs.yml` replaces the transitional job-creation shell workflow.
-  It accepts only a loopback Jenkins URL, uses `no_log` for authenticated calls,
-  and never passes a database password into Jenkins parameters or job XML.
+  Its short-lived non-root Job reads the chart admin Secret through `secretKeyRef`,
+  calls only the private Jenkins Service, and never places the database password
+  in Jenkins parameters, job XML, ConfigMaps, logs, or control-node environment.
 - Never add secret-value debug tasks or remove `no_log: true` from secret handling.
 - Archived direct Terraform/eksctl/Helm helpers live under `../scripts/legacy/`
   for provenance only. They are not supported lifecycle entry points.

@@ -1,5 +1,5 @@
-# Values for the official Jenkins Helm chart. The chart version is pinned by
-# scripts/deploy_jenkins_eks.sh; keep chart-specific configuration here.
+# Values for the official Jenkins Helm chart. The target lifecycle pins the chart
+# in Ansible; the transitional helper uses the same version.
 
 controller:
   # Do not run build executors in the controller. The Kubernetes plugin creates
@@ -31,7 +31,7 @@ controller:
     configScripts:
       controller-message: |
         jenkins:
-          systemMessage: "Jenkins controller managed by Helm on the temporary devops-app-eks cluster."
+          systemMessage: "Private Jenkins controller managed by Ansible and Helm on the Terraform-owned EKS platform."
 
 # Kubernetes plugin agents are ephemeral. The current Docker-socket inbound
 # agent is intentionally not configured here; migrate its build strategy before
@@ -54,8 +54,9 @@ persistence:
   accessMode: ReadWriteOnce
   size: 8Gi
 
-# Jenkins is initially private to the cluster. Use the helper's port-forward
-# command rather than creating a public AWS load balancer for this temporary lab.
+# Jenkins remains ClusterIP-only with no public load balancer or Ingress. Use
+# in-cluster lifecycle automation and an operator port-forward only when UI access
+# is required.
 networkPolicy:
   enabled: false
 

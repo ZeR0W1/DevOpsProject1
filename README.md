@@ -46,7 +46,7 @@ safety and recovery record is
 
 ```mermaid
 flowchart LR
-    Internet((Internet)) --> FrontEntry[Public frontend entry point]
+    Internet((Internet)) --> FrontEntry[Frontend LoadBalancer Service]
 
     subgraph AWS[AWS account / VPC]
       subgraph EKS[Terraform-owned EKS]
@@ -63,8 +63,10 @@ flowchart LR
         end
 
         subgraph JenkinsNS[jenkins namespace]
-          Jenkins[Jenkins controller + PVC]
+          Jenkins[Jenkins controller + ClusterIP + PVC]
           Agents[Ephemeral CI/CD agents]
+          Seeder[Short-lived job seeder]
+          AdminSecret[Jenkins admin Secret]
         end
       end
 
@@ -88,6 +90,8 @@ flowchart LR
     WorkerSA --> Worker
     Agents -->|CI: build/push| Registry[(Public Docker Hub repositories)]
     Agents -->|optional CD only| AppNS
+    AdminSecret -->|secretKeyRef| Seeder
+    Seeder -->|private HTTP API| Jenkins
 ```
 
 Target Kubernetes invariants include two replicas per service, readiness/liveness
@@ -125,6 +129,17 @@ finalized.
 Successful CI does **not** require automatic deployment. CD is controlled by
 `DEPLOY_TO_EKS` and a separate job. This preserves the security boundary that only
 the deployer job receives namespace-scoped Kubernetes mutation permissions.
+
+The frontend Kubernetes `LoadBalancer` Service is the only public application
+endpoint. Jenkins remains ClusterIP-only with no Ingress or public load balancer.
+Ansible seeds CD before CI from a hardened short-lived in-cluster Job that reads
+the official chart admin Secret through `secretKeyRef`; credentials are not sent
+to the control node. When interactive UI access is needed, an operator can use:
+
+```bash
+kubectl --kubeconfig Ansible-modules-01/recovery/target-kubeconfig \
+  -n jenkins port-forward svc/jenkins 18080:8080
+```
 
 ### Frontend runtime content
 
@@ -223,8 +238,8 @@ Terraform state bucket remains retained by default.
 ## Current limitations
 
 - PostgreSQL/S3/SNS worker behavior and automated tests are still incomplete.
-- The final public frontend route and controlled Jenkins administrative access
-  still need implementation/verification.
+- The selected frontend `LoadBalancer` and private Jenkins in-cluster seeding/UI
+  fallback still need live implementation verification.
 - The Ansible create flow and Jenkins deployment/job-seeding lifecycle are not
   complete.
 - Assignment-complete evidence and the final architecture/security narrative are

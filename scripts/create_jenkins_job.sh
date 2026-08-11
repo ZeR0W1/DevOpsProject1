@@ -12,6 +12,7 @@ CLI_JAR="${CLI_JAR:-$PROJECT_ROOT/Jenkins/jenkins-cli.jar}"
 AUTH_FILE="${AUTH_FILE:-${HOME}/.jenkins-cli-auth}"
 AUTH_USERNAME="${AUTH_USERNAME:-admin}"
 AUTH_SCRIPT="${AUTH_SCRIPT:-$PROJECT_ROOT/scripts/create_jenkins_cli_auth.sh}"
+REUSE_AUTH_FILE="${REUSE_AUTH_FILE:-false}"
 STRING_PARAM_NAMES=()
 STRING_PARAM_DEFAULTS=()
 STRING_PARAM_DESCRIPTIONS=()
@@ -38,6 +39,7 @@ Options:
                      Pre-seed a boolean parameter; DEFAULT is true or false. Repeatable.
   --cli-jar PATH     Jenkins CLI jar. Default: ${CLI_JAR}
   --auth-user USER   User whose API token is prompted for. Default: ${AUTH_USERNAME}
+  --reuse-auth-file  Require and reuse the existing mode-0600 auth file without prompting.
   -h, --help         Show this help.
 USAGE
 }
@@ -66,6 +68,7 @@ while [[ $# -gt 0 ]]; do
       ;;
     --cli-jar) CLI_JAR="${2:?Missing CLI jar path}"; shift 2 ;;
     --auth-user) AUTH_USERNAME="${2:?Missing username}"; shift 2 ;;
+    --reuse-auth-file) REUSE_AUTH_FILE=true; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown option: $1" >&2; usage >&2; exit 2 ;;
   esac
@@ -79,16 +82,22 @@ for path in "$JENKINSFILE" "$CLI_JAR" "$AUTH_SCRIPT"; do
   [[ -f "$path" ]] || { echo "Required file not found: $path" >&2; exit 1; }
 done
 
-AUTH_FILE_CREATED=false
 JOB_CONFIG="$(mktemp)"
 cleanup() {
   rm -f "$JOB_CONFIG"
-  if [[ "$AUTH_FILE_CREATED" == true ]]; then rm -f "$AUTH_FILE"; fi
 }
 trap cleanup EXIT
 
-bash "$AUTH_SCRIPT" "$AUTH_USERNAME" "$AUTH_FILE"
-AUTH_FILE_CREATED=true
+if [[ "$REUSE_AUTH_FILE" == true ]]; then
+  [[ -f "$AUTH_FILE" ]] || { echo "Existing auth file not found: $AUTH_FILE" >&2; exit 1; }
+  AUTH_MODE="$(stat -c '%a' "$AUTH_FILE")"
+  [[ "$AUTH_MODE" == "600" ]] || {
+    echo "Existing auth file must have mode 600: $AUTH_FILE (found $AUTH_MODE)" >&2
+    exit 1
+  }
+else
+  bash "$AUTH_SCRIPT" "$AUTH_USERNAME" "$AUTH_FILE"
+fi
 
 echo "Validating Jenkinsfile: $JENKINSFILE"
 java -jar "$CLI_JAR" -s "$JENKINS_URL" -http -auth "@${AUTH_FILE}" declarative-linter < "$JENKINSFILE"

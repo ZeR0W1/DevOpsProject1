@@ -43,7 +43,7 @@ terraform/state_backups/
 *.pem
 
 # Merged from Ansible app-level .gitignore
-configs/instances.json
+**/configs/instances.json
 src/legacy/
 *.key
 *.retry

@@ -72,7 +72,8 @@ must remain explicitly approved, cost-aware, and dependency-ordered.
   ServiceAccounts, and least-privilege security contexts for all three services.
 - [x] Mount CD-owned `frontend-runtime-content` into frontend only; Helm references
   the external ConfigMap and supports an opt-in packaged fallback for chart tests.
-- [ ] Decide and implement the final public frontend entry point.
+- [x] Select the existing frontend Kubernetes `LoadBalancer` Service as the only
+  public application entry point; live implementation verification remains pending.
 - [ ] Re-lint and template every chart with production-intended values.
 
 ## 6. Jenkins and CI/CD
@@ -84,10 +85,10 @@ must remain explicitly approved, cost-aware, and dependency-ordered.
   scoped S3/EKS permissions, and the deployer EKS access entry.
 - [ ] Implement idempotent Ansible Jenkins namespace, storage, Helm, RBAC, identity,
   and job-seeding stages.
-- [ ] Resolve the professor decision for CIDR-restricted Jenkins ALB versus a private
-  SSM/bastion access path.
-- [ ] If the Jenkins ALB is retained, add TLS, administrator-CIDR restriction,
-  authentication, lifecycle ordering, cost notes, and teardown coverage.
+- [x] Keep Jenkins private as ClusterIP-only with no ALB/Ingress; use in-cluster job
+  seeding and optional operator `kubectl port-forward` for UI access.
+- [ ] Run and verify the guarded in-cluster Jenkins job-seeding stage against the
+  authorized Terraform-owned cluster.
 - [x] Keep explicit CI/CD stages while moving reusable one-file S3/ConfigMap mechanics
   into a reviewed helper without merging CI and CD boundaries.
 - [ ] Run the selected image scanning step and document the inherited-vulnerability
@@ -132,8 +133,8 @@ must remain explicitly approved, cost-aware, and dependency-ordered.
   trust boundaries, and trade-offs.
 - [ ] Add an assignment-complete architecture diagram showing AWS, VPC/subnets,
   EKS namespaces/workloads/services, Jenkins, RDS, S3, SNS, identities, and traffic.
-- [ ] Clearly distinguish the public application endpoint from the controlled Jenkins
-  administrative endpoint.
+- [ ] Clearly distinguish the public frontend `LoadBalancer` from ClusterIP-only
+  Jenkins, including in-cluster automation and optional UI port-forward.
 - [ ] Document why the legacy bucket and protected old stack remain externally owned.
 - [x] Inventory duplicate scripts, old EC2 paths, Helm assets, Jenkins flows, and
   abandoned frontend files before requesting deletion.

@@ -11,19 +11,12 @@ Full pre-migration history remains in
 
 ## User action checklist
 
-- [ ] Consult the professor about the provisional Jenkins access design:
-  AWS Load Balancer Controller-managed, internet-facing ALB Ingress with HTTPS
-  restricted to the approved admin CIDR, mandatory TLS and Jenkins authentication,
-  and a ClusterIP Jenkins Service.
-- [ ] Ask whether that controlled administrative endpoint satisfies the assignment
-  or whether Jenkins must instead use a private SSM or bastion access path.
-- [ ] Confirm whether the professor considers an AWS `internet-facing` ALB to be
-  acceptable when it is not reachable outside the approved source CIDR.
-- [ ] Record the professor's answer in
-  [`.clinerules/90-current-project-status.md`](.clinerules/90-current-project-status.md)
-  before implementing Jenkins access resources.
-- [ ] If the ALB approach is retained, confirm the DNS name/domain and TLS
-  certificate approach, then document its security rationale, added cost, and
-  teardown path in the primary README.
-- [ ] If SSM or a bastion is required, review its IAM, network path, operator
-  workflow, cost, and teardown before replacing the provisional ALB design.
+- [x] Keep the frontend's existing Kubernetes `LoadBalancer` Service as the only
+  public application endpoint.
+- [x] Keep Jenkins private as ClusterIP-only with no ALB or Ingress.
+- [x] Seed Jenkins jobs from a short-lived in-cluster Kubernetes Job so chart admin
+  credentials remain inside the cluster.
+- [ ] During an authorized deployment, verify frontend external access and the
+  private Jenkins Service/job-seeding path.
+- [ ] Use `kubectl port-forward` only as an operator fallback when Jenkins UI access
+  is required, and capture non-secret verification evidence.

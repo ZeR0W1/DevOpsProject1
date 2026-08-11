@@ -8,9 +8,10 @@
   vars:
     project_root: "{{ playbook_dir }}/../.."
     runtime_values_file: "{{ playbook_dir }}/../recovery/application-runtime.yml"
-    jenkins_url: "{{ lookup('ansible.builtin.env', 'JENKINS_URL') | default('http://127.0.0.1:18080', true) }}"
-    jenkins_user: "{{ lookup('ansible.builtin.env', 'JENKINS_ADMIN_USER') | default('', true) }}"
-    jenkins_token: "{{ lookup('ansible.builtin.env', 'JENKINS_API_TOKEN') | default('', true) }}"
+    kubeconfig_file: "{{ playbook_dir }}/../recovery/target-kubeconfig"
+    jenkins_namespace: jenkins
+    jenkins_service_url: http://jenkins.jenkins.svc.cluster.local:8080
+    jenkins_admin_secret_name: jenkins
     seed_jenkins_jobs: >-
       {{ lookup('ansible.builtin.env', 'SEED_JENKINS_JOBS')
          | default('false', true)
@@ -96,9 +97,9 @@
     - name: Report skipped Jenkins job seeding
       ansible.builtin.debug:
         msg: >-
-          Jenkins job seeding is disabled. Start a loopback-only port-forward and
-          set SEED_JENKINS_JOBS=true only after reviewing the controller and
-          non-secret application runtime handoff.
+          Jenkins job seeding is disabled. Set SEED_JENKINS_JOBS=true only after
+          reviewing the private controller, target kubeconfig, and non-secret
+          application runtime handoff.
       when: not seed_jenkins_jobs
 
     - name: Seed Jenkins jobs when explicitly enabled
@@ -108,14 +109,11 @@
           ansible.builtin.assert:
             that:
               - jenkins_job_mutation_confirmation == 'JENKINS_JOB_MUTATION_APPROVED'
-              - jenkins_url is match('^http://127\\.0\\.0\\.1:[0-9]+/?$')
-              - jenkins_user | length > 0
-              - jenkins_token | length > 0
               - runtime_values_file is file
+              - kubeconfig_file is file
             fail_msg: >-
-              Job seeding requires the exact confirmation, a loopback-only
-              Jenkins URL, environment-provided API credentials, and the prepared
-              non-secret application runtime handoff.
+              Job seeding requires the exact confirmation, the prepared target
+              kubeconfig, and the non-secret application runtime handoff.
           no_log: true
 
         - name: Load prepared non-secret application runtime values
@@ -136,55 +134,174 @@
             fail_msg: Prepared application runtime handoff is incomplete or invalid.
           no_log: true
 
-        - name: Verify the private Jenkins controller is authenticated and ready
-          ansible.builtin.uri:
-            url: "{{ jenkins_url | regex_replace('/$', '') }}/api/json"
-            method: GET
-            user: "{{ jenkins_user }}"
-            password: "{{ jenkins_token }}"
-            force_basic_auth: true
-            return_content: false
-            status_code: 200
-          no_log: true
-
-        - name: Check whether each Jenkins job exists
-          ansible.builtin.uri:
-            url: "{{ jenkins_url | regex_replace('/$', '') }}/job/{{ item.name | urlencode }}/config.xml"
-            method: GET
-            user: "{{ jenkins_user }}"
-            password: "{{ jenkins_token }}"
-            force_basic_auth: true
-            return_content: false
-            status_code: [200, 404]
+        - name: Render non-secret Jenkins job definitions into ConfigMaps
+          kubernetes.core.k8s:
+            state: present
+            kubeconfig: "{{ kubeconfig_file }}"
+            definition:
+              apiVersion: v1
+              kind: ConfigMap
+              metadata:
+                name: "jenkins-job-{{ item.name }}"
+                namespace: "{{ jenkins_namespace }}"
+                labels:
+                  app.kubernetes.io/name: jenkins-job-seeder
+                  app.kubernetes.io/managed-by: ansible
+              data:
+                config.xml: >-
+                  {{ lookup(
+                    'ansible.builtin.template',
+                    playbook_dir + '/../templates/jenkins-pipeline-job.xml.j2',
+                    template_vars={'jenkins_job': item}
+                  ) }}
           loop: "{{ jenkins_jobs }}"
           loop_control:
             label: "{{ item.name }}"
-          register: jenkins_job_checks
-          no_log: true
 
-        - name: Create or update separate Jenkins CI and CD jobs
-          ansible.builtin.uri:
-            url: >-
-              {{ jenkins_url | regex_replace('/$', '') }}{{
-                '/job/' + item.item.name + '/config.xml'
-                if item.status == 200
-                else '/createItem?name=' + (item.item.name | urlencode)
-              }}
-            method: POST
-            user: "{{ jenkins_user }}"
-            password: "{{ jenkins_token }}"
-            force_basic_auth: true
-            body: >-
-              {{ lookup(
-                'ansible.builtin.template',
-                playbook_dir + '/../templates/jenkins-pipeline-job.xml.j2',
-                template_vars={'jenkins_job': item.item}
-              ) }}
-            body_format: raw
-            headers:
-              Content-Type: application/xml
-            status_code: [200, 201]
-          loop: "{{ jenkins_job_checks.results }}"
-          loop_control:
-            label: "{{ item.item.name }}"
-          no_log: true
+        - name: Launch short-lived in-cluster Jenkins job seeder
+          kubernetes.core.k8s:
+            state: present
+            kubeconfig: "{{ kubeconfig_file }}"
+            definition:
+              apiVersion: batch/v1
+              kind: Job
+              metadata:
+                generateName: jenkins-job-seeder-
+                namespace: "{{ jenkins_namespace }}"
+                labels:
+                  app.kubernetes.io/name: jenkins-job-seeder
+                  app.kubernetes.io/managed-by: ansible
+              spec:
+                activeDeadlineSeconds: 300
+                backoffLimit: 2
+                ttlSecondsAfterFinished: 300
+                template:
+                  metadata:
+                    labels:
+                      app.kubernetes.io/name: jenkins-job-seeder
+                  spec:
+                    automountServiceAccountToken: false
+                    restartPolicy: Never
+                    securityContext:
+                      runAsNonRoot: true
+                      runAsUser: 65532
+                      runAsGroup: 65532
+                      fsGroup: 65532
+                      seccompProfile:
+                        type: RuntimeDefault
+                    containers:
+                      - name: seeder
+                        image: python:3.12.11-alpine3.22@sha256:5e511b0e940def74dd23389510300c76017ca9bbc92484c40cff0951adf32245
+                        imagePullPolicy: IfNotPresent
+                        env:
+                          - name: JENKINS_URL
+                            value: "{{ jenkins_service_url }}"
+                          - name: JENKINS_USER
+                            valueFrom:
+                              secretKeyRef:
+                                name: "{{ jenkins_admin_secret_name }}"
+                                key: jenkins-admin-user
+                          - name: JENKINS_PASSWORD
+                            valueFrom:
+                              secretKeyRef:
+                                name: "{{ jenkins_admin_secret_name }}"
+                                key: jenkins-admin-password
+                        command: [python, -c]
+                        args:
+                          - |
+                            import base64, json, os, pathlib, urllib.error, urllib.parse, urllib.request
+
+                            root = os.environ["JENKINS_URL"].rstrip("/")
+                            auth = base64.b64encode(
+                                f'{os.environ["JENKINS_USER"]}:{os.environ["JENKINS_PASSWORD"]}'.encode()
+                            ).decode()
+
+                            def request(path, method="GET", body=None, headers=None, expected=(200,)):
+                                request_headers = {"Authorization": f"Basic {auth}"}
+                                request_headers.update(headers or {})
+                                req = urllib.request.Request(
+                                    root + path,
+                                    data=body,
+                                    headers=request_headers,
+                                    method=method,
+                                )
+                                try:
+                                    with urllib.request.urlopen(req, timeout=30) as response:
+                                        if response.status not in expected:
+                                            raise RuntimeError(f"Unexpected Jenkins status {response.status}")
+                                        return response.read()
+                                except urllib.error.HTTPError as error:
+                                    if error.code not in expected:
+                                        raise
+                                    return error.read()
+
+                            crumb = json.loads(request("/crumbIssuer/api/json"))
+                            post_headers = {
+                                "Content-Type": "application/xml",
+                                crumb["crumbRequestField"]: crumb["crumb"],
+                            }
+                            for name, filename in (
+                                ("devops-project1-eks-deploy", "/jobs/cd/config.xml"),
+                                ("devops-project1-eks-pipeline", "/jobs/ci/config.xml"),
+                            ):
+                                config = pathlib.Path(filename).read_bytes()
+                                encoded_name = urllib.parse.quote(name, safe="")
+                                try:
+                                    request(f"/job/{encoded_name}/config.xml")
+                                    path = f"/job/{encoded_name}/config.xml"
+                                    expected = (200,)
+                                except urllib.error.HTTPError as error:
+                                    if error.code != 404:
+                                        raise
+                                    path = f"/createItem?name={encoded_name}"
+                                    expected = (200, 201)
+                                request(path, "POST", config, post_headers, expected)
+                                print(f"Seeded Jenkins job: {name}")
+                        resources:
+                          requests:
+                            cpu: 50m
+                            memory: 64Mi
+                          limits:
+                            cpu: 200m
+                            memory: 128Mi
+                        securityContext:
+                          allowPrivilegeEscalation: false
+                          capabilities:
+                            drop: [ALL]
+                          readOnlyRootFilesystem: true
+                        volumeMounts:
+                          - {name: cd-job, mountPath: /jobs/cd, readOnly: true}
+                          - {name: ci-job, mountPath: /jobs/ci, readOnly: true}
+                    volumes:
+                      - name: cd-job
+                        configMap:
+                          name: jenkins-job-devops-project1-eks-deploy
+                      - name: ci-job
+                        configMap:
+                          name: jenkins-job-devops-project1-eks-pipeline
+          register: jenkins_seeder_job
+
+        - name: Wait for the in-cluster Jenkins seeder to finish
+          kubernetes.core.k8s_info:
+            api_version: batch/v1
+            kind: Job
+            name: "{{ jenkins_seeder_job.result.metadata.name }}"
+            namespace: "{{ jenkins_namespace }}"
+            kubeconfig: "{{ kubeconfig_file }}"
+          register: jenkins_seeder_status
+          until: >-
+            jenkins_seeder_status.resources | length == 1 and
+            (jenkins_seeder_status.resources[0].status.conditions | default([]) |
+             selectattr('type', 'in', ['Complete', 'Failed']) |
+             selectattr('status', 'equalto', 'True') | list | length) > 0
+          retries: 30
+          delay: 10
+
+        - name: Require successful in-cluster Jenkins job seeding
+          ansible.builtin.assert:
+            that:
+              - (jenkins_seeder_status.resources[0].status.succeeded | default(0) | int) == 1
+            fail_msg: >-
+              The in-cluster Jenkins seeder failed. Inspect the short-lived
+              jenkins-job-seeder pod logs before its five-minute TTL expires;
+              credentials remain suppressed by the pod and Ansible tasks.

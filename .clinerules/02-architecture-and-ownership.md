@@ -69,9 +69,10 @@
   liveness probes, and least-privilege container security contexts.
 - Expose the application frontend publicly. Backend and worker remain internal;
   database access is restricted to required callers.
-- Jenkins may use a separate controlled administrative ALB Ingress. Its Service
-  remains ClusterIP, HTTPS is restricted to the approved admin CIDR, and TLS and
-  Jenkins authentication are mandatory. Never broaden access to `0.0.0.0/0`.
+- The frontend's Kubernetes `LoadBalancer` Service is the only public application
+  endpoint. Jenkins remains a private ClusterIP Service with no Ingress or public
+  load balancer; use short-lived in-cluster lifecycle automation and an operator
+  `kubectl port-forward` only when interactive UI access is required.
 - Use distinct ServiceAccounts and narrowly scoped AWS/Kubernetes permissions
   when services have different responsibilities. Never grant application
   workloads `cluster-admin`.
@@ -87,10 +88,9 @@
 - Maintain a reproducible README covering architecture, image build/publish,
   namespace and secret setup, deployment, verification, teardown, security, and
   trade-offs.
-- The README must distinguish the controlled Jenkins administrative ALB from the
-  generally public application frontend and document its CIDR restriction,
-  TLS/authentication, ClusterIP Service boundary, cost, teardown path, and
-  port-forward fallback.
+- The README must distinguish the public frontend `LoadBalancer` from private
+  ClusterIP-only Jenkins, document in-cluster job seeding and credential
+  boundaries, and provide `kubectl port-forward` as the optional UI fallback.
 - Maintain an architecture diagram showing the cluster, namespace, workloads,
   services, public entry point, ConfigMaps, Secrets, ServiceAccounts, RDS, S3,
   SNS, VPC/subnets/node groups, communication direction, and public/private/

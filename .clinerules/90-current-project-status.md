@@ -83,9 +83,17 @@ superseded evidence belong in `misc/recovery/PROJECT_HISTORY.md`.
   has not been cloud-run.
 - Ansible-native Jenkins job seeding now renders Jenkins job XML directly from
   the separate CI/CD Jenkinsfiles, consumes only the prepared non-secret runtime
-  handoff, requires a loopback-only controller URL and environment API token, and
-  seeds CD before CI. Default-off render, syntax, and lint checks pass; no Jenkins
-  API call has been made.
+  handoff, and launches a hardened short-lived in-cluster Job that reads the chart
+  admin Secret without exporting credentials. It seeds CD before CI through the
+  private ClusterIP Service. Pinned-chart assumptions and default-off syntax,
+  render, and lint checks pass; no Kubernetes Job or Jenkins API call has run.
+- The frontend `LoadBalancer` Service remains the only public application endpoint.
+  Jenkins remains ClusterIP-only with no public load balancer or Ingress; an
+  operator may use `kubectl port-forward` only when UI access is needed.
+- Keep the transitional Jenkins job shell helpers in place until an authorized
+  Ansible seeding run succeeds. After that evidence exists, move the generic job
+  helper and both EKS job wrappers to `scripts/legacy/`; keep the CLI-auth helper
+  in `scripts/` as a supported standalone credential utility.
 - Application integration is not hand-in complete.
 
 ## Current naming-inventory state
@@ -106,8 +114,8 @@ superseded evidence belong in `misc/recovery/PROJECT_HISTORY.md`.
 1. Complete the guarded Ansible create lifecycle after infrastructure:
    initial S3 content -> application runtime/Secret preparation -> standalone CD
    invocation and verification.
-2. Decide and implement the public frontend and controlled Jenkins administrative
-   entry points, including required TLS/CIDR/authentication boundaries.
+2. Implement and verify the public frontend `LoadBalancer`; keep Jenkins private
+   and verify only the optional operator `kubectl port-forward` UI path.
 3. Review the Terraform backend/state/cost boundary before any plan or mutation,
    then collect live RDS/S3/SNS evidence only during an authorized deployment.
 4. Finish the assignment-complete README, architecture diagram, validation
