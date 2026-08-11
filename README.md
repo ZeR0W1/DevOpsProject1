@@ -1,6 +1,6 @@
 # DevOps on AWS: Kubernetes, EKS, and Jenkins
 
-> **Repository status: mid-refactor — not hand-in ready.**
+> **Repository status: implementation in progress — not hand-in ready.**
 >
 > The target Terraform-owned, Ansible-orchestrated EKS lifecycle has not been
 > created or verified end to end. Current validation is local/static unless a
@@ -212,11 +212,11 @@ lifecycle stage.
 ## Create and destroy status
 
 `Ansible-modules-01/playbooks/site.yml` currently orchestrates guarded local input
-preparation, Terraform lifecycle gates, and application-secret preparation. The
-remaining cluster prerequisites, Jenkins Helm/RBAC/job seeding, initial S3
-content invocation, runtime Secret/configuration preparation, and standalone CD
-invocation are not complete in the Ansible lifecycle. The CI/CD runtime-content
-mechanics themselves are implemented and locally/static validated.
+preparation, Terraform lifecycle gates, EKS/Jenkins platform preparation,
+application runtime/Secret preparation, and in-cluster Jenkins job seeding. The
+remaining create-flow gap is initial S3 content invocation followed by standalone
+CD invocation and verification. Implemented stages remain default-off and have
+not been cloud-run.
 
 `Ansible-modules-01/playbooks/destroy.yml` is a separate dependency-ordered
 workflow. Its default invocation performs only local assertions/debug. The enabled
@@ -237,11 +237,12 @@ Terraform state bucket remains retained by default.
 
 ## Current limitations
 
-- PostgreSQL/S3/SNS worker behavior and automated tests are still incomplete.
+- PostgreSQL/S3/SNS worker behavior and focused automated tests are implemented
+  locally but still require live integration verification.
 - The selected frontend `LoadBalancer` and private Jenkins in-cluster seeding/UI
   fallback still need live implementation verification.
-- The Ansible create flow and Jenkins deployment/job-seeding lifecycle are not
-  complete.
+- The final Ansible create-flow orchestration and all live deployment verification
+  remain incomplete.
 - Assignment-complete evidence and the final architecture/security narrative are
   still pending.
 

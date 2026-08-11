@@ -52,16 +52,12 @@
   commands, focused Git inspection, and concise status updates. Do not rely on
   checkpoints as the sole safety mechanism.
 
-## Preserve the mixed workspace
+## Preserve repository ownership
 
-- Never broadly stage, revert, delete, clean, or attribute all current
-  differences to the active task.
-- Do not revert unrelated changes or remove untracked files without explicit
-  approval after establishing their ownership and purpose.
+- Before broad Git operations, check current status and preserve unrelated work.
 - Do not commit or push unless the user asks for it.
-- Follow the secret-handling and inspection rules in
-  `03-cloud-and-terraform-safety.md`. If unintended secret exposure is suspected,
-  stop exposing further output and alert the user.
+- Follow `03-cloud-and-terraform-safety.md`; if unintended secret exposure is
+  suspected, stop exposing further output and alert the user.
 
 ## Keep current status and history separate
 

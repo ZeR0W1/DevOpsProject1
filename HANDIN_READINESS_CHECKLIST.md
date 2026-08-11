@@ -27,9 +27,9 @@ must remain explicitly approved, cost-aware, and dependency-ordered.
 - [x] Keep AWS credentials and the generated database password out of local vars.
 - [x] Add gated regeneration of ignored `terraform.tfvars` plus read-only AWS STS
   identity preflight.
-- [ ] Run the one-time setup locally when ready.
-- [ ] Review the generated non-secret effective settings without exposing private
-  values, then explicitly run the gated input-preparation stage.
+- [x] Run the one-time local setup and create the ignored mode-0600 inputs.
+- [x] Review allow-listed non-secret effective settings and run the gated input
+  preparation without infrastructure mutation.
 
 ## 3. Terraform infrastructure
 
@@ -53,14 +53,14 @@ must remain explicitly approved, cost-aware, and dependency-ordered.
 
 ## 4. Application data integration
 
-- [ ] Make PostgreSQL the worker's primary structured datastore.
-- [ ] Add idempotent schema initialization and useful database failure handling.
+- [x] Make PostgreSQL the worker's primary structured datastore.
+- [x] Add idempotent schema initialization and useful database failure handling.
 - [x] Implement validated CI seed-if-missing and explicit reset of versioned S3
   `index.html`; Ansible invocation during create remains tracked in section 7.
-- [ ] Synchronize the machine catalog to S3 object `instances.json`.
-- [ ] Publish the required SNS notifications without leaking machine records or
+- [x] Synchronize the machine catalog to S3 object `instances.json`.
+- [x] Publish the required SNS notifications without leaking machine records or
   credentials.
-- [ ] Add automated tests for database schema, writes/reads, S3 synchronization,
+- [x] Add automated tests for database schema, writes/reads, S3 synchronization,
   SNS calls, disabled integrations, and failure paths.
 
 ## 5. Kubernetes and Helm
@@ -83,8 +83,8 @@ must remain explicitly approved, cost-aware, and dependency-ordered.
 - [x] Keep application mutation inside CD and use atomic Helm deployment behavior.
 - [x] Define Terraform-owned Jenkins CI/deployer Pod Identity roles, associations,
   scoped S3/EKS permissions, and the deployer EKS access entry.
-- [ ] Implement idempotent Ansible Jenkins namespace, storage, Helm, RBAC, identity,
-  and job-seeding stages.
+- [x] Implement guarded Ansible Jenkins Helm, namespace/RBAC, and in-cluster
+  job-seeding stages while keeping AWS identity Terraform-owned.
 - [x] Keep Jenkins private as ClusterIP-only with no ALB/Ingress; use in-cluster job
   seeding and optional operator `kubectl port-forward` for UI access.
 - [ ] Run and verify the guarded in-cluster Jenkins job-seeding stage against the
@@ -106,7 +106,8 @@ must remain explicitly approved, cost-aware, and dependency-ordered.
 - [x] Remove the Jenkins release, disposable PVC, and namespaces in order.
 - [x] Optionally retain `index.html` and `instances.json` locally, then delete those
   exact objects before destroying the Terraform-owned application bucket.
-- [x] Run one Terraform main-stack destroy while retaining the remote-state bucket.
+- [x] Implement one Terraform main-stack destroy while retaining the remote-state
+  bucket; enabled execution remains pending approval.
 - [ ] Keep read-only residual billable-resource inspection as a separate optional
   operational check rather than a responsibility of the destroy playbook.
 - [x] Archive superseded direct Terraform/Helm and local Jenkins lab helpers under
@@ -148,10 +149,9 @@ must remain explicitly approved, cost-aware, and dependency-ordered.
 - [ ] Review the final staged diff, ensure no private/ignored artifacts are included,
   then create the final hand-in commit and push only when explicitly requested.
 
-## Current checkpoint warning
+## Current readiness warning
 
-The current repository checkpoint is **mid-refactor**. Local static validation has
-passed for the completed Terraform/Ansible and cleanup slices, but the new
-end-to-end create lifecycle, application integrations, enabled destroy path, and
-final target cloud deployment have not been executed or proven. Do not represent
-this checkpoint as hand-in ready.
+The repository is **not hand-in ready**. Local static validation has passed for
+completed Terraform/Ansible slices, but the end-to-end create lifecycle, live
+application integrations, enabled destroy path, and target cloud deployment have
+not been executed or proven.

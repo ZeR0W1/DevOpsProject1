@@ -52,14 +52,14 @@ superseded evidence belong in `misc/recovery/PROJECT_HISTORY.md`.
   stages remain incomplete.
 - A dependency-ordered destroy workflow exists and has only been
   statically/default-run validated.
-- Uncommitted worker integration work now implements PostgreSQL-first reads and
+- Worker integration implements PostgreSQL-first reads and
   writes, JSON export to fixed S3 object `instances.json`, metadata-only SNS
   notifications, error propagation, and Helm ConfigMap/Secret wiring.
 - Focused worker tests pass (`7 passed`), worker Helm lint/render checks pass,
   and source-controlled test dependencies are installed by the active EKS CI
   pipeline from `src/requirements-test.txt`. Live RDS/S3/SNS integration is not
   yet runtime-validated.
-- Uncommitted frontend runtime-content work now enables S3 versioning, CI
+- Frontend runtime-content work enables S3 versioning, CI
   seed-if-missing/explicit reset of fixed `index.html`, CD `FULL` and
   `CONTENT_ONLY` modes, a CD-owned `frontend-runtime-content` ConfigMap, and a
   frontend-only read-only directory mount/rolling activation. The helper, chart,
