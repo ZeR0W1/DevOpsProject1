@@ -30,12 +30,12 @@ resource "aws_iam_role_policy" "allow_s3_read" {
     Version = "2012-10-17"
     Statement = [
       {
-        # Read-only access for objects inside the project bucket.
+        # Reserved for a future explicit instances.json-to-RDS restore workflow.
         Sid    = "Statement1"
         Effect = "Allow"
         Action = ["s3:GetObject"]
         Resource = [
-          "arn:aws:s3:::${var.bucket_name}/*"
+          "arn:aws:s3:::${var.bucket_name}/instances.json"
         ]
       }
     ]

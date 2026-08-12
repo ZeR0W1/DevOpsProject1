@@ -20,10 +20,10 @@
           Application runtime preparation is disabled. Set
           PREPARE_APPLICATION_RUNTIME=true only after Terraform state is
           initialized and the intended stack outputs have been reviewed.
-      when: not prepare_application_runtime
+      when: not (prepare_application_runtime | bool)
 
     - name: Prepare application runtime values when explicitly enabled
-      when: prepare_application_runtime
+      when: prepare_application_runtime | bool
       block:
         - name: Read Terraform outputs without displaying sensitive values
           ansible.builtin.command:
@@ -46,6 +46,7 @@
               db_name: "{{ (terraform_outputs_json.stdout | from_json).db_name.value }}"
               db_username: "{{ (terraform_outputs_json.stdout | from_json).db_username.value }}"
               db_password_secret_name: "{{ (terraform_outputs_json.stdout | from_json).db_password_secret_name.value }}"
+              worker_db_secret_name: "{{ worker_db_secret_name }}"
               application_s3_bucket: "{{ (terraform_outputs_json.stdout | from_json).s3_bucket_name.value }}"
               sns_topic_arn: "{{ (terraform_outputs_json.stdout | from_json).sns_topic_arn.value }}"
           no_log: true
@@ -60,6 +61,7 @@
               - application_runtime.db_name | length > 0
               - application_runtime.db_username | length > 0
               - application_runtime.db_password_secret_name | length > 0
+              - application_runtime.worker_db_secret_name == worker_db_secret_name
               - application_runtime.application_s3_bucket | length > 0
               - application_runtime.sns_topic_arn | length > 0
             fail_msg: Required Terraform application runtime outputs are missing.
@@ -84,7 +86,7 @@
               db_name: {{ application_runtime.db_name | to_json }}
               db_username: {{ application_runtime.db_username | to_json }}
               db_password_secret_name: {{ application_runtime.db_password_secret_name | to_json }}
-              worker_db_secret_name: {{ worker_db_secret_name | to_json }}
+              worker_db_secret_name: {{ application_runtime.worker_db_secret_name | to_json }}
               application_s3_bucket: {{ application_runtime.application_s3_bucket | to_json }}
               sns_topic_arn: {{ application_runtime.sns_topic_arn | to_json }}
           no_log: true

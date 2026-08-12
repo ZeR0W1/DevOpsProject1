@@ -8,8 +8,12 @@
     - ../vars/project.yml
 
   vars_prompt:
-    - name: requested_delivery_mode
-      prompt: "Delivery mode: DEPLOY_DEFAULT or BUILD_AND_DEPLOY"
+    - name: requested_delivery_option
+      prompt: |-
+        Delivery mode:
+          1) Deploy promoted default images (no registry credentials)
+          2) Build, push, and deploy new images (Docker Hub credentials required)
+        Select 1 or 2
       private: false
 
   vars:
@@ -25,7 +29,7 @@
           - "(project_root ~ '/.venv/bin/terraform') is file"
           - "(project_root ~ '/.venv/bin/kubectl') is file"
           - "(project_root ~ '/.venv/bin/helm') is file"
-          - requested_delivery_mode | upper in ['DEPLOY_DEFAULT', 'BUILD_AND_DEPLOY']
+          - requested_delivery_option | trim in ['1', '2']
         fail_msg: "Run ../../setup.sh first and select a supported delivery mode."
 
     - name: Read committed non-secret Terraform defaults
@@ -46,7 +50,10 @@
           {{ (terraform_example_content |
               regex_search('(?m)^aws_region\s*=\s*"([a-z0-9-]+)"', '\1') |
               first) }}
-        create_delivery_mode: "{{ requested_delivery_mode | upper }}"
+        create_delivery_mode: >-
+          {{ 'DEPLOY_DEFAULT'
+             if (requested_delivery_option | trim) == '1'
+             else 'BUILD_AND_DEPLOY' }}
 
     - name: Read current AWS account identity
       ansible.builtin.command:
@@ -130,17 +137,19 @@
     - name: Require exact creation confirmation
       ansible.builtin.pause:
         prompt: >-
-          Type CREATE {{ create_cluster_name }} {{ create_application_bucket }} to
-          authorize the complete documented creation lifecycle
+          Type CREATE to authorize the complete documented creation lifecycle,
+          or CANCEL to stop
       register: create_confirmation
+      until: >-
+        create_confirmation.user_input | trim | upper in ['CREATE', 'CANCEL']
+      retries: 5
+      delay: 0
 
     - name: Validate exact creation confirmation
       ansible.builtin.assert:
         that:
-          - >-
-            create_confirmation.user_input ==
-            'CREATE ' ~ create_cluster_name ~ ' ' ~ create_application_bucket
-        fail_msg: "Creation cancelled; no cloud mutation was performed."
+          - create_confirmation.user_input | trim | upper == 'CREATE'
+        fail_msg: "Creation explicitly cancelled; no cloud mutation was performed."
 
     - name: Write deterministic state-bootstrap inputs
       ansible.builtin.copy:
@@ -148,9 +157,9 @@
         mode: "0600"
         content: |
           state_bucket_name = "{{ create_state_bucket }}"
-          aws_region       = "{{ create_aws_region }}"
-          project_name     = "devops-project1"
-          environment      = "shared"
+          aws_region        = "{{ create_aws_region }}"
+          project_name      = "devops-project1"
+          environment       = "shared"
 
 - name: Prepare on-demand registry credentials
   ansible.builtin.import_playbook: prepare_registry_credentials.yml

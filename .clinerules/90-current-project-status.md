@@ -12,14 +12,12 @@ superseded evidence belong in `misc/recovery/PROJECT_HISTORY.md`.
 - Terraform Phase 1 ended by explicit user approval on 2026-08-11.
 - The separate retained, versioned, encrypted state bucket was created and the
   main stack now uses its S3 backend with native lock files.
-- The fresh Terraform-owned target stack was applied in AWS account
-  `058264247987`, region `us-east-1`. Remote state owns 63 resources and a final
-  read-only plan returned zero drift.
-- Target EKS `doa-staging-eks` 1.34 and its three-node private `t3.medium` group
-  are ACTIVE. RDS PostgreSQL 17.6 on `db.t4g.micro` is available and private.
-- EKS authentication is `API_AND_CONFIG_MAP`; the Jenkins deployer access entry,
-  worker/CI/deployer Pod Identity associations, NAT path, application S3/SNS,
-  Secrets Manager secret, and DB security boundaries exist in Terraform state.
+- The Terraform-owned target stack in AWS account `058264247987`, region
+  `us-east-1`, was destroyed successfully on 2026-08-12 after the interrupted
+  fresh acceptance run. Main remote state is empty.
+- The post-destroy read-only audit found no target EKS cluster, RDS instance, NAT
+  gateway, load balancer, or application-data bucket. The separate versioned,
+  encrypted remote-state bucket remains intentionally retained.
 - The live `devops-app-eks` environment remains externally owned by
   `eksctl`/CloudFormation and outside Terraform state. It is a lecture-lab cluster
   containing only a Jenkins controller/plugins setup; disregard it when reasoning
@@ -61,11 +59,11 @@ superseded evidence belong in `misc/recovery/PROJECT_HISTORY.md`.
   disabled by default.
 - Worker Pod Identity, EBS CSI IRSA, and separate least-privilege Jenkins CI/CD
   Pod Identity roles/associations are active with the Terraform-owned target.
-- A dependency-ordered destroy workflow exists and has only been
-  statically/default-run validated. It now uses project-local Terraform, Helm,
+- The dependency-ordered destroy workflow has completed a live 63-resource
+  teardown and post-destroy empty-state check. It uses project-local Terraform, Helm,
   kubectl, and an explicit ignored kubeconfig, verifies Terraform ownership and
   the target API endpoint, and requires exact interactive scope confirmation.
-- The supported professor-facing lifecycle is now `./setup.sh`, followed by
+- The supported professor-facing lifecycle is now `bash setup.sh`, followed by
   `playbooks/create.yml`, with `playbooks/destroy.yml` as the separate default-off
   teardown. Setup installs pinned project-local tools and collections; create
   detects fresh-account state bootstrap, rejects unowned bucket collisions,
@@ -75,6 +73,12 @@ superseded evidence belong in `misc/recovery/PROJECT_HISTORY.md`.
   delivery requires none; BUILD_AND_DEPLOY prompts only when values are absent,
   verifies them, and maintains an idempotent per-value Ansible Vault block in the
   ignored mode-0600 `vault/local-environment.yml`.
+- The clean option-2 acceptance run exposed and fixed two pre-delivery defects:
+  Ansible 2.20 registry-value encryption now selects the validated vault password
+  file/default vault ID explicitly, and cross-play facts use distinct namespaces
+  so a file-stat dictionary cannot mask decrypted registry inputs. Setup and
+  registry playbook syntax checks pass; the fixed path still needs a clean
+  end-to-end rerun.
 - Worker integration implements PostgreSQL-first reads and
   writes, JSON export to fixed S3 object `instances.json`, metadata-only SNS
   notifications, error propagation, and Helm ConfigMap/Secret wiring.
@@ -92,13 +96,13 @@ superseded evidence belong in `misc/recovery/PROJECT_HISTORY.md`.
   source, an immutable container bind contract on port 8000, and no ignored
   `API_*` Helm variables. All three chart default repositories match CI/CD, and
   focused lint/render assertions pass with immutable tags.
-- The guarded platform stage produced the ignored mode-0600 target kubeconfig,
-  installed Jenkins chart `5.8.114` using project-local Helm `3.18.4`, and applied
-  namespace deployer RBAC. Jenkins is ready, private ClusterIP-only, and uses a
-  bound 8 GiB PVC; Terraform retains IAM and workload-identity ownership.
-- The ignored mode-0600 runtime handoff exists, separate CI/CD jobs were seeded
-  through the private Jenkins Service, and namespace-scoped `worker-db-secret`
-  synchronization succeeded without exposing its value.
+- In the interrupted fresh run, the guarded platform stage produced the ignored
+  mode-0600 target kubeconfig, installed Jenkins chart `5.8.114` using
+  project-local Helm `3.18.4`, and applied namespace deployer RBAC before the
+  stack was cleanly destroyed.
+- In that run, the ignored mode-0600 runtime handoff was generated, separate CI/CD
+  jobs were seeded through the private Jenkins Service, and namespace-scoped
+  `worker-db-secret` synchronization succeeded without exposing its value.
 - CI now supports `DEPLOY_DEFAULT` and `BUILD_AND_DEPLOY` in the existing job.
   Default mode uses public `zer0w1` images at promoted immutable tag
   `3-c896ff25891a`, never needs registry credentials, seeds only missing
@@ -153,33 +157,39 @@ superseded evidence belong in `misc/recovery/PROJECT_HISTORY.md`.
 
 ## Immediate work queue
 
-1. Continue the final acceptance sequence in this exact order: review the cleanup
-   diff; `./setup.sh` from a clean local setup; `playbooks/create.yml`; public user
-   access and full application/service functionality tests; evidence capture and
-   documentation; guarded `playbooks/destroy.yml`; residual billable-resource
-   audit.
-2. During that sequence, reseed the promoted default job definition before the
-   delivery run; live jobs currently contain the verified override-capable logic
-   but the promoted fallback exists only in the local Jenkinsfile.
-3. Replace TLS `require` with `verify-full` by deliberately packaging or mounting
+1. Commit/review the clean-run fixes, then restart the final acceptance sequence
+   from a clean local setup: `bash setup.sh`; `playbooks/create.yml` option 2
+   `BUILD_AND_DEPLOY`; public user access and full application/service tests;
+   evidence capture and documentation; guarded `playbooks/destroy.yml`; residual
+   billable-resource audit.
+2. The next create must be a full rerun, not a partial resume. The prior run
+   stopped after Terraform, Jenkins, job seeding, and DB Secret synchronization;
+   Jenkins registry synchronization and CI/CD were not reached successfully.
+3. Ansible commands are standardized from `Ansible-modules-01/`; its single
+   `ansible.cfg` uses the setup-installed `./collections` directory. Root-level
+   command examples remain for the dedicated post-test documentation pass.
+4. Replace TLS `require` with `verify-full` by deliberately packaging or mounting
    the AWS RDS CA bundle in a future rebuilt worker image.
-4. Finish the assignment-complete README and architecture diagram before the
+5. Finish the assignment-complete README and architecture diagram before the
    acceptance sequence, then add the resulting validation evidence.
-5. Decide during cleanup whether to retain or remove the authorized synthetic
+6. Decide during cleanup whether to retain or remove the authorized synthetic
    integration record
    and its versioned S3 backup; deletion requires separate explicit approval.
 
 ## Exact resume point
 
-Resume by reviewing the cleanup diff, then continue the final acceptance sequence
-without reordering it: clean local setup -> setup -> create -> user access and
-full application/service tests -> evidence documentation -> destroy ->
-residual-cost audit. The cleanup passed focused worker tests, production Helm
-lint/render, create/destroy/job-seeding syntax checks, Terraform formatting and
-validation, shell syntax checks, and stale-reference inspection. Before the
-acceptance delivery, reseed the local promoted fallback `3-c896ff25891a`. The
-live target currently runs that tag, all three application workloads are ready,
-the frontend load balancer is public, and Jenkins/backend/worker remain private.
+Resume by reviewing the committed clean-run fixes, deleting generated local setup
+artifacts only with explicit approval, and rerunning the full acceptance sequence
+without reordering it: clean local setup -> `bash setup.sh` -> `create.yml` option
+2 -> user access and full application/service tests -> evidence documentation ->
+destroy -> residual-cost audit. Main Terraform state is empty and the target
+billable-resource audit is clean; only the retained state bucket remains. The
+fresh run validated Docker Hub credentials before Terraform, created all 63 AWS
+resources, installed private Jenkins, seeded CI/CD jobs, and synchronized the DB
+Secret. It then stopped before CI because a registered file-stat dictionary
+masked later registry variables; that namespace collision and the earlier
+Ansible 2.20 vault-encryption ambiguity are fixed and syntax-checked but require
+one clean end-to-end confirmation.
 
 The focused worker, frontend runtime-content, and backend configuration slices are
 locally validated; do not repeat dependency setup or the name-collision inventory

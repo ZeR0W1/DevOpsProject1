@@ -38,7 +38,7 @@ database:
   existingSecretName: worker-db-secret # CI/CD should create this Kubernetes Secret and keep the name consistent with Helm values
   passwordSecretKey: password
   table: machines
-  sslMode: verify-full
+  sslMode: require
 
 resources:
   requests:
@@ -67,6 +67,9 @@ securityContext:
   runAsUser: 999
   runAsGroup: 999
   allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
   readOnlyRootFilesystem: false
 
 serviceAccount:

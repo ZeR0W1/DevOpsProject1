@@ -197,3 +197,42 @@
               - (jenkins_ci_trigger_status.resources[0].status.succeeded | default(0) | int) == 1
             fail_msg: >-
               The in-cluster Jenkins CI trigger failed before queue handoff.
+
+        - name: Wait for the frontend public hostname
+          kubernetes.core.k8s_info:
+            api_version: v1
+            kind: Service
+            name: frontend
+            namespace: "{{ application_namespace }}"
+            kubeconfig: "{{ kubeconfig_file }}"
+          register: frontend_service_status
+          until: >-
+            frontend_service_status.resources | length == 1 and
+            frontend_service_status.resources[0].status.loadBalancer.ingress |
+            default([]) | length > 0
+          retries: 90
+          delay: 10
+
+        - name: Set the public frontend URL
+          ansible.builtin.set_fact:
+            frontend_url: >-
+              http://{{ frontend_service_status.resources[0].status.loadBalancer.ingress[0].hostname }}
+
+        - name: Create the local generated-output directory
+          ansible.builtin.file:
+            path: "{{ generated_output_root }}"
+            state: directory
+            mode: "0755"
+
+        - name: Write the public frontend URL locally
+          ansible.builtin.copy:
+            dest: "{{ frontend_url_file }}"
+            mode: "0644"
+            content: "{{ frontend_url }}\n"
+
+        - name: Report the public frontend address
+          ansible.builtin.debug:
+            msg:
+              - "Jenkins accepted the delivery and the frontend endpoint is available."
+              - "Open the application: {{ frontend_url }}"
+              - "The URL is also saved at {{ frontend_url_file }}"

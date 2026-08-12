@@ -1,11 +1,40 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -Eeuo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ANSIBLE_DIR="${PROJECT_ROOT}/Ansible-modules-01"
 VENV_DIR="${PROJECT_ROOT}/.venv"
-DOWNLOAD_DIR="${PROJECT_ROOT}/.tools/downloads"
-COLLECTIONS_DIR="${ANSIBLE_DIR}/.ansible/collections"
+TOOLS_DIR="${PROJECT_ROOT}/.tools"
+DOWNLOAD_DIR="${TOOLS_DIR}/downloads"
+ANSIBLE_RUNTIME_DIR="${ANSIBLE_DIR}/.ansible"
+COLLECTIONS_DIR="${ANSIBLE_DIR}/collections"
+VAULT_PASSWORD_FILE="${ANSIBLE_DIR}/.vault-password"
+LOCAL_ENVIRONMENT_FILE="${ANSIBLE_DIR}/vault/local-environment.yml"
+
+declare -a SETUP_ROLLBACK_PATHS=()
+
+for setup_path in \
+  "${VENV_DIR}" \
+  "${TOOLS_DIR}" \
+  "${ANSIBLE_RUNTIME_DIR}" \
+  "${VAULT_PASSWORD_FILE}" \
+  "${LOCAL_ENVIRONMENT_FILE}"; do
+  if [[ ! -e "${setup_path}" ]]; then
+    SETUP_ROLLBACK_PATHS+=("${setup_path}")
+  fi
+done
+
+rollback_failed_setup() {
+  local exit_code=$?
+  trap - ERR
+  if ((${#SETUP_ROLLBACK_PATHS[@]} > 0)); then
+    echo "ERROR: Setup failed; removing only artifacts created by this invocation." >&2
+    rm -rf -- "${SETUP_ROLLBACK_PATHS[@]}"
+  fi
+  exit "${exit_code}"
+}
+
+trap rollback_failed_setup ERR
 
 TERRAFORM_VERSION="1.15.3"
 KUBECTL_VERSION="1.36.3"
@@ -16,7 +45,7 @@ if [[ "$(uname -s)" != "Linux" || "$(uname -m)" != "x86_64" ]]; then
   exit 1
 fi
 
-for command_name in python3 curl unzip sha256sum tar awk grep; do
+for command_name in python3 curl unzip sha256sum tar awk grep openssl; do
   if ! command -v "${command_name}" >/dev/null 2>&1; then
     echo "ERROR: Install ${command_name} and rerun setup.sh; sudo is never used automatically." >&2
     exit 1
@@ -35,8 +64,9 @@ curl --fail --location --silent --show-error \
 curl --fail --location --silent --show-error \
   --output "${DOWNLOAD_DIR}/terraform_SHA256SUMS" \
   "https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_SHA256SUMS"
-grep " ${terraform_archive}$" "${DOWNLOAD_DIR}/terraform_SHA256SUMS" \
-  | sha256sum --check --status
+(cd "${DOWNLOAD_DIR}" && \
+  grep " ${terraform_archive}$" terraform_SHA256SUMS \
+    | sha256sum --check --status)
 unzip -o -q "${DOWNLOAD_DIR}/${terraform_archive}" -d "${VENV_DIR}/bin"
 
 curl --fail --location --silent --show-error \
@@ -64,10 +94,16 @@ install -m 0755 "${DOWNLOAD_DIR}/linux-amd64/helm" "${VENV_DIR}/bin/helm"
   --requirements-file "${ANSIBLE_DIR}/requirements-collections.yml" \
   --collections-path "${COLLECTIONS_DIR}"
 
+if [[ ! -e "${VAULT_PASSWORD_FILE}" ]]; then
+  umask 077
+  openssl rand -base64 48 >"${VAULT_PASSWORD_FILE}"
+fi
+
 export PATH="${VENV_DIR}/bin:${PATH}"
 export ANSIBLE_CONFIG="${ANSIBLE_DIR}/ansible.cfg"
 cd "${ANSIBLE_DIR}"
 ansible-playbook playbooks/setup_local_environment.yml
 
+trap - ERR
 printf '\nSetup complete; activate the project tools with: source "%s/bin/activate"\n' \
   "${VENV_DIR}"

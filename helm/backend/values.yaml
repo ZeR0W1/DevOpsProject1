@@ -46,6 +46,9 @@ securityContext:
   runAsUser: 999
   runAsGroup: 999
   allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
   readOnlyRootFilesystem: false
 
 serviceAccount:

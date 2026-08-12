@@ -13,7 +13,8 @@ logs/
 !.env*.example
 .vscode/
 /.tools/
-Ansible-modules-01/.ansible/collections/
+Ansible-modules-01/.ansible/
+Ansible-modules-01/collections/
 
 # Local Cline command/recovery artifacts (project rules remain tracked)
 /.command-logs/
@@ -61,6 +62,7 @@ vault_pass.txt
 Ansible-modules-01/.vault-password
 Ansible-modules-01/vault/local-environment.yml
 Ansible-modules-01/recovery/
+Ansible-modules-01/generated/
 ansible.log
 Ansible-modules-01/inventory.ini
 

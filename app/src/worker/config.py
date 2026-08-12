@@ -33,7 +33,7 @@ POSTGRES_DB = os.getenv("POSTGRES_DB", "postgres")
 POSTGRES_USER = os.getenv("POSTGRES_USER")
 POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD")
 POSTGRES_TABLE = os.getenv("POSTGRES_TABLE", "machines")
-POSTGRES_SSLMODE = os.getenv("POSTGRES_SSLMODE", "verify-full")
+POSTGRES_SSLMODE = os.getenv("POSTGRES_SSLMODE", "require")
 POSTGRES_SSLROOTCERT = os.getenv(
     "POSTGRES_SSLROOTCERT",
     str(BASE_DIR / "src" / "worker" / "global-bundle.pem"),

@@ -78,6 +78,8 @@
     - name: Apply the state-bootstrap configuration
       ansible.builtin.command:
         cmd: terraform -chdir={{ terraform_state_bootstrap_dir }} apply -auto-approve -input=false
+      async: 1800
+      poll: 10
       when: terraform_state_bootstrap_apply | bool
 
     - name: Read state-bootstrap outputs
@@ -125,6 +127,8 @@
     - name: Apply the main Terraform infrastructure
       ansible.builtin.command:
         cmd: terraform -chdir={{ terraform_dir }} apply -auto-approve -input=false
+      async: 7200
+      poll: 10
       when: terraform_main_apply | bool
 
     - name: Report local-only validation mode

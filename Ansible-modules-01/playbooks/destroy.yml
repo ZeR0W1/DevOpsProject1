@@ -114,17 +114,18 @@
         - name: Require exact teardown confirmation
           ansible.builtin.pause:
             prompt: >-
-              Type DESTROY {{ terraform_outputs.eks_cluster_name.value }}
-              {{ terraform_outputs.s3_bucket_name.value }} to authorize teardown
+              Type DESTROY to authorize teardown of the displayed Terraform-owned
+              scope, or CANCEL to stop
           register: teardown_confirmation
+          until: >-
+            teardown_confirmation.user_input | trim | upper in ['DESTROY', 'CANCEL']
+          retries: 5
+          delay: 0
 
         - name: Validate exact teardown confirmation
           ansible.builtin.assert:
             that:
-              - >-
-                teardown_confirmation.user_input == 'DESTROY ' ~
-                terraform_outputs.eks_cluster_name.value ~ ' ' ~
-                terraform_outputs.s3_bucket_name.value
+              - teardown_confirmation.user_input | trim | upper == 'DESTROY'
             fail_msg: "Teardown cancelled; nothing was changed."
 
     - name: Back up optional application data and destroy the platform
@@ -209,6 +210,8 @@
               - -auto-approve
               - -input=false
               - -no-color
+          async: 7200
+          poll: 10
 
         - name: Verify main Terraform state is empty
           ansible.builtin.command:

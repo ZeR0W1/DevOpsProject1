@@ -77,13 +77,19 @@
           - derived_db_username is match('^[a-z][a-z0-9_]{0,62}$')
         fail_msg: "The administrator CIDR must be a valid IPv4 /32."
 
-    - name: Generate or retain the local vault password
-      ansible.builtin.copy:
-        dest: "{{ local_vault_password_file }}"
-        content: "{{ lookup('ansible.builtin.password', '/dev/null', length=48) }}\n"
-        mode: "0600"
-        force: false
-      no_log: true
+    - name: Verify the setup entry point created the local vault password securely
+      ansible.builtin.stat:
+        path: "{{ local_vault_password_file }}"
+      register: local_vault_password
+
+    - name: Require a private local vault password file
+      ansible.builtin.assert:
+        that:
+          - local_vault_password.stat.isreg | default(false)
+          - local_vault_password.stat.mode == '0600'
+        fail_msg: >-
+          Run setup.sh so it can create the local vault password with mode 0600
+          before this playbook encrypts local environment values.
 
     - name: Encrypt administrator email as a named variable
       ansible.builtin.command:
@@ -92,6 +98,8 @@
           - encrypt_string
           - --vault-password-file
           - "{{ local_vault_password_file }}"
+          - --encrypt-vault-id
+          - default
           - --stdin-name
           - admin_email
         stdin: "{{ admin_email }}"
@@ -107,6 +115,8 @@
           - encrypt_string
           - --vault-password-file
           - "{{ local_vault_password_file }}"
+          - --encrypt-vault-id
+          - default
           - --stdin-name
           - admin_cidr
         stdin: "{{ selected_admin_cidr }}"
@@ -122,6 +132,8 @@
           - encrypt_string
           - --vault-password-file
           - "{{ local_vault_password_file }}"
+          - --encrypt-vault-id
+          - default
           - --stdin-name
           - db_username
         stdin: "{{ derived_db_username }}"

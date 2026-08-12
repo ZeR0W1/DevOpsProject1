@@ -16,14 +16,14 @@
     - name: Verify local encrypted environment inputs exist
       ansible.builtin.stat:
         path: "{{ local_environment_file }}"
-      register: local_environment
+      register: local_environment_file_status
       when: prepare_terraform_inputs | bool
 
     - name: Require one-time environment setup before input preparation
       ansible.builtin.assert:
         that:
-          - local_environment.stat.exists
-          - local_environment.stat.isreg
+          - local_environment_file_status.stat.exists
+          - local_environment_file_status.stat.isreg
         fail_msg: >-
           Run playbooks/setup_local_environment.yml first to create the ignored
           encrypted local environment file.
@@ -66,6 +66,16 @@
           value: "{{ admin_email }}"
         - key: db_username
           value: "{{ db_username }}"
+      no_log: true
+      when: prepare_terraform_inputs | bool
+
+    - name: Format generated Terraform inputs
+      ansible.builtin.command:
+        argv:
+          - terraform
+          - fmt
+          - "{{ terraform_effective_inputs }}"
+      changed_when: false
       no_log: true
       when: prepare_terraform_inputs | bool
 
