@@ -19,6 +19,12 @@ Ansible-modules-01/.ansible/collections/
 /.command-logs/
 /.recovery-progress-note-candidates/
 
+# Local-only provenance and personal workflow material
+/scripts/legacy/
+/Jenkins/legacy/
+/misc/lecture-examples/
+/K8S_EKS_PROGRESS.md
+
 */__pycache__/
 *.pyc
 *$py.class

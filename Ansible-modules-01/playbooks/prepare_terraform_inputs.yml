@@ -4,12 +4,12 @@
   connection: local
   gather_facts: false
 
+  vars_files:
+    - ../vars/project.yml
+
   vars:
-    project_root: "{{ playbook_dir }}/../.."
-    terraform_dir: "{{ project_root }}/terraform"
     terraform_input_example: "{{ terraform_dir }}/terraform.tfvars.example"
     terraform_effective_inputs: "{{ terraform_dir }}/terraform.tfvars"
-    local_environment_file: "{{ playbook_dir }}/../vault/local-environment.yml"
     prepare_terraform_inputs: "{{ lookup('ansible.builtin.env', 'PREPARE_TERRAFORM_INPUTS') | default('false', true) | bool }}"
 
   tasks:

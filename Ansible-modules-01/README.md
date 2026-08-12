@@ -189,5 +189,3 @@ RBAC access to the Secret and use EKS encryption at rest for Kubernetes Secrets.
   A successful trigger Job proves queue handoff, while Jenkins build results are
   the authoritative evidence for CI and the synchronous standalone CD run.
 - Never add secret-value debug tasks or remove `no_log: true` from secret handling.
-- Archived direct Terraform/eksctl/Helm helpers live under `../scripts/legacy/`
-  for provenance only. They are not supported lifecycle entry points.

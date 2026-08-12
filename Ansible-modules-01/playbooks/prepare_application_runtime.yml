@@ -4,10 +4,10 @@
   connection: local
   gather_facts: false
 
+  vars_files:
+    - ../vars/project.yml
+
   vars:
-    terraform_dir: "{{ playbook_dir }}/../../terraform"
-    runtime_values_file: "{{ playbook_dir }}/../recovery/application-runtime.yml"
-    worker_db_secret_name: worker-db-secret
     prepare_application_runtime: >-
       {{ lookup('ansible.builtin.env', 'PREPARE_APPLICATION_RUNTIME')
          | default('false', true)

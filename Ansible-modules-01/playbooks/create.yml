@@ -4,18 +4,18 @@
   connection: local
   gather_facts: false
 
+  vars_files:
+    - ../vars/project.yml
+
   vars_prompt:
     - name: requested_delivery_mode
       prompt: "Delivery mode: DEPLOY_DEFAULT or BUILD_AND_DEPLOY"
       private: false
 
   vars:
-    project_root: "{{ playbook_dir }}/../.."
-    terraform_dir: "{{ project_root }}/terraform"
-    bootstrap_dir: "{{ terraform_dir }}/state-bootstrap"
+    bootstrap_dir: "{{ terraform_state_bootstrap_dir }}"
     terraform_example: "{{ terraform_dir }}/terraform.tfvars.example"
     bootstrap_inputs: "{{ bootstrap_dir }}/terraform.tfvars"
-    local_environment_file: "{{ playbook_dir }}/../vault/local-environment.yml"
 
   tasks:
     - name: Require project-local setup artifacts and tools

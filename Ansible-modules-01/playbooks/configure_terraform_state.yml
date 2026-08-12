@@ -4,10 +4,10 @@
   connection: local
   gather_facts: false
 
+  vars_files:
+    - ../vars/project.yml
+
   vars:
-    project_root: "{{ playbook_dir }}/../.."
-    terraform_dir: "{{ project_root }}/terraform"
-    terraform_state_bootstrap_dir: "{{ terraform_dir }}/state-bootstrap"
     terraform_remote_state_config: "{{ terraform_dir }}/remote-state.hcl"
     terraform_state_key: "devops-project1/{{ terraform_environment | default('dev') }}/terraform.tfstate"
 

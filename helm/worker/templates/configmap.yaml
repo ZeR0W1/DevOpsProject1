@@ -6,7 +6,7 @@ metadata:
   labels:
     {{- include "worker.labels" . | nindent 4 }}
 data:
-  API_PORT: {{ .Values.env.API_PORT | quote }}
+  API_PORT: {{ .Values.service.targetPort | quote }}
   BACKEND_HOST: {{ .Values.backendService.host | quote }}
   BACKEND_PORT: {{ .Values.backendService.port | quote }}
   POSTGRES_ENABLED: {{ .Values.database.postgresEnabled | quote }}
@@ -19,6 +19,6 @@ data:
   AWS_REGION: {{ .Values.aws.region | quote }}
   S3_BUCKET_NAME: {{ .Values.aws.s3BucketName | quote }}
   S3_SYNC_ENABLED: {{ .Values.integrations.s3Enabled | quote }}
-  S3_INSTANCES_OBJECT_KEY: "instances.json"
+  S3_INSTANCES_OBJECT_KEY: {{ .Values.integrations.s3ObjectKey | quote }}
   SNS_NOTIFICATIONS_ENABLED: {{ .Values.integrations.snsEnabled | quote }}
   SNS_TOPIC_ARN: {{ .Values.aws.snsTopicArn | quote }}

@@ -4,23 +4,18 @@
   connection: local
   gather_facts: false
 
+  vars_files:
+    - ../vars/project.yml
+
   vars:
-    project_root: "{{ playbook_dir }}/../.."
-    terraform_dir: "{{ project_root }}/terraform"
-    recovery_root: "{{ playbook_dir }}/../recovery"
-    project_terraform_binary: "{{ project_root }}/.venv/bin/terraform"
-    project_helm_binary: "{{ project_root }}/.venv/bin/helm"
-    project_kubectl_binary: "{{ project_root }}/.venv/bin/kubectl"
-    teardown_kubeconfig_path: "{{ playbook_dir }}/../recovery/target-kubeconfig"
-
-    application_namespace: devops-app
-    application_releases: [frontend, backend, worker]
-    application_object_keys: [index.html, instances.json]
-    jenkins_namespace: jenkins
-    jenkins_release: jenkins
-
-    destroy_execute: "{{ lookup('ansible.builtin.env', 'DESTROY_EXECUTE') | default('false', true) | bool }}"
-    retain_application_data: "{{ lookup('ansible.builtin.env', 'RETAIN_APPLICATION_DATA') | default('false', true) | bool }}"
+    destroy_execute: >-
+      {{ lookup('ansible.builtin.env', 'DESTROY_EXECUTE')
+         | default('false', true)
+         | bool }}
+    retain_application_data: >-
+      {{ lookup('ansible.builtin.env', 'RETAIN_APPLICATION_DATA')
+         | default('false', true)
+         | bool }}
 
   tasks:
     - name: Validate destroy flags locally
@@ -46,7 +41,7 @@
               - project_terraform_binary is file
               - project_helm_binary is file
               - project_kubectl_binary is file
-              - teardown_kubeconfig_path is file
+              - kubeconfig_file is file
             fail_msg: "Run ../../setup.sh and create.yml before teardown."
 
         - name: List Terraform-owned resources
@@ -82,8 +77,19 @@
           ansible.builtin.command:
             argv: "{{ item }}"
           loop:
-            - ["{{ project_kubectl_binary }}", --kubeconfig, "{{ teardown_kubeconfig_path }}", config, current-context]
-            - ["{{ project_kubectl_binary }}", --kubeconfig, "{{ teardown_kubeconfig_path }}", config, view, --minify, -o, "jsonpath={.clusters[0].cluster.server}"]
+            - - "{{ project_kubectl_binary }}"
+              - --kubeconfig
+              - "{{ kubeconfig_file }}"
+              - config
+              - current-context
+            - - "{{ project_kubectl_binary }}"
+              - --kubeconfig
+              - "{{ kubeconfig_file }}"
+              - config
+              - view
+              - --minify
+              - -o
+              - "jsonpath={.clusters[0].cluster.server}"
           register: kubernetes_target
           changed_when: false
           no_log: true
@@ -173,23 +179,36 @@
                   project_root ~ '/scripts/destroy_kubernetes_workloads.sh',
                   application_namespace,
                   jenkins_namespace,
-                  jenkins_release
+                  jenkins_release_name
                 ] + application_releases
               }}
           environment:
             HELM_BIN: "{{ project_helm_binary }}"
             KUBECTL_BIN: "{{ project_kubectl_binary }}"
-            KUBECONFIG_PATH: "{{ teardown_kubeconfig_path }}"
+            KUBECONFIG_PATH: "{{ kubeconfig_file }}"
 
         - name: Delete the two application bucket objects
           ansible.builtin.command:
-            argv: [aws, s3api, delete-object, --bucket, "{{ terraform_outputs.s3_bucket_name.value }}", --key, "{{ item }}"]
+            argv:
+              - aws
+              - s3api
+              - delete-object
+              - --bucket
+              - "{{ terraform_outputs.s3_bucket_name.value }}"
+              - --key
+              - "{{ item }}"
           loop: "{{ application_object_keys }}"
           no_log: true
 
         - name: Destroy the verified Terraform-owned main stack
           ansible.builtin.command:
-            argv: ["{{ project_terraform_binary }}", "-chdir={{ terraform_dir }}", destroy, -auto-approve, -input=false, -no-color]
+            argv:
+              - "{{ project_terraform_binary }}"
+              - "-chdir={{ terraform_dir }}"
+              - destroy
+              - -auto-approve
+              - -input=false
+              - -no-color
 
         - name: Verify main Terraform state is empty
           ansible.builtin.command:

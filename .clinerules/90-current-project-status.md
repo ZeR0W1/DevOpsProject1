@@ -123,9 +123,19 @@ superseded evidence belong in `misc/recovery/PROJECT_HISTORY.md`.
 - Worker PostgreSQL uses TLS `require` because the current image has no bundled
   RDS CA file. An authorized synthetic record verified RDS-primary reads/writes,
   versioned S3 `instances.json`, and one metadata-only SNS publication.
-- Authorized Ansible job seeding now succeeds. The generic job helper and both
-  EKS job wrappers are eligible to move to `scripts/legacy/` after explicit
-  deletion/move approval; keep the CLI-auth helper in `scripts/` as supported.
+- Repository cleanup is complete in the working tree. Application source now
+  lives at top-level `app/`; unused imported Ansible roles, obsolete app-role
+  wrappers/examples, and superseded tracked workflows were removed. Professor
+  lecture examples and historical scripts remain local-only in ignored archive
+  paths; `K8S_EKS_PROGRESS.md` remains local-only at the repository root. Keep
+  the CLI-auth helper in `scripts/` as a supported operator fallback.
+- Shared non-secret lifecycle paths, namespaces, fixed object names, and Jenkins
+  identifiers now have one Ansible source in `Ansible-modules-01/vars/project.yml`.
+  Helm probes use named container ports, worker API port derives from the Service
+  target port, and the fixed catalog object key is declared in worker values.
+- A behavior-preserving readability pass consolidated worker environment-flag
+  parsing and backend enum translation, clarified the frontend-content helper and
+  teardown command structures, and corrected frontend public-entry-point comments.
 - Application integration is not hand-in complete.
 
 ## Current naming-inventory state
@@ -143,8 +153,8 @@ superseded evidence belong in `misc/recovery/PROJECT_HISTORY.md`.
 
 ## Immediate work queue
 
-1. Execute the final acceptance sequence in this exact order: repository cleanup;
-   `./setup.sh` from a clean local setup; `playbooks/create.yml`; public user
+1. Continue the final acceptance sequence in this exact order: review the cleanup
+   diff; `./setup.sh` from a clean local setup; `playbooks/create.yml`; public user
    access and full application/service functionality tests; evidence capture and
    documentation; guarded `playbooks/destroy.yml`; residual billable-resource
    audit.
@@ -161,15 +171,15 @@ superseded evidence belong in `misc/recovery/PROJECT_HISTORY.md`.
 
 ## Exact resume point
 
-Resume with repository cleanup. Then follow the final acceptance sequence without
-reordering it: clean local setup -> setup -> create -> user access and full
-application/service tests -> evidence documentation -> destroy -> residual-cost
-audit. Treat the current working tree as the integrated implementation to review,
-not unrelated work to preserve automatically. Before deleting or moving any
-obsolete asset, obtain explicit path approval. Before the acceptance delivery,
-reseed the local promoted fallback `3-c896ff25891a`. The live target currently
-runs that tag, all three application workloads are ready, the frontend load
-balancer is public, and Jenkins/backend/worker remain private.
+Resume by reviewing the cleanup diff, then continue the final acceptance sequence
+without reordering it: clean local setup -> setup -> create -> user access and
+full application/service tests -> evidence documentation -> destroy ->
+residual-cost audit. The cleanup passed focused worker tests, production Helm
+lint/render, create/destroy/job-seeding syntax checks, Terraform formatting and
+validation, shell syntax checks, and stale-reference inspection. Before the
+acceptance delivery, reseed the local promoted fallback `3-c896ff25891a`. The
+live target currently runs that tag, all three application workloads are ready,
+the frontend load balancer is public, and Jenkins/backend/worker remain private.
 
 The focused worker, frontend runtime-content, and backend configuration slices are
 locally validated; do not repeat dependency setup or the name-collision inventory

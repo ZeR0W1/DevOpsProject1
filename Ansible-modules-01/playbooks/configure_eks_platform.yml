@@ -4,16 +4,14 @@
   connection: local
   gather_facts: false
 
+  vars_files:
+    - ../vars/project.yml
+
   vars:
-    project_root: "{{ playbook_dir }}/../.."
-    terraform_dir: "{{ project_root }}/terraform"
-    kubeconfig_file: "{{ playbook_dir }}/../recovery/target-kubeconfig"
     jenkins_values_file: "{{ project_root }}/Jenkins/values-eks.yaml"
     jenkins_rbac_file: "{{ project_root }}/Jenkins/rbac-app-deployer.yaml"
     jenkins_chart_ref: oci://ghcr.io/jenkinsci/helm-charts/jenkins
     jenkins_chart_version: 5.8.114
-    jenkins_release_name: jenkins
-    jenkins_namespace: jenkins
     jenkins_helm_binary: >-
       {{ lookup('ansible.builtin.env', 'JENKINS_HELM_BINARY')
          | default('helm', true) }}
@@ -177,7 +175,7 @@
           - patch
           - deployments
           - --namespace
-          - devops-app
+          - "{{ application_namespace }}"
           - --as-group
           - jenkins-deployer
           - --as

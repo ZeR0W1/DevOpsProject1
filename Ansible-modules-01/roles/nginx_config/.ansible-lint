@@ -1,7 +1,0 @@
----
-offline: true
-exclude_paths:
-  - .github/
-skip_list:
-  - schema[meta]
-  - yaml[line-length]

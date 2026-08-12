@@ -11,9 +11,8 @@ image:
 replicaCount: 2
 
 service:
-  # Temporary assignment-friendly exposure method: EKS will provision one public
-  # AWS load balancer for the frontend only. Backend and worker stay internal.
-  # Later, this can change back to ClusterIP when an Ingress controller is added.
+  # The frontend LoadBalancer is the only public application endpoint.
+  # Backend and worker Services remain internal ClusterIPs.
   type: LoadBalancer
   port: 80
   targetPort: 8080
@@ -23,13 +22,11 @@ backendService:
   port: 8000
 
 ingress:
-  # Disabled for now because frontend Service type LoadBalancer is the temporary
-  # external entry point. Re-enable this when moving to AWS Load Balancer
-  # Controller or nginx ingress controller.
+  # Disabled because the frontend LoadBalancer Service is the public entry point.
   enabled: false
   className: nginx
   annotations: {}
-  host: devops-app.local # replace with your real frontend hostname if you use DNS/Ingress host routing
+  host: devops-app.local
   path: /
   pathType: Prefix
   tls:
@@ -47,14 +44,14 @@ resources:
 livenessProbe:
   httpGet:
     path: /
-    port: 8080
+    port: http
   initialDelaySeconds: 15
   periodSeconds: 20
 
 readinessProbe:
   httpGet:
     path: /
-    port: 8080
+    port: http
   initialDelaySeconds: 5
   periodSeconds: 10
 
@@ -78,4 +75,4 @@ frontendContent:
   configMapName: frontend-runtime-content
   mountPath: /usr/share/nginx/html
   # Canonical repository source used by CI to seed S3 when index.html is absent.
-  sourceFile: Ansible-modules-01/roles/app/files/app/src/frontend/index.html
+  sourceFile: app/src/frontend/index.html

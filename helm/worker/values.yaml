@@ -26,6 +26,7 @@ aws:
 
 integrations:
   s3Enabled: true
+  s3ObjectKey: instances.json
   snsEnabled: true
 
 database:
@@ -50,14 +51,14 @@ resources:
 livenessProbe:
   httpGet:
     path: /health
-    port: 8000
+    port: http
   initialDelaySeconds: 20
   periodSeconds: 20
 
 readinessProbe:
   httpGet:
     path: /health
-    port: 8000
+    port: http
   initialDelaySeconds: 10
   periodSeconds: 10
 
@@ -72,6 +73,3 @@ serviceAccount:
   create: true
   name: worker-sa
   annotations: {}
-
-env:
-  API_PORT: "8000"

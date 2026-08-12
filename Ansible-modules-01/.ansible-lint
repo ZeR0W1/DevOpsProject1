@@ -1,4 +1,2 @@
-exclude_paths:
-  - roles/buluma.python_pip/
-  - roles/nginx/
-  - roles/nginx_config/
+---
+# Project-wide defaults apply; no imported roles require exclusions.

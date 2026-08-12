@@ -9,11 +9,12 @@
       prompt: "Administrator email for SNS notifications"
       private: false
 
+  vars_files:
+    - ../vars/project.yml
+
   vars:
-    project_root: "{{ playbook_dir }}/../.."
     terraform_example: "{{ project_root }}/terraform/terraform.tfvars.example"
-    local_vault_file: "{{ playbook_dir }}/../vault/local-environment.yml"
-    local_vault_password_file: "{{ playbook_dir }}/../.vault-password"
+    local_vault_file: "{{ local_environment_file }}"
 
   tasks:
     - name: Read authoritative Terraform input example

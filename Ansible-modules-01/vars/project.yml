@@ -1,0 +1,25 @@
+---
+# Shared non-secret lifecycle constants. Playbook-specific gates and confirmations
+# remain beside the tasks they protect.
+project_root: "{{ playbook_dir }}/../.."
+terraform_dir: "{{ project_root }}/terraform"
+terraform_state_bootstrap_dir: "{{ terraform_dir }}/state-bootstrap"
+recovery_root: "{{ playbook_dir }}/../recovery"
+runtime_values_file: "{{ recovery_root }}/application-runtime.yml"
+kubeconfig_file: "{{ recovery_root }}/target-kubeconfig"
+project_terraform_binary: "{{ project_root }}/.venv/bin/terraform"
+project_helm_binary: "{{ project_root }}/.venv/bin/helm"
+project_kubectl_binary: "{{ project_root }}/.venv/bin/kubectl"
+local_environment_file: "{{ playbook_dir }}/../vault/local-environment.yml"
+local_vault_password_file: "{{ playbook_dir }}/../.vault-password"
+
+application_namespace: devops-app
+application_releases: [frontend, backend, worker]
+application_object_keys: [index.html, instances.json]
+worker_db_secret_name: worker-db-secret
+
+jenkins_namespace: jenkins
+jenkins_release_name: jenkins
+jenkins_service_url: http://jenkins.jenkins.svc.cluster.local:8080
+jenkins_admin_secret_name: jenkins
+jenkins_ci_job_name: devops-project1-eks-pipeline

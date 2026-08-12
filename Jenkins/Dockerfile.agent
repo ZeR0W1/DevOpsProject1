@@ -32,9 +32,9 @@ RUN set -eux; \
         unzip; \
     rm -rf /var/lib/apt/lists/*
 
-# Docker CLI remains for compatibility with the archived local-agent workflow.
-# The active EKS CI pipeline builds application images in its separate Kaniko
-# container and does not mount a host Docker socket into this container.
+# Docker CLI remains available for optional future CI stages and operator
+# diagnostics. Active EKS image builds use the separate Kaniko container and do
+# not mount a host Docker socket into this container.
 RUN set -eux; \
     case "${TARGETARCH:-amd64}" in \
         amd64) docker_arch="x86_64" ;; \
@@ -48,7 +48,7 @@ RUN set -eux; \
     rm -rf /tmp/docker /tmp/docker.tgz; \
     docker --version
 
-# Sonar Scanner remains available for the archived local pipeline.
+# Sonar Scanner remains available for an optional future analysis stage.
 RUN set -eux; \
     case "${TARGETARCH:-amd64}" in \
         amd64) scanner_arch="linux-x64" ;; \
@@ -62,8 +62,8 @@ RUN set -eux; \
     rm -f /tmp/sonar-scanner.zip; \
     sonar-scanner --version
 
-# Trivy remains available for the archived local pipeline. EKS CI uses a separate
-# pinned Trivy container.
+# Trivy remains available for optional diagnostics. Active EKS CI uses a separate
+# pinned Trivy container for its opt-in scan.
 RUN set -eux; \
     curl -fsSL https://aquasecurity.github.io/trivy-repo/deb/public.key \
         | gpg --dearmor -o /usr/share/keyrings/trivy.gpg; \
@@ -86,7 +86,7 @@ RUN set -eux; \
     git --version; \
     docker --version
 
-# Retain Docker-group compatibility for the archived local-agent workflow.
+# Retain Docker-group compatibility for optional operator diagnostics.
 RUN set -eux; \
     if ! getent group docker >/dev/null; then \
         groupadd --gid 999 docker; \

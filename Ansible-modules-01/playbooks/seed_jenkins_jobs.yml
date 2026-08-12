@@ -5,13 +5,10 @@
   connection: local
   gather_facts: false
 
+  vars_files:
+    - ../vars/project.yml
+
   vars:
-    project_root: "{{ playbook_dir }}/../.."
-    runtime_values_file: "{{ playbook_dir }}/../recovery/application-runtime.yml"
-    kubeconfig_file: "{{ playbook_dir }}/../recovery/target-kubeconfig"
-    jenkins_namespace: jenkins
-    jenkins_service_url: http://jenkins.jenkins.svc.cluster.local:8080
-    jenkins_admin_secret_name: jenkins
     seed_jenkins_jobs: >-
       {{ lookup('ansible.builtin.env', 'SEED_JENKINS_JOBS')
          | default('false', true)
@@ -26,13 +23,13 @@
       db_port: "5432"
       db_name: validation_db
       db_username: validation_user
-      worker_db_secret_name: worker-db-secret
+      worker_db_secret_name: "{{ worker_db_secret_name }}"
       application_s3_bucket: validation-runtime-bucket
       sns_topic_arn: arn:aws:sns:us-east-1:123456789012:validation-topic
     common_runtime_parameters:
       - {type: string, name: AWS_REGION, default: "{{ application_runtime.aws_region }}", description: AWS region containing the Terraform-owned EKS cluster.}
       - {type: string, name: EKS_CLUSTER_NAME, default: "{{ application_runtime.eks_cluster_name }}", description: Terraform-owned EKS cluster name.}
-      - {type: string, name: DEPLOY_NAMESPACE, default: devops-app, description: Application namespace.}
+      - {type: string, name: DEPLOY_NAMESPACE, default: "{{ application_namespace }}", description: Application namespace.}
       - {type: string, name: FRONTEND_CONTENT_BUCKET, default: "{{ application_runtime.application_s3_bucket }}", description: Terraform-owned application content bucket.}
       - {type: string, name: FRONTEND_CONTENT_KEY, default: index.html, description: Fixed runtime frontend content object.}
       - {type: string, name: WORKER_DB_HOST, default: "{{ application_runtime.rds_hostname }}", description: Terraform-owned RDS hostname.}
@@ -67,7 +64,7 @@
             {'type': 'string', 'name': 'REPO_URL', 'default': 'https://github.com/ZeR0W1/DevOpsProject1.git', 'description': 'Git repository URL.'},
             {'type': 'string', 'name': 'REPO_BRANCH', 'default': 'aws3-containerized', 'description': 'Git branch, tag, or ref to build.'},
             {'type': 'string', 'name': 'GIT_CREDENTIALS_ID', 'default': '', 'description': 'Optional Jenkins Git credential ID.'},
-            {'type': 'string', 'name': 'APP_DIR', 'default': 'Ansible-modules-01/roles/app/files/app', 'description': 'Application path in the repository.'},
+            {'type': 'string', 'name': 'APP_DIR', 'default': 'app', 'description': 'Application path in the repository.'},
             {'type': 'choice', 'name': 'DELIVERY_MODE', 'choices': ['DEPLOY_DEFAULT', 'BUILD_AND_DEPLOY'], 'description': 'Deploy the fixed owner public images or build operator-owned images.'},
             {'type': 'string', 'name': 'IMAGE_TAG', 'default': '', 'description': 'Optional immutable image tag override.'},
             {'type': 'string', 'name': 'DOCKERHUB_CREDENTIALS_ID', 'default': 'dockerhub-creds', 'description': 'Jenkins Docker Hub credential ID.'},
@@ -132,7 +129,7 @@
               - application_runtime.rds_hostname | length > 0
               - application_runtime.application_s3_bucket | length > 0
               - application_runtime.sns_topic_arn | length > 0
-              - application_runtime.worker_db_secret_name == 'worker-db-secret'
+              - application_runtime.worker_db_secret_name == worker_db_secret_name
             fail_msg: Prepared application runtime handoff is incomplete or invalid.
           no_log: true
 

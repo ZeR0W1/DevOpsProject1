@@ -4,12 +4,10 @@
   connection: local
   gather_facts: false
 
+  vars_files:
+    - ../vars/project.yml
+
   vars:
-    kubeconfig_file: "{{ playbook_dir }}/../recovery/target-kubeconfig"
-    jenkins_namespace: jenkins
-    jenkins_service_url: http://jenkins.jenkins.svc.cluster.local:8080
-    jenkins_admin_secret_name: jenkins
-    jenkins_ci_job_name: devops-project1-eks-pipeline
     delivery_mode: >-
       {{ lookup('ansible.builtin.env', 'DELIVERY_MODE')
          | default('DEPLOY_DEFAULT', true)
@@ -58,8 +56,8 @@
           kubernetes.core.k8s_info:
             api_version: v1
             kind: Secret
-            name: worker-db-secret
-            namespace: devops-app
+            name: "{{ worker_db_secret_name }}"
+            namespace: "{{ application_namespace }}"
             kubeconfig: "{{ kubeconfig_file }}"
           register: worker_db_secret_status
 
@@ -68,8 +66,8 @@
             that:
               - worker_db_secret_status.resources | length == 1
             fail_msg: >-
-              worker-db-secret must exist in devops-app before CI can hand off to
-              standalone FULL CD.
+              {{ worker_db_secret_name }} must exist in {{ application_namespace }}
+              before CI can hand off to standalone FULL CD.
 
         - name: Launch short-lived in-cluster Jenkins CI trigger
           kubernetes.core.k8s:

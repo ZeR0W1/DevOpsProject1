@@ -38,9 +38,7 @@ safety and recovery record is
   change application workloads. CI may seed or explicitly reset the versioned S3
   `index.html`; CD is the sole owner of the S3-to-Kubernetes content activation.
 - **Helm deploys three independent releases** from `helm/frontend`,
-  `helm/backend`, and `helm/worker`. The retained `helm/spring-music` chart is the
-  professor-provided reference/template; it is not the production application
-  release.
+  `helm/backend`, and `helm/worker`.
 
 ## Target architecture
 
@@ -112,12 +110,10 @@ trust boundary.
 | `Jenkins/Jenkinsfile.eks` | Mandatory EKS-native CI pipeline |
 | `Jenkins/Jenkinsfile-deploy` | Optional standalone CD pipeline |
 | `helm/frontend`, `helm/backend`, `helm/worker` | Independent application charts |
-| `helm/spring-music` | Professor-provided Helm reference/template |
-| `Ansible-modules-01/roles/app/files/app/src/` | Application source |
-| `scripts/legacy/`, `Jenkins/legacy/` | Archived transitional/lab assets; not supported lifecycle owners |
+| `app/src/` | Application source |
 
 The repository default frontend source is
-`Ansible-modules-01/roles/app/files/app/src/frontend/index.html`. The authoritative
+`app/src/frontend/index.html`. The authoritative
 runtime source is the Terraform-owned, versioned S3 object `index.html`.
 
 ## Jenkins model
@@ -291,15 +287,11 @@ Terraform state bucket remains retained by default.
 - Assignment-complete evidence and the final architecture/security narrative are
   still pending.
 
-Historical scripts are retained only for provenance under `scripts/legacy/` and
-`Jenkins/legacy/`. Do not use them as an alternative infrastructure or deployment
-owner.
-
 ## Detailed documentation
 
 - [Hand-in readiness checklist](HANDIN_READINESS_CHECKLIST.md)
 - [Terraform guide](terraform/README.md)
 - [Ansible guide](Ansible-modules-01/README.md)
-- [Frontend service](Ansible-modules-01/roles/app/files/app/src/frontend/README.md)
-- [Backend service](Ansible-modules-01/roles/app/files/app/src/backend/README.md)
-- [Worker service](Ansible-modules-01/roles/app/files/app/src/worker/README.md)
+- [Frontend service](app/src/frontend/README.md)
+- [Backend service](app/src/backend/README.md)
+- [Worker service](app/src/worker/README.md)
