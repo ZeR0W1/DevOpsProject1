@@ -1,16 +1,19 @@
-## Worker instance
+# Worker service
 
-### Functional intent
+Project overview: [../../../README.md](../../../README.md) · Helm chart:
+[../../../helm/worker](../../../helm/worker)
+
+## Functional intent
 
 The worker is the persistence and integration layer.
 
 - receives verified machine payloads from the backend
-- stores machine data in `configs/instances.json`
-- writes and reads machine data through PostgreSQL/RDS when enabled
-- uploads the instances file to S3
-- sends SNS notifications when enabled
+- writes and reads machine records through PostgreSQL/RDS as the primary datastore
+- exports the current catalog to a local JSON file and synchronizes fixed object
+  `instances.json` to the Terraform-owned application S3 bucket
+- sends metadata-only SNS notifications after a successful synchronization
 
-### Structure
+## Structure
 
 ```text
 src/worker/
@@ -19,101 +22,63 @@ src/worker/
   README.md
 ```
 
-### Deployment setup
+## Local checks
 
-Install dependencies:
+From `app/src/worker`, create an isolated environment and install the runtime and
+test dependencies:
 
 ```bash
-pip install -r ./requirements.txt
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt -r ../requirements-test.txt
+python -m pytest -q test_api.py
 ```
 
-For local source checks from the application root, install the declared test
-tooling separately so it is not included in the production worker image:
+For a local API smoke run without AWS or PostgreSQL integrations:
 
 ```bash
-python -m pip install -r ./src/requirements-test.txt
-python -m pytest -q ./src/worker/test_api.py
-```
-
-Run from the `src/worker/` directory:
-
-```bash
+export POSTGRES_ENABLED=false
+export S3_SYNC_ENABLED=false
+export SNS_NOTIFICATIONS_ENABLED=false
+export BACKEND_HOST=localhost
 python ./api.py
 ```
 
-### systemd setup
+The production defaults enable PostgreSQL, S3, and SNS. Do not use real passwords
+or cloud credentials in shell history; the Kubernetes deployment supplies its
+runtime configuration through ConfigMaps, Secrets, and Pod Identity.
 
-Install and start:
+## Container and EKS deployment
 
-```bash
-sudo tee /etc/systemd/system/infra-worker.service >/dev/null <<'UNIT'
-[Unit]
-Description=Infrastructure Automation Worker API
-After=network.target
+`Dockerfile.worker` runs the API on port `8000`. The `helm/worker` chart deploys
+two replicas behind an internal `ClusterIP` Service in namespace `devops-app`.
+The backend reaches it through Kubernetes Service DNS name `worker`; the worker
+is not a public endpoint.
 
-[Service]
-User=ec2-user
-WorkingDirectory=/home/ec2-user/infra-automation/src/worker
-Environment="API_PORT=8000"
-Environment="BACKEND_HOST=10.0.149.9"
-Environment="BACKEND_PORT=8000"
-Environment="S3_BUCKET_NAME=quick-demo-058264247987-us-east-1-an"
-Environment="S3_INSTANCES_OBJECT_KEY=instances.json"
-Environment="SNS_NOTIFICATIONS_ENABLED=true"
-Environment="SNS_TOPIC_ARN=arn:aws:sns:us-east-1:058264247987:DOAworker"
-Environment="POSTGRES_ENABLED=true"
-Environment="POSTGRES_HOST=dodb2.celu8oms0zc2.us-east-1.rds.amazonaws.com"
-Environment="POSTGRES_PORT=5432"
-Environment="POSTGRES_DB=postgres"
-Environment="POSTGRES_USER=postgres_master"
-Environment="POSTGRES_PASSWORD=postgres"
-Environment="POSTGRES_TABLE=machines"
-Environment="POSTGRES_SSLMODE=verify-full"
-Environment="POSTGRES_SSLROOTCERT=/home/ec2-user/infra-automation/src/worker/global-bundle.pem"
-ExecStart=/home/ec2-user/infra-automation/venv/bin/python /home/ec2-user/infra-automation/src/worker/api.py
-Restart=always
+The chart supplies non-secret runtime values through its ConfigMap:
 
-[Install]
-WantedBy=multi-user.target
-UNIT
-sudo systemctl daemon-reload
-sudo systemctl enable infra-worker.service
-sudo systemctl restart infra-worker.service
-sudo systemctl status infra-worker.service
-```
+- PostgreSQL host, port, database, user, table, and TLS mode;
+- AWS region and Terraform-owned application bucket/SNS identifiers;
+- fixed S3 object key `instances.json`; and
+- integration enablement flags.
 
-### Key configuration
+Ansible synchronizes the generated RDS password from AWS Secrets Manager into
+namespace Secret `worker-db-secret` with suppressed output. The Deployment reads
+only key `password` through `secretKeyRef`; the password must never appear in
+Helm values, ConfigMaps, logs, examples, or repository files.
 
-```bash
-API_PORT=8000
-BACKEND_HOST=10.0.149.9
-BACKEND_PORT=8000
-S3_BUCKET_NAME=quick-demo-058264247987-us-east-1-an
-S3_INSTANCES_OBJECT_KEY=instances.json
-SNS_NOTIFICATIONS_ENABLED=true
-SNS_TOPIC_ARN=arn:aws:sns:us-east-1:058264247987:DOAworker
-POSTGRES_ENABLED=true
-POSTGRES_HOST=dodb2.celu8oms0zc2.us-east-1.rds.amazonaws.com
-POSTGRES_PORT=5432
-POSTGRES_DB=postgres
-POSTGRES_USER=postgres_master
-POSTGRES_PASSWORD=postgres
-POSTGRES_TABLE=machines
-POSTGRES_SSLMODE=verify-full
-POSTGRES_SSLROOTCERT=/home/ec2-user/infra-automation/src/worker/global-bundle.pem
-```
+The worker ServiceAccount `worker-sa` receives short-lived AWS credentials through
+Terraform-owned EKS Pod Identity. Its policy is limited to the required catalog
+object operations and SNS publication. It does not read Terraform state or AWS
+Secrets Manager.
 
-### Current AWS attachment notes
+RDS is private and permits PostgreSQL traffic from the EKS node security group
+plus the reviewed administrator CIDR. The current worker image uses TLS mode
+`require`; moving to `verify-full` requires deliberately packaging or mounting the
+AWS RDS CA bundle in a rebuilt image.
 
-- instance security group: `worker-app`
-- inbound application traffic: `8000/tcp` from security group `backend-api`
-- RDS access is allowed from `worker-app`
-- direct pgAdmin access is intentionally preserved through the RDS security group admin-IP rule
-
-### Maintenance endpoint
+## Maintenance endpoint
 
 - `POST /machines/recatalogue` renumbers the existing machine catalog so IDs become sequential starting from `1`
-- the recatalogue process updates:
-  - the worker JSON catalog
-  - the PostgreSQL `machines` table
-  - the S3 copy of the catalog
+- the recatalogue process updates PostgreSQL first, then regenerates the local
+  JSON export and synchronized S3 `instances.json` backup

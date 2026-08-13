@@ -25,6 +25,7 @@ Ansible-modules-01/collections/
 /Jenkins/legacy/
 /misc/lecture-examples/
 /K8S_EKS_PROGRESS.md
+/HANDIN_READINESS_CHECKLIST.md
 
 */__pycache__/
 *.pyc

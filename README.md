@@ -1,15 +1,9 @@
 # DevOps on AWS: Kubernetes, EKS, and Jenkins
 
-> **Repository status: deployed and integration-validated — documentation and
-> hand-in evidence remain in progress.**
->
-> The Terraform-owned target stack and Jenkins delivery path have been verified
-> live. The new professor-facing setup/create/destroy wrappers are locally
-> validated but have not themselves been used to recreate or destroy the stack.
 
 ## Project goal
 
-The assignment target is a three-service application on Amazon EKS:
+This project runs a three-service application on Amazon EKS:
 
 - **frontend** — nginx-hosted browser UI and the only generally public
   application entry point;
@@ -19,11 +13,6 @@ The assignment target is a three-service application on Amazon EKS:
 - **S3** — initial `index.html` content and synchronized `instances.json` backup;
 - **SNS** — application notifications; and
 - **Jenkins** — mandatory CI with a separately controlled optional CD job.
-
-The remaining work is tracked in
-[`HANDIN_READINESS_CHECKLIST.md`](HANDIN_READINESS_CHECKLIST.md). The durable
-safety and recovery record is
-[`.clinerules/90-current-project-status.md`](.clinerules/90-current-project-status.md).
 
 ## Ownership and lifecycle boundaries
 
@@ -44,52 +33,69 @@ safety and recovery record is
 
 ```mermaid
 flowchart LR
-    Internet((Internet)) --> FrontEntry[Frontend LoadBalancer Service]
+    User((Internet user)) --> ELB[Public frontend LoadBalancer]
+    Operator[Operator / approved admin CIDR] --> EKSAPI[EKS API]
+    Registry[(Public Docker Hub)]
 
-    subgraph AWS[AWS account / VPC]
-      subgraph EKS[Terraform-owned EKS]
-        subgraph AppNS[devops-app namespace]
-          Front[Frontend Deployment + Service]
-          Back[Backend Deployment + ClusterIP]
-          Worker[Worker Deployment + ClusterIP]
-          FrontCM[Frontend ConfigMap]
-          RuntimeCM[Runtime ConfigMap]
-          DbSecret[Database Secret]
-          FrontSA[frontend ServiceAccount]
-          BackSA[backend ServiceAccount]
-          WorkerSA[worker ServiceAccount]
+    subgraph AWS[AWS account]
+      State[(Retained encrypted Terraform-state S3 bucket)]
+
+      subgraph VPC[Terraform-owned VPC]
+        subgraph Public[Public subnets]
+          ELB
+          NAT[NAT Gateway]
         end
 
-        subgraph JenkinsNS[jenkins namespace]
-          Jenkins[Jenkins controller + ClusterIP + PVC]
-          Agents[Ephemeral CI/CD agents]
-          Seeder[Short-lived job seeder]
-          AdminSecret[Jenkins admin Secret]
+        subgraph Private[Private subnets]
+          subgraph EKS[Terraform-owned EKS control plane and private node group]
+            EKSAPI
+            subgraph AppNS[devops-app namespace]
+              Front[2x frontend Pods + Service]
+              Back[2x backend Pods + ClusterIP]
+              Worker[2x worker Pods + ClusterIP]
+              FrontCM[frontend-runtime-content ConfigMap]
+              RuntimeCM[worker ConfigMap]
+              DbSecret[worker-db-secret]
+              FrontSA[frontend ServiceAccount]
+              BackSA[backend ServiceAccount]
+              WorkerSA[worker ServiceAccount + Pod Identity]
+            end
+
+            subgraph JenkinsNS[jenkins namespace]
+              Jenkins[Jenkins controller + ClusterIP + EBS PVC]
+              Agents[Ephemeral CI/CD agents + separate Pod Identities]
+              Seeder[Short-lived job/credential seeders]
+              AdminSecret[Jenkins admin Secret]
+            end
+          end
+
+          RDS[(Private RDS PostgreSQL)]
         end
       end
 
-      RDS[(Private RDS PostgreSQL)]
-      Bucket[(Private application S3 bucket)]
+      Bucket[(Private versioned application S3 bucket)]
       Topic[(SNS topic)]
+      Secrets[(Secrets Manager database credential)]
     end
 
-    FrontEntry --> Front
-    Front --> Back
-    Back --> Worker
-    Worker --> RDS
+    ELB --> Front
+    Front -->|/health, /machines| Back
+    Back -->|ClusterIP| Worker
+    Worker -->|TLS PostgreSQL| RDS
+    WorkerSA -->|short-lived AWS credentials| Worker
     Worker -->|instances.json| Bucket
+    Worker -->|metadata-only notification| Topic
     Bucket -->|index.html via CD| FrontCM
-    Worker --> Topic
-    FrontCM --> Front
+    FrontCM -->|read-only mount| Front
     RuntimeCM --> Worker
-    DbSecret --> Worker
-    FrontSA --> Front
-    BackSA --> Back
-    WorkerSA --> Worker
-    Agents -->|CI: build/push| Registry[(Public Docker Hub repositories)]
-    Agents -->|optional CD only| AppNS
+    Secrets -->|Ansible no_log synchronization| DbSecret
+    DbSecret -->|secretKeyRef| Worker
+    NAT --> Registry
+    Agents -->|CI build/push| Registry
+    Agents -->|standalone CD, namespace-scoped RBAC| AppNS
     AdminSecret -->|secretKeyRef| Seeder
     Seeder -->|private HTTP API| Jenkins
+    State -. Terraform backend .-> VPC
 ```
 
 Target Kubernetes invariants include two replicas per service, readiness/liveness
@@ -104,7 +110,7 @@ trust boundary.
 | `terraform/` | Main AWS stack; partial S3 backend configuration |
 | `terraform/state-bootstrap/` | Separate retained Terraform-state bucket root |
 | `setup.sh` | One-time pinned local tool and private-input setup |
-| `Ansible-modules-01/playbooks/create.yml` | Professor-facing complete create lifecycle |
+| `Ansible-modules-01/playbooks/create.yml` | Complete guarded create lifecycle |
 | `Ansible-modules-01/playbooks/site.yml` | Composable internal lifecycle orchestrator |
 | `Ansible-modules-01/playbooks/destroy.yml` | Separate guarded destroy entry point |
 | `Jenkins/Jenkinsfile.eks` | Mandatory EKS-native CI pipeline |
@@ -118,11 +124,10 @@ runtime source is the Terraform-owned, versioned S3 object `index.html`.
 
 ## Jenkins model
 
-The CI pipeline is mandatory. It performs checkout, Python compilation/testing,
+The CI pipeline performs checkout, Python compilation/testing,
 Dockerfile checks, Helm lint/render checks, image builds with Kaniko, and pushes
-frontend/backend/worker images under one immutable tag. Trivy scanning is a
-selected bonus and remains optional while inherited-vulnerability policy is
-finalized.
+frontend/backend/worker images under one immutable tag. Trivy scanning remains
+optional while an inherited-vulnerability policy is finalized.
 
 Successful CI does **not** require automatic deployment. CD is controlled by
 `DEPLOY_TO_EKS` and a separate job. This preserves the security boundary that only
@@ -180,20 +185,83 @@ credentials. Credentials are needed only to publish replacement images.
 
 ## Setup, create, and destroy
 
-The supported lifecycle uses project-local pinned tools. From the repository root:
+### Workstation bootstrap
+
+The setup host must be Linux x86_64. On Ubuntu or Debian, install the host
+prerequisites with:
 
 ```bash
-./setup.sh
-source .venv/bin/activate
-cd Ansible-modules-01
-ansible-playbook -i localhost, --connection=local playbooks/create.yml
+sudo apt-get update
+sudo apt-get install -y \
+  bash ca-certificates curl git openssl python3 python3-venv \
+  tar unzip coreutils gawk grep
 ```
 
-`setup.sh` installs pinned Python/controller dependencies, Terraform, kubectl,
-Helm, and Ansible collections under the repository. It then creates or retains an
-ignored mode-`0600` `.vault-password` and prompts for the local environment
-values stored as individually Ansible-Vault-encrypted entries in the ignored
-mode-`0600` `vault/local-environment.yml`.
+Clone the repository and select the project branch:
+
+```bash
+git clone --branch aws3-containerized --single-branch \
+  https://github.com/ZeR0W1/DevOpsProject1.git
+cd DevOpsProject1
+```
+
+The host needs network access to AWS and public package/container registries.
+Docker Hub credentials are optional; they are needed only for
+`BUILD_AND_DEPLOY`.
+
+### Project tools and AWS authentication
+
+The supported lifecycle installs its remaining tools locally. Run setup from the
+repository root:
+
+```bash
+bash setup.sh
+source .venv/bin/activate
+```
+
+`setup.sh` installs pinned Python/controller dependencies, AWS CLI, Terraform,
+kubectl, Helm, and Ansible collections under the repository. It then creates or
+retains an ignored mode-`0600` `.vault-password` and prompts for the local
+environment values stored as individually Ansible-Vault-encrypted entries in the
+ignored mode-`0600` `vault/local-environment.yml`.
+
+Configure the AWS credential chain after activating `.venv`. Prefer temporary
+credentials from AWS IAM Identity Center or an assumed role. For a named SSO
+profile:
+
+```bash
+aws configure sso --profile devops-project
+aws sso login --profile devops-project
+export AWS_PROFILE=devops-project
+```
+
+If the environment provides access keys instead, configure a dedicated profile
+interactively; never put keys in the repository:
+
+```bash
+aws configure --profile devops-project
+export AWS_PROFILE=devops-project
+```
+
+Verify the selected identity before any infrastructure command:
+
+```bash
+aws sts get-caller-identity
+aws configure get region
+```
+
+The bootstrap identity must be able to create, inspect, update, and delete this
+project's EC2/VPC, EKS, IAM, RDS, S3, SNS, Secrets Manager, and CloudWatch
+resources. This includes `iam:PassRole`, required service-linked roles, EKS access
+entries, EKS Pod Identity associations, and S3 backend access.
+
+Run Ansible from its authoritative root:
+
+```bash
+cd Ansible-modules-01
+export ANSIBLE_CONFIG="$PWD/ansible.cfg"
+ansible-playbook playbooks/create.yml
+```
 
 `create.yml` prompts for `DEPLOY_DEFAULT` or `BUILD_AND_DEPLOY`, derives the AWS
 account/region resource scope, rejects an unowned remote-state bucket collision,
@@ -203,10 +271,16 @@ Build delivery prompts for a Docker Hub owner/token only when they are absent,
 verifies them, and adds an idempotent encrypted block to the same local environment
 file. The token is never committed or printed.
 
+The reviewed scope includes the AWS account and region, retained state-backend
+decision, VPC/NAT, private EKS nodes, private RDS, application S3/SNS/IAM,
+private Jenkins, and application workloads. Type `CREATE` only when that displayed
+scope is correct. A retained bootstrap state causes the state bucket to be reused
+and the ignored mode-`0600` `terraform/remote-state.hcl` to be regenerated.
+
 The destroy lifecycle remains default-off. A harmless inspection run is:
 
 ```bash
-ansible-playbook -i localhost, --connection=local playbooks/destroy.yml
+ansible-playbook playbooks/destroy.yml
 ```
 
 To deliberately enable teardown, set `DESTROY_EXECUTE=true`; optionally set
@@ -215,6 +289,74 @@ ignored private recovery directory first. The enabled path verifies Terraform
 ownership and the explicit project kubeconfig, displays the exact scope, and asks
 for the cluster/bucket confirmation before removing Kubernetes/Jenkins state and
 running one Terraform destroy. The separate remote-state bucket is retained.
+
+## Operational verification
+
+Use the ignored target kubeconfig generated by the lifecycle. If it is not already
+exported in the current shell:
+
+```bash
+export KUBECONFIG="$PWD/recovery/target-kubeconfig"
+```
+
+After CI and standalone FULL CD succeed, verify that nodes are healthy, all
+application replicas are Ready, and only the intended frontend is public:
+
+```bash
+kubectl get nodes -o wide
+kubectl get namespaces
+kubectl get pods -n devops-app -o wide
+kubectl get deployments -n devops-app -o wide
+kubectl get services -n devops-app -o wide
+kubectl get ingress -n devops-app
+kubectl describe pod <worker-pod> -n devops-app
+kubectl logs <worker-pod> -n devops-app --tail=20
+```
+
+`kubectl get ingress` is expected to report no resources: the frontend Service is
+the only public `LoadBalancer`; backend, worker, and Jenkins are ClusterIP-only.
+Operational output must never expose Secret values, tokens, Terraform state, or
+private input files.
+
+For functional verification, derive the current frontend hostname rather than
+storing an ephemeral URL in documentation:
+
+```bash
+FRONTEND_HOST=$(kubectl get service frontend -n devops-app \
+  -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+curl -fsS "http://${FRONTEND_HOST}/health"
+curl -fsS "http://${FRONTEND_HOST}/machines"
+```
+
+The `/health` response identifies `backend-api`, proving frontend nginx proxying to
+the internal backend. A machine created once through the browser form traverses
+frontend -> backend -> worker, is read back from PostgreSQL, is synchronized to
+fixed versioned S3 object `instances.json`, and emits an SNS message containing
+only `event`, `machine_count`, and `object_key` metadata.
+
+For a deliberate self-healing test, first preserve the original pod listing and
+obtain explicit approval. Delete exactly one worker pod, confirm that its
+Deployment creates a replacement with a different name and restores both replicas
+to Ready, then re-read the same machine through `/machines` to verify continued
+operation and PostgreSQL persistence.
+
+### Captured verification evidence
+
+The `p3_evidence/` directory contains non-secret screenshots from a complete
+deployment and recovery test:
+
+| Verification | Evidence |
+| --- | --- |
+| EKS nodes and namespaces | [`nodes.png`](p3_evidence/nodes.png), [`namespaces.png`](p3_evidence/namespaces.png) |
+| Pods, Deployments, and Services | [`pods.png`](p3_evidence/pods.png), [`deployments.png`](p3_evidence/deployments.png), [`services.png`](p3_evidence/services.png) |
+| LoadBalancer design with no Ingress | [`ingress.png`](p3_evidence/ingress.png) |
+| Pod configuration and status | [`describe1.png`](p3_evidence/describe1.png), [`describe2.png`](p3_evidence/describe2.png) |
+| Application logs | [`logs.png`](p3_evidence/logs.png) |
+| Public HTTP and frontend-to-backend health | [`HTTP.png`](p3_evidence/HTTP.png), [`health.png`](p3_evidence/health.png) |
+| Application and PostgreSQL data path | [`demo1.png`](p3_evidence/demo1.png), [`demo2.png`](p3_evidence/demo2.png) |
+| S3 catalog synchronization | [`s3.png`](p3_evidence/s3.png), [`s3B.png`](p3_evidence/s3B.png) |
+| SNS notification | [`SNS.png`](p3_evidence/SNS.png) |
+| Pod replacement and continued operation | [`podrs.png`](p3_evidence/podrs.png) |
 
 ## Safe local validation
 
@@ -228,12 +370,10 @@ terraform -chdir=terraform validate
 terraform -chdir=terraform/state-bootstrap fmt -check
 terraform -chdir=terraform/state-bootstrap validate
 
-ANSIBLE_CONFIG=Ansible-modules-01/ansible.cfg \
-  .venv/bin/ansible-playbook -i localhost, --connection=local \
-  --syntax-check Ansible-modules-01/playbooks/create.yml
-ANSIBLE_CONFIG=Ansible-modules-01/ansible.cfg \
-  .venv/bin/ansible-playbook -i localhost, --connection=local \
-  --syntax-check Ansible-modules-01/playbooks/destroy.yml
+cd Ansible-modules-01
+ANSIBLE_CONFIG="$PWD/ansible.cfg" ansible-playbook --syntax-check playbooks/create.yml
+ANSIBLE_CONFIG="$PWD/ansible.cfg" ansible-playbook --syntax-check playbooks/destroy.yml
+cd ..
 
 helm lint helm/frontend
 helm lint helm/backend
@@ -247,49 +387,37 @@ See [`terraform/README.md`](terraform/README.md) and
 [`Ansible-modules-01/README.md`](Ansible-modules-01/README.md) before running any
 lifecycle stage.
 
-## Create and destroy status
+## Security and trade-offs
 
-`Ansible-modules-01/playbooks/create.yml` is the supported complete entry point;
-`site.yml` remains its composable internal orchestrator for local input
-preparation, Terraform lifecycle, EKS/Jenkins platform preparation,
-non-secret runtime preparation, in-cluster Jenkins job seeding, database Secret
-synchronization, and an in-cluster CI queue handoff. CI then owns immutable image
-publication and seed-if-missing `index.html`; delivery hands off to the separate
-FULL CD job. Manual invocation plus its typed scope prompt authorize that
-documented lifecycle; automation agents still require explicit user approval
-before invoking it.
-
-`Ansible-modules-01/playbooks/destroy.yml` is a separate dependency-ordered
-workflow. Its default invocation performs only local assertions/debug. The enabled
-path requires `DESTROY_EXECUTE=true`, project-local tools/kubeconfig, Terraform
-ownership checks, exact cluster/bucket confirmation, and a reviewed state boundary
-before it can remove application
-releases, Jenkins data, the application bucket contents, or the main stack. The
-Terraform state bucket remains retained by default.
-
-## Protected external resources
-
-- Preserve legacy bucket `quick-demo-058264247987-us-east-1-an`. It is not part of
-  the new Terraform state and must not be altered or silently adopted.
-- Preserve termination-protected stack `eksctl-learn-eks-cluster` during the
-  current phase.
-- The transitional live `devops-app-eks` cluster was created through
-  eksctl/CloudFormation and is not owned by the empty Terraform state. The future
-  Terraform cluster must use a distinct name.
-
-## Current limitations
-
-- The setup/create/destroy wrappers are locally validated but have not been used
-  for a full fresh-account create or an enabled teardown.
-- PostgreSQL currently uses TLS `require`; packaging the AWS RDS CA bundle for
-  `verify-full` remains future hardening.
-- The promoted Jenkins fallback should be reseeded before a later delivery run.
-- Assignment-complete evidence and the final architecture/security narrative are
-  still pending.
+- Each application Deployment uses its own ServiceAccount. Only the worker has an
+  AWS workload role, provided through EKS Pod Identity and limited to the required
+  application S3 object and SNS topic. Jenkins CI and CD use separate Pod Identity
+  roles.
+- Jenkins deployment access is namespace-scoped through an EKS access entry,
+  Kubernetes Role, and RoleBinding. Application workloads never receive
+  `cluster-admin`.
+- Terraform generates the database password in Secrets Manager. Ansible copies it
+  into `worker-db-secret` with suppressed output; Pods consume it through
+  `secretKeyRef`. Real credentials, state, plans, kubeconfig, and local vault files
+  are ignored by Git.
+- Only the frontend `LoadBalancer` is public. Backend, worker, and Jenkins are
+  ClusterIP-only. RDS is private and accepts PostgreSQL traffic only from the EKS
+  node security group and the explicitly configured administrator CIDR.
+- Application containers run as non-root, disallow privilege escalation, drop
+  Linux capabilities, use seccomp, and use read-only root filesystems where the
+  runtime permits. Images use immutable tags rather than `latest`.
+- Public application traffic is HTTP in this implementation. Production hardening
+  would add TLS through ACM or cert-manager and, where needed, WAF controls.
+- PostgreSQL uses encrypted transport with `sslmode=require`. Packaging or mounting
+  the AWS RDS CA bundle would allow `verify-full` hostname and CA verification.
+- The project uses a Service of type `LoadBalancer` instead of an Ingress
+  controller, reducing platform components at the cost of fewer L7 routing and TLS
+  features.
+- Trivy scanning is optional until a policy distinguishes actionable project
+  findings from inherited base-image findings.
 
 ## Detailed documentation
 
-- [Hand-in readiness checklist](HANDIN_READINESS_CHECKLIST.md)
 - [Terraform guide](terraform/README.md)
 - [Ansible guide](Ansible-modules-01/README.md)
 - [Frontend service](app/src/frontend/README.md)

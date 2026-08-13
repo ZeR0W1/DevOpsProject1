@@ -1,6 +1,9 @@
 # Backend service
 
-### Functional intent
+Project overview: [../../../README.md](../../../README.md) · Helm chart:
+[../../../helm/backend](../../../helm/backend)
+
+## Functional intent
 
 The backend is the validation and orchestration layer.
 
@@ -10,7 +13,7 @@ The backend is the validation and orchestration layer.
 - forwards verified machines to the worker
 - exposes read and health endpoints
 
-### Structure
+## Structure
 
 ```text
 src/backend/
@@ -21,15 +24,17 @@ src/backend/
   README.md
 ```
 
-### Local setup
+## Local run
 
-Install dependencies:
+From `app/src/backend`, create an isolated environment and install dependencies:
 
 ```bash
-pip install -r ./requirements.txt
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
 ```
 
-Set the worker endpoint and run from the `src/backend/` directory:
+The backend requires a reachable worker endpoint:
 
 ```bash
 export WORKER_HOST=localhost
@@ -37,7 +42,7 @@ export WORKER_PORT=8000
 python ./api.py
 ```
 
-### Container and EKS deployment
+## Container and EKS deployment
 
 `Dockerfile.backend` runs Uvicorn on immutable container endpoint
 `0.0.0.0:8000`. The `helm/backend` Service is internal `ClusterIP` port `8000`
@@ -55,7 +60,7 @@ command owns the fixed container bind contract, and the Service and probes remai
 aligned to port `8000`. The backend has no AWS credentials and no direct RDS, S3,
 or SNS access; those integrations belong to the internal worker.
 
-### Maintenance endpoint
+## Maintenance endpoint
 
 - `POST /machines/recatalogue` is exposed through the backend and forwarded to the worker
 - use it when you need to renumber the existing machine catalog so IDs start from `1`

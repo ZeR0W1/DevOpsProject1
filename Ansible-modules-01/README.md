@@ -5,13 +5,22 @@ Terraform lifecycle stages and prepares EKS application configuration.
 
 Main project documentation: [../README.md](../README.md)
 
-## Assumptions
+## Runtime convention
 
-- control node is Linux-based (commands/examples are Linux-first)
-- `ansible` is installed locally and `ANSIBLE_CONFIG=ansible.cfg` is used when running playbooks
-- AWS credentials for Terraform/Ansible orchestration are already configured on the control node
-- `terraform`, AWS CLI, and `kubectl` are available for the stages that use them
-- AWS and Kubernetes mutations are enabled only through the documented opt-in flags
+Run [`../setup.sh`](../setup.sh) first, then invoke every playbook from this
+directory with the project-local environment and the single authoritative config:
+
+```bash
+source ../.venv/bin/activate
+export ANSIBLE_CONFIG="$PWD/ansible.cfg"
+```
+
+The root [README](../README.md) documents workstation and AWS prerequisites.
+
+The root `.venv` is only for lifecycle-controller tools. Install application
+runtime and test dependencies in service-local virtual environments, such as
+`app/src/worker/.venv`, or in CI. The controller and worker intentionally use
+independently pinned AWS SDK versions and must not share one Python environment.
 
 ## What this Ansible layer does
 
@@ -28,7 +37,8 @@ Main project documentation: [../README.md](../README.md)
 
 ## Main playbooks
 
-- `playbooks/site.yml` — authoritative guarded lifecycle entry point
+- `playbooks/create.yml` — supported interactive complete create lifecycle
+- `playbooks/site.yml` — composable internal lifecycle orchestrator used by create
 - `playbooks/setup_local_environment.yml` — one-time interactive email/CIDR setup,
   deterministic DB username derivation, and local Ansible Vault creation
 - `playbooks/prepare_terraform_inputs.yml` — gated `terraform.tfvars` regeneration
@@ -48,77 +58,46 @@ Main project documentation: [../README.md](../README.md)
 - `playbooks/destroy.yml` — separate dependency-ordered full-stack teardown; it is
   intentionally not imported by `site.yml`
 
-## Useful run commands
+## Create lifecycle
 
 ```bash
-cd Ansible-modules-01
-
-# One-time local setup: prompts for email, detects and confirms/overrides the
-# administrator IPv4 /32, and writes only ignored mode-0600 encrypted files.
-ANSIBLE_CONFIG=ansible.cfg ansible-playbook playbooks/setup_local_environment.yml
-
-# Regenerate ignored terraform.tfvars from the committed example and inject only
-# the encrypted local values. This also performs a read-only AWS STS preflight.
-PREPARE_TERRAFORM_INPUTS=true \
-  ANSIBLE_VAULT_PASSWORD_FILE=.vault-password \
-  ANSIBLE_CONFIG=ansible.cfg \
-  ansible-playbook playbooks/prepare_terraform_inputs.yml
-
-# Safe local validation; all mutation stages default off
-ANSIBLE_CONFIG=ansible.cfg ansible-playbook playbooks/site.yml
-
-# After reviewing Terraform state/outputs and the target AWS identity, prepare an
-# isolated mode-0600 kubeconfig. Jenkins Helm/RBAC mutations require the two
-# additional flags and the exact confirmation shown below.
-PREPARE_EKS_PREREQUISITES=true \
-  DEPLOY_JENKINS_PLATFORM=true \
-  APPLY_JENKINS_RBAC=true \
-  EKS_PLATFORM_MUTATION_CONFIRMATION=EKS_PLATFORM_MUTATION_APPROVED \
-  ANSIBLE_CONFIG=ansible.cfg \
-  ansible-playbook playbooks/configure_eks_platform.yml
-
-# Launch a short-lived hardened Kubernetes Job that reads the official chart's
-# admin Secret inside the jenkins namespace and seeds CD first, then CI, through
-# the private ClusterIP Service. No credential is passed from the control node.
-SEED_JENKINS_JOBS=true \
-  JENKINS_JOB_MUTATION_CONFIRMATION=JENKINS_JOB_MUTATION_APPROVED \
-  ANSIBLE_CONFIG=ansible.cfg \
-  ansible-playbook playbooks/seed_jenkins_jobs.yml
-
-# Optional interactive UI fallback; Jenkins has no public load balancer/Ingress.
-kubectl --kubeconfig recovery/target-kubeconfig \
-  -n jenkins port-forward svc/jenkins 18080:8080
-
-# Safe destroy validation; defaults to local assertions/debug only
-ANSIBLE_CONFIG=ansible.cfg ansible-playbook playbooks/destroy.yml
-
-# After reviewing Terraform outputs, write the ignored non-password handoff.
-PREPARE_APPLICATION_RUNTIME=true \
-  ANSIBLE_CONFIG=ansible.cfg \
-  ansible-playbook playbooks/prepare_application_runtime.yml
-
-# After the namespace exists, synchronize the database Secret from the prepared
-# handoff, seed Jenkins jobs, then queue CI. CI seeds missing index.html and its
-# DEPLOY_TO_EKS=true run waits for standalone FULL CD.
-SYNC_APPLICATION_SECRET=true \
-  APPLICATION_SECRET_MUTATION_CONFIRMATION=APPLICATION_SECRET_MUTATION_APPROVED \
-  ANSIBLE_CONFIG=ansible.cfg \
-  ansible-playbook playbooks/prepare_application_secret.yml
-TRIGGER_JENKINS_CI=true \
-  JENKINS_CI_TRIGGER_CONFIRMATION=JENKINS_CI_TRIGGER_APPROVED \
-  ANSIBLE_CONFIG=ansible.cfg \
-  ansible-playbook playbooks/trigger_jenkins_ci.yml
+ansible-playbook playbooks/create.yml
 ```
+
+Choose `DEPLOY_DEFAULT` to deploy the promoted public immutable images without
+registry credentials, or `BUILD_AND_DEPLOY` to validate Docker Hub credentials,
+run CI, publish all three images under one immutable tag, and hand off to standalone
+FULL CD. The playbook displays the AWS account, region, billable resources, and
+retained-state decision before requiring the exact `CREATE` confirmation.
+
+The wrapper enables lower-level stages only for the confirmed run. Invoking a
+component playbook directly leaves mutation flags disabled by default.
+
+## Generated local files
+
+- `.vault-password` and `vault/local-environment.yml` are ignored mode-`0600`
+  files created by setup. The encrypted environment file contains the administrator
+  email/CIDR and deterministic database username; build mode may add Docker Hub
+  credentials.
+- `../terraform/terraform.tfvars` is regenerated from the committed example; do
+  not edit or commit it.
+- `../terraform/remote-state.hcl` is generated from state-bootstrap outputs.
+- `recovery/target-kubeconfig` isolates all Kubernetes operations to the
+  Terraform-created cluster.
+- `recovery/application-runtime.yml` contains only non-password deployment
+  metadata. The database password is never written to it.
 
 ## Full-stack destroy
 
 `playbooks/destroy.yml` is the routine destroy interface after the Terraform-owned
 stack has been created and verified. It refuses execution unless Terraform state
 contains the expected EKS, RDS, and application S3 resources, the active Kubernetes
-context and API endpoint match Terraform outputs, and the exact confirmation is:
+context and API endpoint match Terraform outputs. It displays the Terraform-owned
+cluster, application bucket, resource count, and retained remote-state boundary,
+then requires the exact confirmation:
 
 ```text
-DESTROY <terraform-eks-cluster-name> <terraform-application-bucket-name>
+DESTROY
 ```
 
 When explicitly enabled, the playbook optionally downloads `index.html` and
@@ -130,26 +109,8 @@ separate Terraform remote-state bucket remains retained.
 ```bash
 DESTROY_EXECUTE=true \
   RETAIN_APPLICATION_DATA=true \
-  EXPECTED_KUBE_CONTEXT='<reviewed-context>' \
-  DESTROY_CONFIRMATION='DESTROY <cluster> <application-bucket>' \
-  ANSIBLE_CONFIG=ansible.cfg \
   ansible-playbook playbooks/destroy.yml
 ```
-
-Do not run the enabled path during the current empty-state Phase 1 boundary. The
-workflow has only local/static validation and has not been cloud-tested. Residual
-billable-resource inspection is a separate optional read-only operational check,
-not a step or ownership responsibility of this destroy playbook.
-
-The generated `.vault-password` and `vault/local-environment.yml` files are
-ignored and mode `0600`. Post-setup runs that decrypt the local file set
-`ANSIBLE_VAULT_PASSWORD_FILE=.vault-password`, which supports unattended Ansible
-without breaking clean-clone syntax/default validation. The encrypted file contains
-only the administrator email, administrator `/32`, and deterministic DB username.
-They must never contain AWS credentials or the generated database password.
-Manual edits to generated `terraform/terraform.tfvars` are unsupported; update
-the committed example for non-secret settings and rerun the preparation stage.
-
 
 ## Database secret responsibilities
 
@@ -165,27 +126,16 @@ the committed example for non-secret settings and rerun the preparation stage.
 - **Worker Pod Identity** remains scoped to runtime S3 and SNS responsibilities;
   the worker does not read Secrets Manager directly.
 
-AWS Secrets Manager remains the upstream source of truth, but the Kubernetes copy
-must be resynchronized and worker Pods rolled after password rotation. Restrict
-RBAC access to the Secret and use EKS encryption at rest for Kubernetes Secrets.
+AWS Secrets Manager remains the upstream source of truth. After password rotation,
+rerun the synchronization stage through the complete lifecycle and roll the worker
+Pods. Never add secret-value debug tasks or remove `no_log: true` from secret
+handling.
 
-## Notes
+## Private Jenkins access
 
-- This is a control-node workflow; do not run the lifecycle on cluster nodes.
-- `PREPARE_APPLICATION_RUNTIME=true` reads Terraform outputs and writes only the
-  ignored non-password handoff. `SYNC_APPLICATION_SECRET=true` later performs the
-  AWS secret read and Kubernetes mutation from that handoff; both default off.
-- `PREPARE_TERRAFORM_INPUTS=true` rewrites only the ignored effective tfvars and
-  performs a read-only AWS identity check; it does not apply Terraform.
-- `configure_eks_platform.yml` never creates IAM roles, EKS access entries, or Pod
-  Identity associations; those remain Terraform-owned. Its mutating scope is the
-  pinned Jenkins Helm release and reviewed Kubernetes RBAC only.
-- `seed_jenkins_jobs.yml` replaces the transitional job-creation shell workflow.
-  Its short-lived non-root Job reads the chart admin Secret through `secretKeyRef`,
-  calls only the private Jenkins Service, and never places the database password
-  in Jenkins parameters, job XML, ConfigMaps, logs, or control-node environment.
-- `trigger_jenkins_ci.yml` only queues the seeded CI job with
-  `DEPLOY_TO_EKS=true`; it does not duplicate Jenkins build, S3, Helm, or CD logic.
-  A successful trigger Job proves queue handoff, while Jenkins build results are
-  the authoritative evidence for CI and the synchronous standalone CD run.
-- Never add secret-value debug tasks or remove `no_log: true` from secret handling.
+Jenkins has no public LoadBalancer or Ingress. For temporary operator access:
+
+```bash
+kubectl --kubeconfig recovery/target-kubeconfig \
+  -n jenkins port-forward svc/jenkins 18080:8080
+```

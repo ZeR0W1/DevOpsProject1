@@ -1,6 +1,9 @@
 # Frontend service
 
-### Functional intent
+Project overview: [../../../README.md](../../../README.md) · Helm chart:
+[../../../helm/frontend](../../../helm/frontend)
+
+## Functional intent
 
 The frontend is the public browser entry point for the Kubernetes application.
 
@@ -8,7 +11,7 @@ The frontend is the public browser entry point for the Kubernetes application.
 - exposes only the frontend externally;
 - proxies API requests to the internal backend Service.
 
-### Structure
+## Structure
 
 ```text
 src/frontend/
@@ -18,7 +21,7 @@ src/frontend/
   README.md
 ```
 
-### Deployment setup
+## Container and Kubernetes deployment
 
 `Dockerfile.frontend` copies `src/frontend/index.html` into the nginx image as a
 safe image default and uses `src/frontend/nginx/default.conf.template` for runtime
@@ -33,14 +36,12 @@ frontend Deployment. A `CONTENT_ONLY` CD run changes no image or Helm release: i
 updates the ConfigMap, verifies the SHA-256, and rolls only frontend replicas.
 Backend and worker never mount this content.
 
-The reviewed `scripts/manage_frontend_content.sh` helper implements the reusable
-one-file validation/synchronization mechanics called by explicit CI/CD stages.
-Ansible remains the wider platform lifecycle orchestrator and will invoke the
-thin job-seeding mechanism after Jenkins is ready; it is intentionally not added
-to every ephemeral content-only agent.
+`scripts/manage_frontend_content.sh` implements the one-file validation and
+synchronization mechanics used by CI/CD.
 
 Because the frontend is static and nginx-based, it has no Python dependency file.
 
-The final public entry point is still being completed. It must expose only the
-frontend and keep backend, worker, RDS, S3, and SNS non-public. Do not restore the
-retired EC2/systemd deployment path or hard-code instance IP addresses.
+The `helm/frontend` `LoadBalancer` Service is the only public application entry
+point. Backend, worker, Jenkins, RDS, S3, and SNS remain non-public. Derive the
+current load-balancer hostname from Kubernetes status; do not hard-code an
+ephemeral hostname or restore the retired EC2/systemd deployment path.

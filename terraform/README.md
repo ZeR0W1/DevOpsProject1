@@ -3,8 +3,8 @@
 This directory defines the target AWS infrastructure for the EKS application.
 Ansible is the lifecycle orchestrator; Terraform configuration and state remain the
 authoritative owners of AWS resources. See [../README.md](../README.md) for the
-project overview and [../.clinerules/90-current-project-status.md](../.clinerules/90-current-project-status.md)
-for the current safety boundary.
+project overview and [../Ansible-modules-01/README.md](../Ansible-modules-01/README.md)
+for lifecycle commands.
 
 ## Main-stack scope
 
@@ -27,9 +27,6 @@ worker's synchronized `instances.json` backup. It is not the Terraform state buc
 - `modules/s3_bucket` — application content/catalog storage
 - `modules/sns_topic` — notifications
 - `modules/services` — operational monitoring
-
-The obsolete standalone-EC2 module was removed after the repository-wide
-ownership inventory confirmed that the EKS root does not compose it.
 
 ## Inputs, outputs, and secrets
 
@@ -74,23 +71,12 @@ The state bootstrap is automated through
 creation is required in the intended final workflow. The state bucket is retained
 by default, and deleting it is a separate explicit retained-data decision.
 
-## Phase 1 ownership boundary
+## Ownership boundary
 
-Phase 1 is local/static only. The current local main-stack state last listed zero
-resources. The similarly named live `devops-app-eks` environment was created by
-temporary shell/`eksctl`/CloudFormation flows and is not Terraform-owned.
-
-Do not run main-stack `apply`, `import`, backend initialization/migration, or
-destroy until the user approves a resource-by-resource import-versus-recreation
-plan and state transition. Never apply an empty state to an existing environment
-as implicit adoption.
-
-Also preserve these external resources:
-
-- legacy S3 bucket `quick-demo-058264247987-us-east-1-an`; do not use it for the
-  new application bucket or Terraform state; and
-- termination-protected CloudFormation stack `eksctl-learn-eks-cluster`; do not
-  import, update, unprotect, or delete it during Phase 1.
+The retained state-bootstrap root owns only the hardened remote-state bucket. The
+main root owns only resources listed in its remote state. Ansible invokes both
+roots in dependency order; matching names never authorize import or adoption of
+resources outside the applicable state.
 
 ## Safe local validation
 
@@ -99,8 +85,10 @@ provider initialization with backend configuration disabled, formatting checks,
 and validation:
 
 ```bash
-ANSIBLE_CONFIG=Ansible-modules-01/ansible.cfg \
-  ansible-playbook Ansible-modules-01/playbooks/configure_terraform_state.yml
+cd Ansible-modules-01
+source ../.venv/bin/activate
+export ANSIBLE_CONFIG="$PWD/ansible.cfg"
+ansible-playbook playbooks/configure_terraform_state.yml
 ```
 
 Equivalent focused checks are:
@@ -118,58 +106,34 @@ Provider download during `init -backend=false` does not configure remote state o
 create AWS resources. A plan may perform AWS reads and is not part of the routine
 local validation above.
 
-## Direct Terraform recovery runbook
+## Direct Terraform use
 
 Ansible is the normal supported create/destroy interface. Direct Terraform use is
 reserved for diagnostics and exceptional recovery; it must not become a parallel
 routine lifecycle path.
 
-### Tier 1 — local diagnostics (safe Phase 1 operations)
+- Use backend-disabled initialization plus `fmt` and `validate` for local checks.
+- Before backend recovery, confirm account, region, bucket, key, and authoritative
+  state; preserve backups before reconfiguration or migration.
+- Treat `apply`, `destroy`, `import`, state movement/removal, replacement flags,
+  migration, and force-unlock as reviewed state or infrastructure mutations.
+- Never apply empty or stale state to similarly named resources as implicit
+  adoption, edit state manually, or expose state, plans, credentials, or secrets.
+- After exceptional recovery, return to the Ansible lifecycle so ownership and
+  dependency ordering remain coherent.
 
-- Run `terraform fmt -check -recursive -diff` and `terraform validate` after
-  provider-only `init -backend=false`.
-- Inspect committed configuration and allow-listed non-secret inputs only.
-- Inspect the preserved local state file read-only when needed; never print state
-  contents or sensitive outputs.
-- Do not run `plan` merely as a syntax check: it can perform provider/AWS reads.
+## Supported lifecycle
 
-### Tier 2 — backend/state connectivity recovery (review required)
-
-- First confirm the intended AWS account/region, state bucket, state key, current
-  ownership boundary, and whether local or remote state is authoritative.
-- Preserve timestamped state backups outside Git before any backend operation.
-- Use `init -reconfigure` only for an already reviewed fresh backend connection;
-  use `init -migrate-state` only for a separately approved migration with both
-  source and destination backups.
-- If locking fails, identify the active operator/process and verify no run remains.
-  `force-unlock` is a state mutation and requires exact explicit approval; never
-  remove a lock merely because it is inconvenient.
-
-### Tier 3 — emergency resource/state mutation (explicit approval only)
-
-- `apply`, `destroy`, `import`, `state mv/rm`, replacement flags, and manual state
-  recovery are emergency-only actions requiring a reviewed resource-specific plan,
-  cost/dependency impact, rollback limitations, and exact user authorization.
-- Never apply empty/stale state to matching live resources as implicit adoption.
-  This project selected deliberate parallel recreation with a distinct Terraform
-  EKS cluster name; the current eksctl environment remains externally owned.
-- After any approved direct recovery, reconcile state/configuration and rerun the
-  authoritative Ansible workflow so subsequent lifecycle ordering remains coherent.
-- Never edit Terraform state files manually or expose state, plans, credentials,
-  database values, tokens, or other sensitive outputs in logs or documentation.
-
-## Future approved lifecycle
-
-After state ownership, migration/recreation, effective inputs, costs, and AWS reads
-are reviewed, the same Ansible playbook can explicitly gate these stages:
+After effective inputs, ownership, costs, and the displayed AWS scope are reviewed,
+`../Ansible-modules-01/playbooks/create.yml` gates these stages:
 
 1. apply the state bootstrap;
 2. generate `remote-state.hcl`;
-3. initialize a fresh main state or perform the separately approved migration;
+3. initialize or reconnect the main remote state;
 4. apply Terraform-owned AWS infrastructure; and
 5. continue the broader Ansible EKS/Jenkins/application create workflow.
 
-The Phase 1 false defaults should be revisited after migration so normal
-idempotent create stages are convenient, while one-time migration and all
-destructive actions remain explicitly confirmed. Teardown belongs in a separate,
-dependency-ordered, cost-aware workflow and retains remote state by default.
+The composable lower-level mutation flags remain false by default; `create.yml`
+enables the reviewed sequence only after an exact interactive scope confirmation.
+Teardown belongs to the separate dependency-ordered, cost-aware `destroy.yml`
+workflow and retains remote state by default.
