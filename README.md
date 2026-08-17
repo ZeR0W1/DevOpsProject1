@@ -103,6 +103,56 @@ probes, resource requests/limits, non-root least-privilege security contexts,
 separate ServiceAccounts, an internal backend and worker, and a private RDS/S3/SNS
 trust boundary.
 
+### Kubernetes application architecture
+
+This focused view shows the application resources inside `devops-app` and their
+connections to managed services outside the cluster. There is no Ingress: the
+frontend `LoadBalancer` Service is the only public application endpoint.
+
+```mermaid
+flowchart LR
+    User((Internet user))
+
+    subgraph EKS[EKS cluster]
+      subgraph AppNS[devops-app namespace]
+        FrontSvc[frontend Service<br/>LoadBalancer - public]
+        FrontDeploy[frontend Deployment] -. manages 2 replicas .-> FrontPods[frontend Pods]
+        FrontSvc --> FrontPods
+        FrontSA[frontend ServiceAccount] -. identity .-> FrontPods
+        FrontCM[frontend-runtime-content<br/>ConfigMap] -->|read-only content mount| FrontPods
+
+        FrontPods -->|/health and /machines| BackSvc[backend Service<br/>ClusterIP - internal]
+        BackDeploy[backend Deployment] -. manages 2 replicas .-> BackPods[backend Pods]
+        BackSvc --> BackPods
+        BackSA[backend ServiceAccount] -. identity .-> BackPods
+
+        BackPods -->|machine requests| WorkerSvc[worker Service<br/>ClusterIP - internal]
+        WorkerDeploy[worker Deployment] -. manages 2 replicas .-> WorkerPods[worker Pods]
+        WorkerSvc --> WorkerPods
+        WorkerSA[worker ServiceAccount<br/>EKS Pod Identity] -. identity .-> WorkerPods
+        WorkerCM[worker ConfigMap] -->|non-secret runtime configuration| WorkerPods
+        DbSecret[worker-db-secret<br/>Kubernetes Secret] -->|POSTGRES_PASSWORD<br/>secretKeyRef| WorkerPods
+      end
+    end
+
+    subgraph External[Managed AWS services outside the cluster]
+      RDS[(RDS PostgreSQL<br/>private)]
+      Bucket[(S3 application bucket<br/>private and versioned)]
+      Topic[(SNS topic)]
+    end
+
+    User -->|HTTP| FrontSvc
+    WorkerPods -->|TLS PostgreSQL| RDS
+    WorkerPods -->|PutObject instances.json| Bucket
+    WorkerPods -->|metadata-only Publish| Topic
+    Bucket -->|index.html activated by CD| FrontCM
+```
+
+All three Deployments use readiness and liveness probes, resource requests and
+limits, immutable image tags, and non-root least-privilege container security
+contexts. Only `worker-sa` receives application AWS permissions; its Pod Identity
+role is restricted to the required `instances.json` S3 object and SNS topic.
+
 ## Repository map
 
 | Path | Purpose |
