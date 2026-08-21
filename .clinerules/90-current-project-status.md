@@ -35,8 +35,10 @@ superseded evidence belong in `misc/recovery/PROJECT_HISTORY.md`.
 
 - Assignment 4 work continues on local branch `aws4-jenkins-cicd`, branched from
   Assignment 3 commit `db8f9f7`. The implementation is locally validated and is
-  recorded in one user-approved local commit; no push or cloud/GitHub mutation
-  has occurred.
+  recorded in one user-approved local commit. That checkpoint was explicitly
+  pushed as a fast-forward to default branch `main` so the scheduled GitHub CIDR
+  workflow is available; the Jenkins-watched `aws4-jenkins-cicd` branch was not
+  pushed, and no cloud mutation occurred.
 - The Assignment 4 webhook direction is a direct GitHub-to-Jenkins webhook, not
   the discarded Lambda/SQS relay. The planned controls are the current GitHub
   `hooks` CIDR allowlist, GitHub webhook HMAC validation, private Jenkins UI
@@ -67,13 +69,19 @@ superseded evidence belong in `misc/recovery/PROJECT_HISTORY.md`.
   controller's authoritative Declarative Pipeline validator.
 - End-to-end cloud acceptance remains pending by user decision and will follow
   this local checkpoint; any findings will be recorded in a separate fix commit.
+- During current acceptance work, Jenkins intentionally watches only
+  `aws4-jenkins-cicd` while `main` carries the default-branch scheduled workflow
+  without triggering project CI. After acceptance is complete, change the seeded
+  Jenkins CI/CD SCM refs and related target-branch defaults from
+  `aws4-jenkins-cicd` to `main`, then validate that intentional `main` pushes are
+  the production CI trigger.
 
 ## Immediate work queue
 
 1. Prepare and review the full create/webhook/CI/CD/verification/teardown E2E plan.
 2. Finish submission evidence guidance.
-3. Obtain separate explicit approval before any push or cloud/GitHub mutation;
-   the Terraform-owned target stack remains destroyed.
+3. After acceptance, switch the Jenkins-watched branch and related defaults to
+   `main` and validate the resulting trigger behavior.
 
 ## Exact resume point
 
