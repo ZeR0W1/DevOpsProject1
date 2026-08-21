@@ -5,5 +5,6 @@
 admin_email: "admin@example.com"
 admin_cidr: "203.0.113.10/32"
 db_username: "doa_staging_admin"
+github_api_token: "github-fine-grained-token-with-webhook-write-permission"
 dockerhub_username: "example-user"
 dockerhub_token: "replace-with-a-Docker-Hub-access-token"

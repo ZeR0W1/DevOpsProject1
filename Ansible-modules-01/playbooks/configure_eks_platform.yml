@@ -10,6 +10,7 @@
   vars:
     jenkins_values_file: "{{ project_root }}/Jenkins/values-eks.yaml"
     jenkins_rbac_file: "{{ project_root }}/Jenkins/rbac-app-deployer.yaml"
+    jenkins_webhook_service_file: "{{ project_root }}/Jenkins/webhook-service.yaml"
     jenkins_chart_ref: oci://ghcr.io/jenkinsci/helm-charts/jenkins
     jenkins_chart_version: 5.8.114
     jenkins_helm_binary: >-
@@ -155,6 +156,13 @@
         wait: true
         timeout: 15m
         atomic: true
+      when: deploy_jenkins_platform
+
+    - name: Apply the ALB-targeted Jenkins webhook NodePort Service
+      kubernetes.core.k8s:
+        state: present
+        src: "{{ jenkins_webhook_service_file }}"
+        kubeconfig: "{{ kubeconfig_file }}"
       when: deploy_jenkins_platform
 
     - name: Apply Jenkins deployer ServiceAccount and namespace RBAC

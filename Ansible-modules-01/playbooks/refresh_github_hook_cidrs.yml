@@ -1,0 +1,379 @@
+---
+- name: Refresh the Terraform-owned GitHub webhook CIDR allowlist
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars_files:
+    - ../vars/project.yml
+
+  vars:
+    refresh_plan_file: "{{ generated_output_root }}/github-hook-cidrs.tfplan"
+    refresh_plan_json_file: "{{ generated_output_root }}/github-hook-cidrs-plan.json"
+    terraform_effective_inputs: "{{ terraform_dir }}/terraform.tfvars"
+    terraform_remote_state_config: "{{ terraform_dir }}/remote-state.hcl"
+    terraform_backend_metadata: "{{ terraform_dir }}/.terraform/terraform.tfstate"
+    applied_snapshot_file: "{{ project_root }}/config/github-hooks-applied.json"
+    github_repository: ZeR0W1/DevOpsProject1
+
+  tasks:
+    - name: Require local tools and existing Terraform inputs
+      ansible.builtin.assert:
+        that:
+          - project_terraform_binary is file
+          - terraform_effective_inputs is file
+          - terraform_remote_state_config is file
+          - terraform_backend_metadata is file
+          - local_environment_file is file
+        fail_msg: >-
+          Run setup.sh and create the Terraform-owned stack before refreshing CIDRs.
+          The existing working directory must already be initialized against its S3 backend.
+
+    - name: Read Terraform-owned resources
+      ansible.builtin.command:
+        argv: ["{{ project_terraform_binary }}", "-chdir={{ terraform_dir }}", state, list]
+      register: refresh_terraform_resources
+      changed_when: false
+
+    - name: Require existing Terraform ownership of the public ALB
+      ansible.builtin.assert:
+        that:
+          - >-
+            refresh_terraform_resources.stdout_lines
+            | select('match', '^module\\.public_alb\\.')
+            | list
+            | length > 0
+        fail_msg: The current Terraform state does not own the public ALB; refusing refresh.
+
+    - name: Fetch current GitHub service metadata
+      ansible.builtin.uri:
+        url: https://api.github.com/meta
+        method: GET
+        return_content: true
+        status_code: 200
+        timeout: 15
+        headers:
+          Accept: application/vnd.github+json
+          X-GitHub-Api-Version: "2022-11-28"
+      register: refresh_github_meta
+      changed_when: false
+
+    - name: Select current GitHub hooks IPv4 CIDRs
+      ansible.builtin.set_fact:
+        refresh_github_hooks_ipv4_cidrs: >-
+          {{ refresh_github_meta.json.hooks | reject('search', ':') | list | unique | sort }}
+
+    - name: Validate current GitHub hooks IPv4 CIDRs
+      ansible.builtin.assert:
+        that:
+          - refresh_github_hooks_ipv4_cidrs | length > 0
+          - >-
+            refresh_github_hooks_ipv4_cidrs | reject(
+              'match',
+              '^(25[0-5]|2[0-4][0-9]|1?[0-9]{1,2})(\\.(25[0-5]|2[0-4][0-9]|1?[0-9]{1,2})){3}/([0-9]|[12][0-9]|3[0-2])$'
+            ) | list | length == 0
+        fail_msg: GitHub returned no valid hooks IPv4 CIDRs; refusing refresh.
+
+    - name: Read the committed applied-CIDR snapshot
+      ansible.builtin.slurp:
+        src: "{{ applied_snapshot_file }}"
+      register: refresh_applied_snapshot_content
+
+    - name: Parse the committed applied-CIDR snapshot
+      ansible.builtin.set_fact:
+        refresh_applied_snapshot: >-
+          {{ refresh_applied_snapshot_content.content | b64decode | from_json }}
+
+    - name: Validate the committed applied-CIDR snapshot
+      ansible.builtin.assert:
+        that:
+          - refresh_applied_snapshot.schema_version == 1
+          - refresh_applied_snapshot.hooks_ipv4 is sequence
+        fail_msg: The committed applied-CIDR snapshot is invalid; refusing refresh.
+
+    - name: Create private generated-output directory
+      ansible.builtin.file:
+        path: "{{ generated_output_root }}"
+        state: directory
+        mode: "0700"
+
+    - name: Create a saved targeted Terraform plan
+      ansible.builtin.command:
+        argv:
+          - "{{ project_terraform_binary }}"
+          - "-chdir={{ terraform_dir }}"
+          - plan
+          - -input=false
+          - -no-color
+          - -detailed-exitcode
+          - "-target=module.public_alb"
+          - "-var=github_hooks_ipv4_cidrs={{ refresh_github_hooks_ipv4_cidrs | to_json }}"
+          - "-out={{ refresh_plan_file }}"
+      register: refresh_plan
+      changed_when: refresh_plan.rc == 2
+      failed_when: refresh_plan.rc not in [0, 2]
+
+    - name: Export the saved Terraform plan as JSON
+      ansible.builtin.command:
+        argv:
+          - "{{ project_terraform_binary }}"
+          - "-chdir={{ terraform_dir }}"
+          - show
+          - -json
+          - "{{ refresh_plan_file }}"
+      register: refresh_plan_json
+      changed_when: false
+      no_log: true
+
+    - name: Save the private plan JSON for scoped inspection
+      ansible.builtin.copy:
+        dest: "{{ refresh_plan_json_file }}"
+        content: "{{ refresh_plan_json.stdout }}\n"
+        mode: "0600"
+      no_log: true
+
+    - name: Select planned mutations
+      ansible.builtin.command:
+        argv:
+          - jq
+          - -c
+          - >-
+            [.resource_changes[]?
+             | select(.change.actions != ["no-op"])
+             | {address: .address, actions: .change.actions}]
+          - "{{ refresh_plan_json_file }}"
+      register: refresh_planned_mutations_command
+      changed_when: false
+
+    - name: Parse planned mutations
+      ansible.builtin.set_fact:
+        refresh_planned_mutations: >-
+          {{ refresh_planned_mutations_command.stdout | from_json }}
+
+    - name: Select whether synchronization is required
+      ansible.builtin.set_fact:
+        refresh_required: >-
+          {{
+            refresh_planned_mutations | length > 0 or
+            refresh_applied_snapshot.hooks_ipv4 | unique | sort !=
+            refresh_github_hooks_ipv4_cidrs
+          }}
+
+    - name: Restrict the saved plan to webhook listener rules
+      ansible.builtin.assert:
+        that:
+          - >-
+            refresh_planned_mutations
+            | rejectattr(
+                'address',
+                'match',
+                '^module\\.public_alb\\.aws_lb_listener_rule\\.jenkins_webhook'
+              )
+            | list
+            | length == 0
+        fail_msg: >-
+          The targeted plan contains a mutation outside the Jenkins webhook listener
+          rules. Nothing was applied.
+
+    - name: Report synchronized CIDRs when Terraform has no changes
+      ansible.builtin.debug:
+        msg: >-
+          GitHub hook CIDRs already match both the Terraform-owned ALB listener
+          rules and the committed applied snapshot.
+      when: not refresh_required
+
+    - name: End the lifecycle when no synchronization is required
+      ansible.builtin.meta: end_play
+      when: not refresh_required
+
+    - name: Display the exact targeted mutation scope
+      ansible.builtin.debug:
+        msg: "{{ refresh_planned_mutations }}"
+      when: refresh_planned_mutations | length > 0
+
+    - name: Require exact refresh confirmation
+      ansible.builtin.pause:
+        prompt: >-
+          Type REFRESH to apply only the displayed webhook listener-rule changes,
+          or CANCEL to stop
+      register: refresh_confirmation
+      until: refresh_confirmation.user_input | trim | upper in ['REFRESH', 'CANCEL']
+      retries: 5
+      delay: 0
+
+    - name: Validate exact refresh confirmation
+      ansible.builtin.assert:
+        that:
+          - refresh_confirmation.user_input | trim | upper == 'REFRESH'
+        fail_msg: CIDR refresh cancelled; nothing was applied.
+
+    - name: Apply the exact reviewed CIDR refresh plan
+      ansible.builtin.command:
+        argv:
+          - "{{ project_terraform_binary }}"
+          - "-chdir={{ terraform_dir }}"
+          - apply
+          - -input=false
+          - -no-color
+          - -auto-approve
+          - "{{ refresh_plan_file }}"
+      when: refresh_planned_mutations | length > 0
+
+    - name: Synchronize effective Terraform CIDR inputs after successful apply
+      ansible.builtin.lineinfile:
+        path: "{{ terraform_effective_inputs }}"
+        regexp: ^github_hooks_ipv4_cidrs\s*=
+        line: >-
+          github_hooks_ipv4_cidrs = {{ refresh_github_hooks_ipv4_cidrs | to_json }}
+      no_log: true
+
+    - name: Synchronize the committed applied-CIDR snapshot
+      ansible.builtin.copy:
+        dest: "{{ applied_snapshot_file }}"
+        mode: "0644"
+        content: >-
+          {{
+            {
+              'schema_version': 1,
+              'hooks_ipv4': refresh_github_hooks_ipv4_cidrs
+            } | to_nice_json
+          }}
+
+    - name: Load encrypted GitHub lifecycle credential
+      ansible.builtin.include_vars:
+        file: "{{ local_environment_file }}"
+      no_log: true
+
+    - name: Read the Terraform-output project webhook URL
+      ansible.builtin.command:
+        argv:
+          - "{{ project_terraform_binary }}"
+          - "-chdir={{ terraform_dir }}"
+          - output
+          - -raw
+          - jenkins_webhook_url
+      register: refresh_webhook_url
+      changed_when: false
+      no_log: true
+
+    - name: Read current GitHub repository webhooks
+      ansible.builtin.uri:
+        url: "https://api.github.com/repos/{{ github_repository }}/hooks"
+        method: GET
+        return_content: true
+        status_code: 200
+        headers:
+          Accept: application/vnd.github+json
+          Authorization: "Bearer {{ github_api_token }}"
+          X-GitHub-Api-Version: "2022-11-28"
+      register: refresh_repository_webhooks
+      changed_when: false
+      no_log: true
+
+    - name: Select the exact project webhook
+      ansible.builtin.set_fact:
+        refresh_project_webhooks: >-
+          {{
+            refresh_repository_webhooks.json
+            | selectattr('config.url', 'equalto', refresh_webhook_url.stdout | trim)
+            | list
+          }}
+      no_log: true
+
+    - name: Require one exact project webhook
+      ansible.builtin.assert:
+        that:
+          - refresh_project_webhooks | length == 1
+        fail_msg: Expected exactly one GitHub webhook matching the Terraform output.
+      no_log: true
+
+    - name: Read recent project webhook deliveries
+      ansible.builtin.uri:
+        url: >-
+          https://api.github.com/repos/{{ github_repository }}/hooks/{{
+            refresh_project_webhooks[0].id
+          }}/deliveries?per_page=100
+        method: GET
+        return_content: true
+        status_code: 200
+        headers:
+          Accept: application/vnd.github+json
+          Authorization: "Bearer {{ github_api_token }}"
+          X-GitHub-Api-Version: "2022-11-28"
+      register: refresh_webhook_deliveries
+      changed_when: false
+      no_log: true
+
+    - name: Select the latest failed push delivery
+      ansible.builtin.set_fact:
+        refresh_failed_push_deliveries: >-
+          {{
+            refresh_webhook_deliveries.json
+            | selectattr('event', 'equalto', 'push')
+            | rejectattr('status_code', 'equalto', 200)
+            | list
+          }}
+      no_log: true
+
+    - name: Read failed push delivery payloads
+      ansible.builtin.uri:
+        url: >-
+          https://api.github.com/repos/{{ github_repository }}/hooks/{{
+            refresh_project_webhooks[0].id
+          }}/deliveries/{{ item.id }}
+        method: GET
+        return_content: true
+        status_code: 200
+        headers:
+          Accept: application/vnd.github+json
+          Authorization: "Bearer {{ github_api_token }}"
+          X-GitHub-Api-Version: "2022-11-28"
+      loop: "{{ refresh_failed_push_deliveries }}"
+      loop_control:
+        label: failed-push-delivery
+      register: refresh_failed_push_delivery_details
+      changed_when: false
+      no_log: true
+
+    - name: Select the latest failed target-branch push delivery
+      ansible.builtin.set_fact:
+        refresh_latest_failed_push: >-
+          {{
+            refresh_failed_push_delivery_details.results | default([])
+            | selectattr('json.request.payload.ref', 'defined')
+            | selectattr(
+                'json.request.payload.ref',
+                'equalto',
+                'refs/heads/aws4-jenkins-cicd'
+              )
+            | map(attribute='json')
+            | sort(attribute='delivered_at', reverse=true)
+            | list
+            | first
+            | default({})
+          }}
+      no_log: true
+
+    - name: Redeliver only the latest failed push after successful refresh
+      ansible.builtin.uri:
+        url: >-
+          https://api.github.com/repos/{{ github_repository }}/hooks/{{
+            refresh_project_webhooks[0].id
+          }}/deliveries/{{ refresh_latest_failed_push.id }}/attempts
+        method: POST
+        status_code: 202
+        headers:
+          Accept: application/vnd.github+json
+          Authorization: "Bearer {{ github_api_token }}"
+          X-GitHub-Api-Version: "2022-11-28"
+      no_log: true
+      when: refresh_latest_failed_push.id is defined
+
+    - name: Report completed refresh without sensitive values
+      ansible.builtin.debug:
+        msg: >-
+          GitHub hook CIDRs are synchronized. {{
+            'The latest failed push was redelivered to Jenkins.'
+            if refresh_latest_failed_push.id is defined
+            else 'No failed push delivery required redelivery.'
+          }} CD remains manual.

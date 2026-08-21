@@ -1,0 +1,318 @@
+---
+- name: Prepare guarded public TLS and GitHub network inputs
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars_files:
+    - ../vars/project.yml
+
+  vars:
+    prepare_public_tls: >-
+      {{ lookup('ansible.builtin.env', 'PREPARE_PUBLIC_TLS')
+         | default('false', true)
+         | bool }}
+    public_tls_mode: >-
+      {{ lookup('ansible.builtin.env', 'PUBLIC_TLS_MODE')
+         | default('self_signed', true) }}
+    public_hostname: >-
+      {{ lookup('ansible.builtin.env', 'PUBLIC_HOSTNAME')
+         | default('', true) }}
+    public_route53_zone_id: >-
+      {{ lookup('ansible.builtin.env', 'PUBLIC_ROUTE53_ZONE_ID')
+         | default('', true) }}
+    public_tls_mutation_confirmation: >-
+      {{ lookup('ansible.builtin.env', 'PUBLIC_TLS_MUTATION_CONFIRMATION')
+         | default('', true) }}
+    terraform_effective_inputs: "{{ terraform_dir }}/terraform.tfvars"
+    terraform_input_example: "{{ terraform_dir }}/terraform.tfvars.example"
+    self_signed_private_key_file: "{{ public_tls_artifact_dir }}/private.key"
+    self_signed_certificate_file: "{{ public_tls_artifact_dir }}/certificate.pem"
+
+  tasks:
+    - name: Validate public TLS lifecycle inputs
+      ansible.builtin.assert:
+        that:
+          - public_tls_mode in ['route53', 'self_signed']
+          - terraform_effective_inputs is file
+          - >-
+            public_tls_mode == 'self_signed' or
+            public_hostname | trim | length > 0
+          - >-
+            public_tls_mode == 'self_signed' or
+            public_route53_zone_id | trim | length > 0
+          - >-
+            public_tls_mode == 'route53' or
+            public_tls_mutation_confirmation == 'PUBLIC_TLS_MUTATION_APPROVED'
+        fail_msg: >-
+          Public TLS preparation requires generated Terraform inputs and a valid
+          mode. Route 53 mode requires hostname/zone inputs; self-signed ACM import
+          requires PUBLIC_TLS_MUTATION_CONFIRMATION=PUBLIC_TLS_MUTATION_APPROVED.
+      when: prepare_public_tls | bool
+
+    - name: Read the selected Terraform AWS region
+      ansible.builtin.set_fact:
+        public_tls_aws_region: >-
+          {{
+            (lookup('ansible.builtin.file', terraform_input_example)
+             | regex_search('(?m)^aws_region\\s*=\\s*"([a-z0-9-]+)"', '\\1')
+             | first)
+          }}
+      when: prepare_public_tls | bool
+
+    - name: Fetch current GitHub service metadata
+      ansible.builtin.uri:
+        url: https://api.github.com/meta
+        method: GET
+        return_content: true
+        status_code: 200
+        timeout: 15
+        headers:
+          Accept: application/vnd.github+json
+          X-GitHub-Api-Version: "2022-11-28"
+      register: github_meta
+      changed_when: false
+      when: prepare_public_tls | bool
+
+    - name: Select current GitHub hooks IPv4 CIDRs
+      ansible.builtin.set_fact:
+        github_hooks_ipv4_cidrs: >-
+          {{ github_meta.json.hooks | reject('search', ':') | list | unique | sort }}
+      when: prepare_public_tls | bool
+
+    - name: Validate refreshed GitHub hooks IPv4 CIDRs
+      ansible.builtin.assert:
+        that:
+          - github_hooks_ipv4_cidrs | length > 0
+          - >-
+            github_hooks_ipv4_cidrs | reject(
+              'match',
+              '^(25[0-5]|2[0-4][0-9]|1?[0-9]{1,2})(\\.(25[0-5]|2[0-4][0-9]|1?[0-9]{1,2})){3}/([0-9]|[12][0-9]|3[0-2])$'
+            ) | list | length == 0
+        fail_msg: GitHub returned no usable hooks IPv4 CIDRs; refusing stale input.
+      when: prepare_public_tls | bool
+
+    - name: Read selected Route 53 hosted zone
+      ansible.builtin.command:
+        argv:
+          - aws
+          - route53
+          - get-hosted-zone
+          - --id
+          - "{{ public_route53_zone_id | trim }}"
+          - --output
+          - json
+      register: selected_hosted_zone
+      changed_when: false
+      no_log: true
+      when:
+        - prepare_public_tls | bool
+        - public_tls_mode == 'route53'
+
+    - name: Validate selected public hosted-zone boundary
+      ansible.builtin.assert:
+        that:
+          - not (selected_hosted_zone.stdout | from_json).HostedZone.Config.PrivateZone
+          - >-
+            (public_hostname | trim | lower | trim('.') ==
+             (selected_hosted_zone.stdout | from_json).HostedZone.Name | lower | trim('.')) or
+            (public_hostname | trim | lower | trim('.')).endswith(
+              '.' ~ ((selected_hosted_zone.stdout | from_json).HostedZone.Name | lower | trim('.'))
+            )
+        fail_msg: >-
+          The selected Route 53 zone must be public and authoritative for the
+          requested hostname.
+      no_log: true
+      when:
+        - prepare_public_tls | bool
+        - public_tls_mode == 'route53'
+
+    - name: Check for a recorded Ansible-owned self-signed certificate ARN
+      ansible.builtin.stat:
+        path: "{{ public_tls_certificate_arn_file }}"
+      register: recorded_certificate_arn
+      when:
+        - prepare_public_tls | bool
+        - public_tls_mode == 'self_signed'
+
+    - name: Read the recorded self-signed certificate ARN
+      ansible.builtin.slurp:
+        src: "{{ public_tls_certificate_arn_file }}"
+      register: recorded_certificate_arn_content
+      no_log: true
+      when:
+        - prepare_public_tls | bool
+        - public_tls_mode == 'self_signed'
+        - recorded_certificate_arn.stat.exists
+
+    - name: Check whether the recorded self-signed certificate still exists
+      ansible.builtin.command:
+        argv:
+          - aws
+          - acm
+          - describe-certificate
+          - --certificate-arn
+          - "{{ recorded_certificate_arn_content.content | b64decode | trim }}"
+          - --region
+          - "{{ public_tls_aws_region }}"
+          - --output
+          - json
+      register: recorded_certificate_check
+      changed_when: false
+      failed_when: false
+      no_log: true
+      when:
+        - prepare_public_tls | bool
+        - public_tls_mode == 'self_signed'
+        - recorded_certificate_arn.stat.exists
+
+    - name: Select whether a new self-signed certificate import is required
+      ansible.builtin.set_fact:
+        import_self_signed_certificate: >-
+          {{
+            not recorded_certificate_arn.stat.exists or
+            recorded_certificate_check.rc | default(1) != 0
+          }}
+      when:
+        - prepare_public_tls | bool
+        - public_tls_mode == 'self_signed'
+
+    - name: Create private local certificate-artifact directory
+      ansible.builtin.file:
+        path: "{{ public_tls_artifact_dir }}"
+        state: directory
+        mode: "0700"
+      when:
+        - prepare_public_tls | bool
+        - public_tls_mode == 'self_signed'
+        - import_self_signed_certificate
+
+    - name: Generate the domainless lab self-signed certificate
+      ansible.builtin.command:
+        argv:
+          - openssl
+          - req
+          - -x509
+          - -newkey
+          - rsa:2048
+          - -sha256
+          - -nodes
+          - -days
+          - "30"
+          - -subj
+          - /CN=devops-project1.invalid
+          - -keyout
+          - "{{ self_signed_private_key_file }}"
+          - -out
+          - "{{ self_signed_certificate_file }}"
+      changed_when: true
+      no_log: true
+      when:
+        - prepare_public_tls | bool
+        - public_tls_mode == 'self_signed'
+        - import_self_signed_certificate
+
+    - name: Restrict generated self-signed private key permissions
+      ansible.builtin.file:
+        path: "{{ self_signed_private_key_file }}"
+        mode: "0600"
+      no_log: true
+      when:
+        - prepare_public_tls | bool
+        - public_tls_mode == 'self_signed'
+        - import_self_signed_certificate
+
+    - name: Import the Ansible-owned self-signed certificate into ACM
+      ansible.builtin.command:
+        argv:
+          - aws
+          - acm
+          - import-certificate
+          - --certificate
+          - "fileb://{{ self_signed_certificate_file }}"
+          - --private-key
+          - "fileb://{{ self_signed_private_key_file }}"
+          - --region
+          - "{{ public_tls_aws_region }}"
+          - --tags
+          - Key=Project,Value=DevOpsProject1
+          - Key=ManagedBy,Value=Ansible
+          - --query
+          - CertificateArn
+          - --output
+          - text
+      register: imported_certificate
+      changed_when: true
+      no_log: true
+      when:
+        - prepare_public_tls | bool
+        - public_tls_mode == 'self_signed'
+        - import_self_signed_certificate
+
+    - name: Record the Ansible-owned self-signed certificate ARN
+      ansible.builtin.copy:
+        dest: "{{ public_tls_certificate_arn_file }}"
+        mode: "0600"
+        content: "{{ imported_certificate.stdout | trim }}\n"
+      no_log: true
+      when:
+        - prepare_public_tls | bool
+        - public_tls_mode == 'self_signed'
+        - import_self_signed_certificate
+
+    - name: Select effective public certificate inputs
+      ansible.builtin.set_fact:
+        effective_public_hostname: >-
+          {{ public_hostname | trim if public_tls_mode == 'route53' else none }}
+        effective_route53_zone_id: >-
+          {{ public_route53_zone_id | trim if public_tls_mode == 'route53' else none }}
+        effective_imported_certificate_arn: >-
+          {{
+            lookup('ansible.builtin.file', public_tls_certificate_arn_file) | trim
+            if public_tls_mode == 'self_signed'
+            else none
+          }}
+      no_log: true
+      when: prepare_public_tls | bool
+
+    - name: Inject refreshed public-entry Terraform inputs
+      ansible.builtin.lineinfile:
+        path: "{{ terraform_effective_inputs }}"
+        regexp: "^{{ item.key }}\\s*="
+        line: "{{ item.key }} = {{ item.value | to_json }}"
+      loop:
+        - key: public_tls_mode
+          value: "{{ public_tls_mode }}"
+        - key: public_hostname
+          value: "{{ effective_public_hostname }}"
+        - key: public_route53_zone_id
+          value: "{{ effective_route53_zone_id }}"
+        - key: public_imported_certificate_arn
+          value: "{{ effective_imported_certificate_arn }}"
+        - key: github_hooks_ipv4_cidrs
+          value: "{{ github_hooks_ipv4_cidrs }}"
+      no_log: true
+      when: prepare_public_tls | bool
+
+    - name: Format generated Terraform inputs after public-entry injection
+      ansible.builtin.command:
+        argv:
+          - terraform
+          - fmt
+          - "{{ terraform_effective_inputs }}"
+      changed_when: false
+      no_log: true
+      when: prepare_public_tls | bool
+
+    - name: Report prepared public-entry inputs without private values
+      ansible.builtin.debug:
+        msg: >-
+          Prepared {{ public_tls_mode }} public TLS inputs and refreshed
+          {{ github_hooks_ipv4_cidrs | length }} GitHub hooks IPv4 CIDRs. Private
+          key material and the imported certificate ARN were not displayed.
+      when: prepare_public_tls | bool
+
+    - name: Report disabled public TLS preparation
+      ansible.builtin.debug:
+        msg: Public TLS and GitHub CIDR input preparation is disabled.
+      when: not (prepare_public_tls | bool)

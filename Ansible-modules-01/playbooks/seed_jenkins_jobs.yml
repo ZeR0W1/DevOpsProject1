@@ -42,27 +42,41 @@
     jenkins_jobs:
       - name: devops-project1-eks-deploy
         description: Standalone EKS Helm CD pipeline for frontend, backend, and worker.
-        jenkinsfile: "{{ project_root }}/Jenkins/Jenkinsfile-deploy"
+        scm_url: https://github.com/ZeR0W1/DevOpsProject1.git
+        scm_ref: "*/aws4-jenkins-cicd"
+        scm_credentials_id: ""
+        script_path: Jenkins/Jenkinsfile-deploy
+        github_trigger: false
         parameters: >-
           {{ [
             {'type': 'string', 'name': 'REPO_URL', 'default': 'https://github.com/ZeR0W1/DevOpsProject1.git', 'description': 'Repository containing all three application Helm charts.'},
-            {'type': 'string', 'name': 'REPO_REF', 'default': 'aws3-containerized', 'description': 'Branch, tag, or commit containing the charts.'},
+            {'type': 'string', 'name': 'REPO_REF', 'default': 'aws4-jenkins-cicd', 'description': 'Branch, tag, or commit containing the charts.'},
             {'type': 'string', 'name': 'GIT_CREDENTIALS_ID', 'default': '', 'description': 'Optional Jenkins Git credential ID.'},
             {'type': 'string', 'name': 'FRONTEND_IMAGE_REPOSITORY', 'default': 'zer0w1/devops-project1-frontend', 'description': 'Frontend image repository produced by CI.'},
             {'type': 'string', 'name': 'BACKEND_IMAGE_REPOSITORY', 'default': 'zer0w1/devops-project1-backend', 'description': 'Backend image repository produced by CI.'},
             {'type': 'string', 'name': 'WORKER_IMAGE_REPOSITORY', 'default': 'zer0w1/devops-project1-worker', 'description': 'Worker image repository produced by CI.'},
             {'type': 'string', 'name': 'IMAGE_TAG', 'default': '', 'description': 'Required immutable image tag for FULL mode.'},
-            {'type': 'choice', 'name': 'DEPLOY_MODE', 'choices': ['FULL', 'CONTENT_ONLY'], 'description': 'FULL deploys workloads; CONTENT_ONLY updates frontend content only.'}
+            {'type': 'choice', 'name': 'DEPLOY_MODE', 'choices': ['FULL', 'CONTENT_ONLY'], 'description': 'FULL deploys workloads; CONTENT_ONLY updates frontend content only.'},
+            {'type': 'string', 'name': 'CI_JOB_NAME', 'default': '', 'description': 'Optional upstream CI job name for traceability.'},
+            {'type': 'string', 'name': 'CI_BUILD_NUMBER', 'default': '', 'description': 'Optional upstream CI build number for traceability.'},
+            {'type': 'string', 'name': 'CI_BUILD_URL', 'default': '', 'description': 'Optional upstream CI build URL for traceability.'},
+            {'type': 'string', 'name': 'FRONTEND_IMAGE_DIGEST', 'default': '', 'description': 'Optional immutable frontend digest produced by CI.'},
+            {'type': 'string', 'name': 'BACKEND_IMAGE_DIGEST', 'default': '', 'description': 'Optional immutable backend digest produced by CI.'},
+            {'type': 'string', 'name': 'WORKER_IMAGE_DIGEST', 'default': '', 'description': 'Optional immutable worker digest produced by CI.'}
           ] + common_runtime_parameters + [
             {'type': 'boolean', 'name': 'CONFIRM_DEPLOY', 'default': false, 'description': 'Required confirmation before changing EKS resources.'}
           ] }}
       - name: devops-project1-eks-pipeline
         description: EKS-native CI pipeline for frontend, backend, and worker.
-        jenkinsfile: "{{ project_root }}/Jenkins/Jenkinsfile.eks"
+        scm_url: https://github.com/ZeR0W1/DevOpsProject1.git
+        scm_ref: "*/aws4-jenkins-cicd"
+        scm_credentials_id: ""
+        script_path: Jenkins/Jenkinsfile.eks
+        github_trigger: true
         parameters: >-
           {{ [
             {'type': 'string', 'name': 'REPO_URL', 'default': 'https://github.com/ZeR0W1/DevOpsProject1.git', 'description': 'Git repository URL.'},
-            {'type': 'string', 'name': 'REPO_BRANCH', 'default': 'aws3-containerized', 'description': 'Git branch, tag, or ref to build.'},
+            {'type': 'string', 'name': 'REPO_BRANCH', 'default': 'aws4-jenkins-cicd', 'description': 'Git branch, tag, or ref to build.'},
             {'type': 'string', 'name': 'GIT_CREDENTIALS_ID', 'default': '', 'description': 'Optional Jenkins Git credential ID.'},
             {'type': 'string', 'name': 'APP_DIR', 'default': 'app', 'description': 'Application path in the repository.'},
             {'type': 'choice', 'name': 'DELIVERY_MODE', 'choices': ['DEPLOY_DEFAULT', 'BUILD_AND_DEPLOY'], 'description': 'Deploy the fixed owner public images or build operator-owned images.'},
@@ -70,7 +84,6 @@
             {'type': 'string', 'name': 'DOCKERHUB_CREDENTIALS_ID', 'default': 'dockerhub-creds', 'description': 'Jenkins Docker Hub credential ID.'},
             {'type': 'string', 'name': 'DOCKERHUB_NAMESPACE', 'default': 'zer0w1', 'description': 'Docker Hub user or organization namespace that owns the three image repositories.'},
             {'type': 'boolean', 'name': 'VALIDATE_ONLY', 'default': false, 'description': 'Run checks without build, push, content upload, or deployment.'},
-            {'type': 'boolean', 'name': 'RUN_TRIVY_SCAN', 'default': false, 'description': 'Run the opt-in Trivy filesystem scan.'},
             {'type': 'boolean', 'name': 'DEPLOY_TO_EKS', 'default': false, 'description': 'Trigger the standalone CD job after image publication.'},
             {'type': 'string', 'name': 'CD_JOB_NAME', 'default': 'devops-project1-eks-deploy', 'description': 'Standalone Jenkins CD job name.'},
             {'type': 'boolean', 'name': 'OVERWRITE_FRONTEND_CONTENT', 'default': false, 'description': 'Explicitly replace an existing S3 index.html.'}
@@ -86,7 +99,9 @@
               playbook_dir + '/../templates/jenkins-pipeline-job.xml.j2',
               template_vars={'jenkins_job': item}
             )
-          - item.jenkinsfile is file
+          - item.scm_url is match('^https://github.com/.+\\.git$')
+          - item.scm_ref | length > 0
+          - item.script_path in ['Jenkins/Jenkinsfile.eks', 'Jenkins/Jenkinsfile-deploy']
           - item.parameters | map(attribute='name') | list | unique | length == item.parameters | length
         fail_msg: "Jenkins job definition is invalid: {{ item.name }}"
       loop: "{{ jenkins_jobs }}"

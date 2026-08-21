@@ -11,6 +11,26 @@ COLLECTIONS_DIR="${ANSIBLE_DIR}/collections"
 VAULT_PASSWORD_FILE="${ANSIBLE_DIR}/.vault-password"
 LOCAL_ENVIRONMENT_FILE="${ANSIBLE_DIR}/vault/local-environment.yml"
 
+if [[ "${1:-}" == "refresh-github-hooks" ]]; then
+  if [[ $# -ne 1 ]]; then
+    echo "ERROR: refresh-github-hooks accepts no additional arguments." >&2
+    exit 2
+  fi
+  if [[ ! -x "${VENV_DIR}/bin/ansible-playbook" ]]; then
+    echo "ERROR: Run ./setup.sh before refreshing GitHub hook CIDRs." >&2
+    exit 1
+  fi
+  export PATH="${VENV_DIR}/bin:${PATH}"
+  export ANSIBLE_CONFIG="${ANSIBLE_DIR}/ansible.cfg"
+  cd "${ANSIBLE_DIR}"
+  exec ansible-playbook playbooks/refresh_github_hook_cidrs.yml
+fi
+
+if [[ $# -ne 0 ]]; then
+  echo "Usage: ./setup.sh [refresh-github-hooks]" >&2
+  exit 2
+fi
+
 declare -a SETUP_ROLLBACK_PATHS=()
 
 for setup_path in \
@@ -45,7 +65,7 @@ if [[ "$(uname -s)" != "Linux" || "$(uname -m)" != "x86_64" ]]; then
   exit 1
 fi
 
-for command_name in python3 curl unzip sha256sum tar awk grep openssl; do
+for command_name in python3 curl unzip sha256sum tar awk grep openssl git jq; do
   if ! command -v "${command_name}" >/dev/null 2>&1; then
     echo "ERROR: Install ${command_name} and rerun setup.sh; sudo is never used automatically." >&2
     exit 1
@@ -103,6 +123,9 @@ export PATH="${VENV_DIR}/bin:${PATH}"
 export ANSIBLE_CONFIG="${ANSIBLE_DIR}/ansible.cfg"
 cd "${ANSIBLE_DIR}"
 ansible-playbook playbooks/setup_local_environment.yml
+
+chmod 0755 "${PROJECT_ROOT}/.githooks/pre-push"
+git -C "${PROJECT_ROOT}" config --local core.hooksPath .githooks
 
 trap - ERR
 printf '\nSetup complete; activate the project tools with: source "%s/bin/activate"\n' \

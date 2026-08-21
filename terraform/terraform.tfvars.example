@@ -20,6 +20,17 @@ eks_node_desired_size   = 3
 eks_node_min_size       = 3
 eks_node_max_size       = 4
 
+# The guarded Ansible lifecycle replaces these fail-closed placeholders before
+# Terraform runs. Route 53 mode instead supplies an existing public hosted zone
+# and hostname, while leaving public_imported_certificate_arn null.
+public_tls_mode                 = "self_signed"
+public_hostname                 = null
+public_route53_zone_id          = null
+public_imported_certificate_arn = "arn:aws:acm:us-east-1:000000000000:certificate/00000000-0000-0000-0000-000000000000"
+github_hooks_ipv4_cidrs         = ["192.0.2.0/32"]
+frontend_node_port              = 32081
+jenkins_webhook_node_port       = 32080
+
 # Terraform derives the private application bucket name from name_prefix,
 # environment, the authenticated AWS account ID, and aws_region. Uncomment only
 # when an explicit globally unique override is required.

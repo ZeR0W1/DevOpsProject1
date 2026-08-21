@@ -74,6 +74,7 @@ module "eks" {
   endpoint_public_access_cidrs = [var.admin_cidr]
   private_subnet_ids           = module.networking.eks_private_subnet_ids
   public_subnet_ids            = module.networking.eks_public_subnet_ids
+  vpc_id                       = module.networking.vpc_id
   node_instance_types          = var.eks_node_instance_types
   node_desired_size            = var.eks_node_desired_size
   node_min_size                = var.eks_node_min_size
@@ -81,6 +82,25 @@ module "eks" {
   name_prefix                  = var.name_prefix
   environment                  = var.environment
   common_tags                  = var.common_tags
+}
+
+module "public_alb" {
+  source = "./modules/public_alb"
+
+  vpc_id                          = module.networking.vpc_id
+  public_subnet_ids               = module.networking.public_subnet_ids
+  node_autoscaling_group_name     = module.eks.node_autoscaling_group_names[0]
+  node_alb_security_group_id      = module.eks.node_alb_security_group_id
+  frontend_node_port              = var.frontend_node_port
+  jenkins_webhook_node_port       = var.jenkins_webhook_node_port
+  github_hooks_ipv4_cidrs         = var.github_hooks_ipv4_cidrs
+  public_tls_mode                 = var.public_tls_mode
+  public_hostname                 = var.public_hostname
+  public_route53_zone_id          = var.public_route53_zone_id
+  public_imported_certificate_arn = var.public_imported_certificate_arn
+  name_prefix                     = var.name_prefix
+  environment                     = var.environment
+  common_tags                     = var.common_tags
 }
 
 resource "aws_eks_pod_identity_association" "worker" {

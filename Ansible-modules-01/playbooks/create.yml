@@ -16,6 +16,26 @@
         Select 1 or 2
       private: false
 
+    - name: requested_tls_option
+      prompt: |-
+        Public TLS mode:
+          1) Trusted certificate using an existing Route 53 public hosted zone
+          2) Domainless lab fallback using an imported self-signed certificate
+        Select 1 or 2
+      private: false
+
+    - name: requested_public_hostname
+      prompt: >-
+        Trusted mode only: enter the public hostname (for example,
+        app.example.com); otherwise press Enter
+      private: false
+
+    - name: requested_route53_zone_id
+      prompt: >-
+        Trusted mode only: enter the existing public Route 53 hosted-zone ID;
+        otherwise press Enter
+      private: false
+
   vars:
     bootstrap_dir: "{{ terraform_state_bootstrap_dir }}"
     terraform_example: "{{ terraform_dir }}/terraform.tfvars.example"
@@ -30,7 +50,9 @@
           - "(project_root ~ '/.venv/bin/kubectl') is file"
           - "(project_root ~ '/.venv/bin/helm') is file"
           - requested_delivery_option | trim in ['1', '2']
-        fail_msg: "Run ../../setup.sh first and select a supported delivery mode."
+          - requested_tls_option | trim in ['1', '2']
+        fail_msg: >-
+          Run ../../setup.sh first and select supported delivery and TLS modes.
 
     - name: Read committed non-secret Terraform defaults
       ansible.builtin.set_fact:
@@ -54,6 +76,31 @@
           {{ 'DEPLOY_DEFAULT'
              if (requested_delivery_option | trim) == '1'
              else 'BUILD_AND_DEPLOY' }}
+        create_public_tls_mode: >-
+          {{ 'route53'
+             if (requested_tls_option | trim) == '1'
+             else 'self_signed' }}
+
+    - name: Validate selected TLS-mode inputs
+      ansible.builtin.assert:
+        that:
+          - >-
+            create_public_tls_mode == 'self_signed' or
+            requested_public_hostname | trim is match(
+              '^(?=.{1,253}$)([A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\\.)+[A-Za-z]{2,63}\\.?$'
+            )
+          - >-
+            create_public_tls_mode == 'self_signed' or
+            requested_route53_zone_id | trim is match('^Z[A-Z0-9]+$')
+          - >-
+            create_public_tls_mode == 'route53' or
+            requested_public_hostname | trim | length == 0
+          - >-
+            create_public_tls_mode == 'route53' or
+            requested_route53_zone_id | trim | length == 0
+        fail_msg: >-
+          Trusted mode requires a valid DNS hostname and existing Route 53 public
+          hosted-zone ID. Self-signed mode requires both trusted-mode fields empty.
 
     - name: Read current AWS account identity
       ansible.builtin.command:
@@ -129,6 +176,7 @@
           - "Application-data bucket: {{ create_application_bucket }}"
           - "Remote-state bucket: {{ create_state_bucket }} (retained on normal destroy)"
           - "Delivery mode: {{ create_delivery_mode }}"
+          - "Public TLS mode: {{ create_public_tls_mode }}"
           - >-
             This creates billable VPC/NAT, three t3.medium EKS nodes, private RDS
             db.t4g.micro, S3/SNS/IAM resources, private Jenkins, and application
@@ -171,6 +219,11 @@
   ansible.builtin.import_playbook: site.yml
   vars:
     prepare_terraform_inputs: true
+    prepare_public_tls: true
+    public_tls_mode: "{{ hostvars['localhost']['create_public_tls_mode'] }}"
+    public_hostname: "{{ hostvars['localhost']['requested_public_hostname'] | trim }}"
+    public_route53_zone_id: "{{ hostvars['localhost']['requested_route53_zone_id'] | trim }}"
+    public_tls_mutation_confirmation: PUBLIC_TLS_MUTATION_APPROVED
     terraform_state_bootstrap_apply: "{{ hostvars['localhost']['create_bootstrap_apply'] }}"
     terraform_main_init: true
     terraform_main_migrate_state: false
@@ -184,6 +237,8 @@
     prepare_application_runtime: true
     seed_jenkins_jobs: true
     jenkins_job_mutation_confirmation: JENKINS_JOB_MUTATION_APPROVED
+    configure_github_webhook: true
+    github_webhook_mutation_confirmation: GITHUB_WEBHOOK_MUTATION_APPROVED
     sync_application_secret: true
     application_secret_mutation_confirmation: APPLICATION_SECRET_MUTATION_APPROVED
     configure_jenkins_registry_credential: "{{ hostvars['localhost']['create_delivery_mode'] == 'BUILD_AND_DEPLOY' }}"

@@ -1,0 +1,118 @@
+name: Check GitHub webhook CIDRs
+
+on:
+  push:
+    branches:
+      - aws4-jenkins-cicd
+    paths:
+      - config/github-hooks-applied.json
+      - .github/workflows/check-github-hook-cidrs.yml
+  schedule:
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: github-hook-cidr-check
+  cancel-in-progress: true
+
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out the monitored branch
+        uses: actions/checkout@v4
+        with:
+          ref: aws4-jenkins-cicd
+          persist-credentials: false
+
+      - name: Compare current and applied IPv4 hook ranges
+        id: cidrs
+        shell: bash
+        run: |
+          set -euo pipefail
+          current="$(curl --fail --silent --show-error --retry 3 \
+            https://api.github.com/meta \
+            | jq -cer '[.hooks[] | select(contains(":") | not)] | unique | sort | select(length > 0)')"
+          applied="$(jq -cer \
+            '.hooks_ipv4 | unique | sort | select(length > 0)' \
+            config/github-hooks-applied.json)"
+          if [[ "${current}" == "${applied}" ]]; then
+            echo "stale=false" >>"${GITHUB_OUTPUT}"
+            exit 0
+          fi
+          echo "stale=true" >>"${GITHUB_OUTPUT}"
+          {
+            echo 'details<<EOF'
+            echo 'GitHub webhook source ranges differ from the committed ALB allowlist snapshot.'
+            echo
+            echo "Added: $(jq -r --argjson old "${applied}" '. - $old | join(", ")' <<<"${current}")"
+            echo "Removed: $(jq -r --argjson new "${current}" '. - $new | join(", ")' <<<"${applied}")"
+            echo
+            echo 'Run `./setup.sh refresh-github-hooks`, review the Terraform plan, and explicitly approve the refresh.'
+            echo 'After a successful refresh, redeliver only the latest missed `aws4-jenkins-cicd` push. CD remains manual.'
+            echo 'EOF'
+          } >>"${GITHUB_OUTPUT}"
+
+      - name: Find the existing CIDR issue
+        id: issue
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const title = "GitHub webhook CIDR allowlist is stale";
+            const issues = await github.paginate(github.rest.issues.listForRepo, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: "open",
+              per_page: 100,
+            });
+            const issue = issues.find(item => !item.pull_request && item.title === title);
+            core.setOutput("number", issue ? String(issue.number) : "");
+
+      - name: Create a stale-CIDR issue
+        if: steps.cidrs.outputs.stale == 'true' && steps.issue.outputs.number == ''
+        uses: actions/github-script@v7
+        env:
+          ISSUE_BODY: ${{ steps.cidrs.outputs.details }}
+        with:
+          script: |
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: "GitHub webhook CIDR allowlist is stale",
+              body: process.env.ISSUE_BODY,
+            });
+
+      - name: Update the existing stale-CIDR issue
+        if: steps.cidrs.outputs.stale == 'true' && steps.issue.outputs.number != ''
+        uses: actions/github-script@v7
+        env:
+          ISSUE_BODY: ${{ steps.cidrs.outputs.details }}
+          ISSUE_NUMBER: ${{ steps.issue.outputs.number }}
+        with:
+          script: |
+            await github.rest.issues.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: Number(process.env.ISSUE_NUMBER),
+              body: process.env.ISSUE_BODY,
+            });
+
+      - name: Close the resolved CIDR issue
+        if: steps.cidrs.outputs.stale == 'false' && steps.issue.outputs.number != ''
+        uses: actions/github-script@v7
+        env:
+          ISSUE_NUMBER: ${{ steps.issue.outputs.number }}
+        with:
+          script: |
+            await github.rest.issues.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: Number(process.env.ISSUE_NUMBER),
+              state: "closed",
+              state_reason: "completed",
+            });

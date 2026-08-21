@@ -9,6 +9,11 @@
       prompt: "Administrator email for SNS notifications"
       private: false
 
+    - name: github_api_token
+      prompt: >-
+        Fine-grained GitHub token with repository webhook read/write permission
+      private: true
+
   vars_files:
     - ../vars/project.yml
 
@@ -38,6 +43,7 @@
           - admin_email is match('^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$')
           - terraform_name_prefix is match('^[a-z][a-z0-9-]{1,15}$')
           - terraform_environment is match('^[a-z][a-z0-9-]{1,15}$')
+          - github_api_token | length >= 20
         fail_msg: >-
           Enter a valid email and ensure name_prefix/environment in
           terraform.tfvars.example are lowercase.
@@ -142,6 +148,23 @@
       changed_when: false
       no_log: true
 
+    - name: Encrypt GitHub API token as a named variable
+      ansible.builtin.command:
+        argv:
+          - ansible-vault
+          - encrypt_string
+          - --vault-password-file
+          - "{{ local_vault_password_file }}"
+          - --encrypt-vault-id
+          - default
+          - --stdin-name
+          - github_api_token
+        stdin: "{{ github_api_token }}"
+        stdin_add_newline: false
+      register: encrypted_github_api_token
+      changed_when: false
+      no_log: true
+
     - name: Write encrypted local environment variables
       ansible.builtin.copy:
         dest: "{{ local_vault_file }}"
@@ -151,6 +174,7 @@
           {{ encrypted_admin_email.stdout }}
           {{ encrypted_admin_cidr.stdout }}
           {{ encrypted_db_username.stdout }}
+          {{ encrypted_github_api_token.stdout }}
       no_log: true
 
     - name: Report setup completion without private values

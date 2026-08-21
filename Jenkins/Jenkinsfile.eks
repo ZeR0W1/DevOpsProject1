@@ -10,7 +10,7 @@ pipeline {
     }
 
     stages {
-        stage('Kubernetes Build and Deploy') {
+        stage('Kubernetes CI') {
             agent {
                 kubernetes {
                     defaultContainer 'python'
@@ -139,15 +139,22 @@ spec:
                                 [ ! -f src/worker/requirements.txt ] || pip install --quiet -r src/worker/requirements.txt
                                 bandit -r src/backend src/worker --severity-level low --confidence-level medium -f json -o "${WORKSPACE}/bandit.json" || test $? -eq 1
                                 flake8 src/backend src/worker --count --statistics || test $? -eq 1
-                                if find src/backend src/worker -type f -name '*test*.py' | grep -q .; then pytest -q; fi
+                                if find src/backend src/worker -type f -name '*test*.py' | grep -q .; then
+                                  pytest -q --junitxml="${WORKSPACE}/pytest-results.xml"
+                                fi
                             '''
                         }
                     }
-                    post { always { archiveArtifacts artifacts: 'bandit.json', allowEmptyArchive: true } }
+                    post {
+                        always {
+                            archiveArtifacts artifacts: 'bandit.json', allowEmptyArchive: true
+                            junit testResults: 'pytest-results.xml', allowEmptyResults: true
+                        }
+                    }
                 }
 
                 stage('Trivy Filesystem Scan') {
-                    when { expression { params.DELIVERY_MODE == 'BUILD_AND_DEPLOY' && params.RUN_TRIVY_SCAN } }
+                    when { expression { params.DELIVERY_MODE == 'BUILD_AND_DEPLOY' } }
                     steps {
                         container('trivy') {
                             sh '''#!/bin/sh
@@ -227,7 +234,6 @@ spec:
                                         --snapshot-mode=redo \
                                         --cleanup
                                     done
-                                    rm -f /kaniko/.docker/config.json
                                 '''
                             }
                         }
@@ -264,6 +270,7 @@ spec:
                             if (!cdJobName) {
                                 error('Cannot trigger CD: CD_JOB_NAME is empty.')
                             }
+                            def sourceBuild = params.DELIVERY_MODE == 'BUILD_AND_DEPLOY'
                             def handoff = [
                                 REPO_URL: params.REPO_URL?.trim(),
                                 REPO_REF: env.GIT_FULL_SHA?.trim(),
@@ -283,11 +290,24 @@ spec:
                                 WORKER_DB_USER: params.WORKER_DB_USER?.trim(),
                                 WORKER_DB_SECRET_NAME: params.WORKER_DB_SECRET_NAME?.trim(),
                                 WORKER_S3_BUCKET: params.WORKER_S3_BUCKET?.trim(),
-                                WORKER_SNS_TOPIC_ARN: params.WORKER_SNS_TOPIC_ARN?.trim()
+                                WORKER_SNS_TOPIC_ARN: params.WORKER_SNS_TOPIC_ARN?.trim(),
+                                CI_JOB_NAME: env.JOB_NAME?.trim(),
+                                CI_BUILD_NUMBER: env.BUILD_NUMBER?.trim(),
+                                CI_BUILD_URL: env.BUILD_URL?.trim(),
+                                FRONTEND_IMAGE_DIGEST: sourceBuild ? readFile('image-digests/frontend.txt').trim() : '',
+                                BACKEND_IMAGE_DIGEST: sourceBuild ? readFile('image-digests/backend.txt').trim() : '',
+                                WORKER_IMAGE_DIGEST: sourceBuild ? readFile('image-digests/worker.txt').trim() : ''
                             ]
                             handoff.each { name, value ->
-                                if (name != 'GIT_CREDENTIALS_ID' && !value) {
+                                if (!(name in ['GIT_CREDENTIALS_ID', 'FRONTEND_IMAGE_DIGEST', 'BACKEND_IMAGE_DIGEST', 'WORKER_IMAGE_DIGEST']) && !value) {
                                     error("Cannot trigger CD: resolved ${name} is empty.")
+                                }
+                            }
+                            if (sourceBuild) {
+                                ['FRONTEND_IMAGE_DIGEST', 'BACKEND_IMAGE_DIGEST', 'WORKER_IMAGE_DIGEST'].each { name ->
+                                    if (!(handoff[name] ==~ /sha256:[0-9a-f]{64}/)) {
+                                        error("Cannot trigger CD: ${name} is not a valid immutable digest.")
+                                    }
                                 }
                             }
                             if (!(handoff.REPO_REF ==~ /[0-9a-f]{40}/)) {
@@ -315,10 +335,24 @@ spec:
                                 string(name: 'WORKER_DB_SECRET_NAME', value: handoff.WORKER_DB_SECRET_NAME),
                                 string(name: 'WORKER_S3_BUCKET', value: handoff.WORKER_S3_BUCKET),
                                 string(name: 'WORKER_SNS_TOPIC_ARN', value: handoff.WORKER_SNS_TOPIC_ARN),
+                                string(name: 'CI_JOB_NAME', value: handoff.CI_JOB_NAME),
+                                string(name: 'CI_BUILD_NUMBER', value: handoff.CI_BUILD_NUMBER),
+                                string(name: 'CI_BUILD_URL', value: handoff.CI_BUILD_URL),
+                                string(name: 'FRONTEND_IMAGE_DIGEST', value: handoff.FRONTEND_IMAGE_DIGEST),
+                                string(name: 'BACKEND_IMAGE_DIGEST', value: handoff.BACKEND_IMAGE_DIGEST),
+                                string(name: 'WORKER_IMAGE_DIGEST', value: handoff.WORKER_IMAGE_DIGEST),
                                 booleanParam(name: 'CONFIRM_DEPLOY', value: true)
                             ]
                         }
                     }
+                }
+            }
+            post {
+                always {
+                    container('kaniko') {
+                        sh 'rm -f /kaniko/.docker/config.json'
+                    }
+                    deleteDir()
                 }
             }
         }

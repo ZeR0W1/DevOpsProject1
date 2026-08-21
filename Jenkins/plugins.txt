@@ -9,6 +9,7 @@ pipeline-model-definition:2.2255.v56a_15e805f12
 pipeline-model-extensions:2.2255.v56a_15e805f12
 json-path-api:2.9.0-148.v22a_7ffe323ce
 git:5.8.1
+github:1.47.0
 configuration-as-code:2036.v0b_c2de701dcb_
 email-ext:1933.v45cec755423f
 sonar:2.18.3

@@ -68,6 +68,22 @@ resource "aws_iam_role_policy_attachment" "node_registry_policy" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
 }
 
+resource "aws_security_group" "node_alb" {
+  name_prefix = "${var.cluster_name}-node-alb-"
+  description = "Additional EKS node boundary for Terraform-owned ALB NodePort traffic"
+  vpc_id      = var.vpc_id
+
+  tags = merge(var.common_tags, {
+    Name        = "${var.cluster_name}-node-alb"
+    Environment = var.environment
+    ManagedBy   = "Terraform"
+  })
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
 resource "aws_eks_cluster" "project" {
   name                      = var.cluster_name
   role_arn                  = aws_iam_role.cluster.arn
@@ -149,6 +165,32 @@ resource "aws_iam_role_policy_attachment" "ebs_csi" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy"
 }
 
+resource "aws_launch_template" "node" {
+  name_prefix = "${var.cluster_name}-node-"
+  description = "EKS managed-node network boundary"
+
+  vpc_security_group_ids = [
+    aws_eks_cluster.project.vpc_config[0].cluster_security_group_id,
+    aws_security_group.node_alb.id
+  ]
+
+  tag_specifications {
+    resource_type = "instance"
+
+    tags = merge(var.common_tags, {
+      Name        = "${var.cluster_name}-private-node"
+      Environment = var.environment
+      ManagedBy   = "Terraform"
+    })
+  }
+
+  tags = merge(var.common_tags, {
+    Name        = "${var.cluster_name}-node-template"
+    Environment = var.environment
+    ManagedBy   = "Terraform"
+  })
+}
+
 resource "aws_eks_node_group" "private" {
   cluster_name    = aws_eks_cluster.project.name
   node_group_name = "${var.cluster_name}-private-nodes"
@@ -156,6 +198,11 @@ resource "aws_eks_node_group" "private" {
   subnet_ids      = var.private_subnet_ids
 
   instance_types = var.node_instance_types
+
+  launch_template {
+    id      = aws_launch_template.node.id
+    version = aws_launch_template.node.latest_version
+  }
 
   scaling_config {
     desired_size = var.node_desired_size

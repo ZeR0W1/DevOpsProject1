@@ -62,6 +62,30 @@
             terraform_outputs: "{{ terraform_output_command.stdout | from_json }}"
           no_log: true
 
+        - name: Check for a recorded Ansible-owned self-signed certificate ARN
+          ansible.builtin.stat:
+            path: "{{ public_tls_certificate_arn_file }}"
+          register: destroy_recorded_certificate_arn
+
+        - name: Read the recorded Ansible-owned self-signed certificate ARN
+          ansible.builtin.slurp:
+            src: "{{ public_tls_certificate_arn_file }}"
+          register: destroy_recorded_certificate_arn_content
+          no_log: true
+          when: destroy_recorded_certificate_arn.stat.exists
+
+        - name: Validate the recorded self-signed certificate ownership boundary
+          ansible.builtin.assert:
+            that:
+              - >-
+                destroy_recorded_certificate_arn_content.content | b64decode | trim
+                == terraform_outputs.self_signed_certificate_arn.value
+            fail_msg: >-
+              The recorded Ansible-owned certificate ARN does not match the ARN
+              consumed by Terraform; refusing certificate deletion.
+          no_log: true
+          when: destroy_recorded_certificate_arn.stat.exists
+
         - name: Verify required Terraform-owned resources
           ansible.builtin.assert:
             that:
@@ -107,6 +131,9 @@
           ansible.builtin.debug:
             msg:
               - "EKS cluster: {{ terraform_outputs.eks_cluster_name.value }}"
+              - >-
+                All Helm releases and cloud-backed Kubernetes resources in this
+                verified dedicated cluster are included, including ad-hoc lab installs.
               - "Application bucket: {{ terraform_outputs.s3_bucket_name.value }}"
               - "Terraform-owned resources: {{ terraform_resources.stdout_lines | length }}"
               - "The separate remote-state bucket is retained."
@@ -115,7 +142,7 @@
           ansible.builtin.pause:
             prompt: >-
               Type DESTROY to authorize teardown of the displayed Terraform-owned
-              scope, or CANCEL to stop
+              scope and every workload in its dedicated EKS cluster, or CANCEL to stop
           register: teardown_confirmation
           until: >-
             teardown_confirmation.user_input | trim | upper in ['DESTROY', 'CANCEL']
@@ -171,6 +198,50 @@
           no_log: true
           when: retain_application_data
 
+        - name: Load encrypted GitHub lifecycle credential
+          ansible.builtin.include_vars:
+            file: "{{ local_environment_file }}"
+          no_log: true
+
+        - name: Read current GitHub repository webhooks
+          ansible.builtin.uri:
+            url: https://api.github.com/repos/ZeR0W1/DevOpsProject1/hooks
+            method: GET
+            return_content: true
+            status_code: 200
+            headers:
+              Accept: application/vnd.github+json
+              Authorization: "Bearer {{ github_api_token }}"
+              X-GitHub-Api-Version: "2022-11-28"
+          register: destroy_github_webhooks
+          changed_when: false
+          no_log: true
+
+        - name: Select only the Terraform-output project webhook
+          ansible.builtin.set_fact:
+            destroy_project_github_webhooks: >-
+              {{
+                destroy_github_webhooks.json
+                | selectattr('config.url', 'equalto', terraform_outputs.jenkins_webhook_url.value)
+                | list
+              }}
+          no_log: true
+
+        - name: Delete the project GitHub webhook before Jenkins and ALB teardown
+          ansible.builtin.uri:
+            url: >-
+              https://api.github.com/repos/ZeR0W1/DevOpsProject1/hooks/{{ item.id }}
+            method: DELETE
+            status_code: 204
+            headers:
+              Accept: application/vnd.github+json
+              Authorization: "Bearer {{ github_api_token }}"
+              X-GitHub-Api-Version: "2022-11-28"
+          loop: "{{ destroy_project_github_webhooks }}"
+          loop_control:
+            label: project-webhook
+          no_log: true
+
         - name: Remove Kubernetes workloads and Jenkins state
           ansible.builtin.command:
             argv: >-
@@ -219,6 +290,20 @@
           register: post_destroy_state
           changed_when: false
           failed_when: post_destroy_state.stdout_lines | length > 0
+
+        - name: Delete the released Ansible-owned self-signed ACM certificate
+          ansible.builtin.command:
+            argv:
+              - aws
+              - acm
+              - delete-certificate
+              - --certificate-arn
+              - "{{ destroy_recorded_certificate_arn_content.content | b64decode | trim }}"
+              - --region
+              - "{{ terraform_outputs.aws_region.value }}"
+          changed_when: true
+          no_log: true
+          when: destroy_recorded_certificate_arn.stat.exists
 
         - name: Report retained state bucket boundary
           ansible.builtin.debug:

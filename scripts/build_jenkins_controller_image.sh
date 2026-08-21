@@ -6,7 +6,7 @@ set -euo pipefail
 # this script never accepts, records, or prints Docker Hub credentials.
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-DEFAULT_IMAGE="zer0w1/devops-project1-jenkins-controller:2.528.3-jdk21-plugins-v2"
+DEFAULT_IMAGE="zer0w1/devops-project1-jenkins-controller:2.528.3-jdk21-plugins-v3"
 IMAGE="$DEFAULT_IMAGE"
 PUSH=false
 

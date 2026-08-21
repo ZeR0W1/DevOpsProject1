@@ -69,10 +69,14 @@
   liveness probes, and least-privilege container security contexts.
 - Expose the application frontend publicly. Backend and worker remain internal;
   database access is restricted to required callers.
-- The frontend's Kubernetes `LoadBalancer` Service is the only public application
-  endpoint. Jenkins remains a private ClusterIP Service with no Ingress or public
-  load balancer; use short-lived in-cluster lifecycle automation and an operator
-  `kubectl port-forward` only when interactive UI access is required.
+- A Terraform-owned shared Application Load Balancer is the only public
+  application/platform entry point. Its default route serves the frontend through
+  a fixed NodePort, while a higher-priority rule forwards only the exact Jenkins
+  GitHub webhook path from the current GitHub `hooks` CIDRs to a separate fixed
+  NodePort. All other Jenkins paths remain unreachable through the ALB, and HMAC
+  validation is required before a webhook can trigger CI. Jenkins' normal Service
+  remains ClusterIP-only; use short-lived in-cluster lifecycle automation and an
+  operator `kubectl port-forward` only when interactive UI access is required.
 - Use distinct ServiceAccounts and narrowly scoped AWS/Kubernetes permissions
   when services have different responsibilities. Never grant application
   workloads `cluster-admin`.
@@ -88,9 +92,10 @@
 - Maintain a reproducible README covering architecture, image build/publish,
   namespace and secret setup, deployment, verification, teardown, security, and
   trade-offs.
-- The README must distinguish the public frontend `LoadBalancer` from private
-  ClusterIP-only Jenkins, document in-cluster job seeding and credential
-  boundaries, and provide `kubectl port-forward` as the optional UI fallback.
+- The README must distinguish the public shared ALB and its restricted webhook
+  route from private ClusterIP-only Jenkins, document the fixed frontend and
+  webhook NodePort boundaries, in-cluster job seeding, and credential handling,
+  and provide `kubectl port-forward` as the optional UI fallback.
 - Maintain an architecture diagram showing the cluster, namespace, workloads,
   services, public entry point, ConfigMaps, Secrets, ServiceAccounts, RDS, S3,
   SNS, VPC/subnets/node groups, communication direction, and public/private/

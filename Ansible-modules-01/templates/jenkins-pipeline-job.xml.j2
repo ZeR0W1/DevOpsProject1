@@ -37,10 +37,39 @@
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
-  <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps">
-    <script>{{ lookup('ansible.builtin.file', jenkins_job.jenkinsfile) | e }}</script>
-    <sandbox>true</sandbox>
+  <definition class="org.jenkinsci.plugins.workflow.cps.CpsScmFlowDefinition" plugin="workflow-cps">
+    <scm class="hudson.plugins.git.GitSCM" plugin="git">
+      <configVersion>2</configVersion>
+      <userRemoteConfigs>
+        <hudson.plugins.git.UserRemoteConfig>
+          <url>{{ jenkins_job.scm_url | e }}</url>
+{% if jenkins_job.scm_credentials_id | default('') | length > 0 %}
+          <credentialsId>{{ jenkins_job.scm_credentials_id | e }}</credentialsId>
+{% endif %}
+        </hudson.plugins.git.UserRemoteConfig>
+      </userRemoteConfigs>
+      <branches>
+        <hudson.plugins.git.BranchSpec>
+          <name>{{ jenkins_job.scm_ref | e }}</name>
+        </hudson.plugins.git.BranchSpec>
+      </branches>
+      <doGenerateSubmoduleConfigurations>false</doGenerateSubmoduleConfigurations>
+      <submoduleCfg class="empty-list"/>
+      <extensions>
+        <hudson.plugins.git.extensions.impl.CleanBeforeCheckout/>
+      </extensions>
+    </scm>
+    <scriptPath>{{ jenkins_job.script_path | e }}</scriptPath>
+    <lightweight>true</lightweight>
   </definition>
+{% if jenkins_job.github_trigger | default(false) %}
+  <triggers>
+    <com.cloudbees.jenkins.GitHubPushTrigger plugin="github">
+      <spec/>
+    </com.cloudbees.jenkins.GitHubPushTrigger>
+  </triggers>
+{% else %}
   <triggers/>
+{% endif %}
   <disabled>false</disabled>
 </flow-definition>

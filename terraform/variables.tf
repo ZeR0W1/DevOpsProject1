@@ -75,6 +75,118 @@ variable "eks_node_max_size" {
   default     = 4
 }
 
+variable "public_tls_mode" {
+  description = "TLS certificate mode for the shared public ALB: Route 53-validated ACM certificate or an Ansible-imported self-signed certificate"
+  type        = string
+  default     = "self_signed"
+
+  validation {
+    condition     = contains(["route53", "self_signed"], var.public_tls_mode)
+    error_message = "public_tls_mode must be either route53 or self_signed."
+  }
+}
+
+variable "public_hostname" {
+  description = "Public DNS hostname for the shared ALB; required only when public_tls_mode is route53"
+  type        = string
+  default     = null
+  nullable    = true
+
+  validation {
+    condition = var.public_hostname == null || (
+      length(var.public_hostname) <= 253 &&
+      can(regex(
+        "^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.?$",
+        var.public_hostname
+      ))
+    )
+    error_message = "public_hostname must be null or a valid lowercase fully qualified DNS hostname."
+  }
+}
+
+variable "public_route53_zone_id" {
+  description = "Existing Route 53 public hosted zone ID used for ACM validation and the shared ALB alias; required only when public_tls_mode is route53"
+  type        = string
+  default     = null
+  nullable    = true
+
+  validation {
+    condition     = var.public_route53_zone_id == null || can(regex("^Z[A-Z0-9]+$", var.public_route53_zone_id))
+    error_message = "public_route53_zone_id must be null or a valid Route 53 hosted zone ID beginning with Z."
+  }
+}
+
+variable "public_imported_certificate_arn" {
+  description = "ARN of the self-signed ACM certificate imported by Ansible; required only when public_tls_mode is self_signed"
+  type        = string
+  default     = null
+  nullable    = true
+
+  validation {
+    condition = var.public_imported_certificate_arn == null || can(regex(
+      "^arn:aws:acm:[a-z0-9-]+:[0-9]{12}:certificate/[0-9a-f-]+$",
+      var.public_imported_certificate_arn
+    ))
+    error_message = "public_imported_certificate_arn must be null or a valid ACM certificate ARN."
+  }
+}
+
+variable "github_hooks_ipv4_cidrs" {
+  description = "Current GitHub hooks IPv4 CIDRs allowed to reach the exact Jenkins webhook listener rule; refreshed by Ansible before Terraform runs"
+  type        = list(string)
+
+  validation {
+    condition = (
+      length(var.github_hooks_ipv4_cidrs) > 0 &&
+      alltrue([
+        for cidr in var.github_hooks_ipv4_cidrs :
+        can(cidrhost(cidr, 0)) && !strcontains(cidr, ":")
+      ])
+    )
+    error_message = "github_hooks_ipv4_cidrs must contain at least one valid IPv4 CIDR."
+  }
+}
+
+variable "frontend_node_port" {
+  description = "Fixed Kubernetes NodePort targeted by the shared ALB default frontend route"
+  type        = number
+  default     = 32081
+
+  validation {
+    condition     = var.frontend_node_port >= 30000 && var.frontend_node_port <= 32767
+    error_message = "frontend_node_port must be within the Kubernetes NodePort range 30000-32767."
+  }
+}
+
+variable "jenkins_webhook_node_port" {
+  description = "Fixed Kubernetes NodePort targeted only by the shared ALB Jenkins webhook rule"
+  type        = number
+  default     = 32080
+
+  validation {
+    condition     = var.jenkins_webhook_node_port >= 30000 && var.jenkins_webhook_node_port <= 32767
+    error_message = "jenkins_webhook_node_port must be within the Kubernetes NodePort range 30000-32767."
+  }
+}
+
+check "public_tls_inputs" {
+  assert {
+    condition = (
+      var.public_tls_mode == "route53"
+      ? var.public_hostname != null && var.public_route53_zone_id != null && var.public_imported_certificate_arn == null
+      : var.public_hostname == null && var.public_route53_zone_id == null && var.public_imported_certificate_arn != null
+    )
+    error_message = "Route 53 mode requires public_hostname and public_route53_zone_id only; self-signed mode requires public_imported_certificate_arn only."
+  }
+}
+
+check "distinct_public_node_ports" {
+  assert {
+    condition     = var.frontend_node_port != var.jenkins_webhook_node_port
+    error_message = "frontend_node_port and jenkins_webhook_node_port must be different."
+  }
+}
+
 variable "bucket_name" {
   description = "Optional application S3 bucket name override; when null, Terraform derives a deterministic name from prefix, environment, AWS account ID, and region"
   type        = string

@@ -33,7 +33,8 @@ This project runs a three-service application on Amazon EKS:
 
 ```mermaid
 flowchart LR
-    User((Internet user)) --> ELB[Public frontend LoadBalancer]
+    User((Internet user)) --> ALB[Terraform-owned shared public ALB]
+    GitHub[GitHub hooks CIDRs] -->|exact /github-webhook/ + HMAC| ALB
     Operator[Operator / approved admin CIDR] --> EKSAPI[EKS API]
     Registry[(Public Docker Hub)]
 
@@ -42,7 +43,7 @@ flowchart LR
 
       subgraph VPC[Terraform-owned VPC]
         subgraph Public[Public subnets]
-          ELB
+          ALB
           NAT[NAT Gateway]
         end
 
@@ -78,7 +79,8 @@ flowchart LR
       Secrets[(Secrets Manager database credential)]
     end
 
-    ELB --> Front
+    ALB -->|default route to NodePort 32081| Front
+    ALB -->|restricted route to NodePort 32080| Jenkins
     Front -->|/health, /machines| Back
     Back -->|ClusterIP| Worker
     Worker -->|TLS PostgreSQL| RDS
@@ -106,8 +108,9 @@ trust boundary.
 ### Kubernetes application architecture
 
 This focused view shows the application resources inside `devops-app` and their
-connections to managed services outside the cluster. There is no Ingress: the
-frontend `LoadBalancer` Service is the only public application endpoint.
+connections to managed services outside the cluster. The Terraform-owned shared
+ALB targets the frontend's fixed NodePort; no Kubernetes Ingress owns an AWS load
+balancer.
 
 ```mermaid
 flowchart LR
@@ -115,7 +118,7 @@ flowchart LR
 
     subgraph EKS[EKS cluster]
       subgraph AppNS[devops-app namespace]
-        FrontSvc[frontend Service<br/>LoadBalancer - public]
+        FrontSvc[frontend Service<br/>NodePort 32081 - ALB target]
         FrontDeploy[frontend Deployment] -. manages 2 replicas .-> FrontPods[frontend Pods]
         FrontSvc --> FrontPods
         FrontSA[frontend ServiceAccount] -. identity .-> FrontPods
@@ -141,7 +144,7 @@ flowchart LR
       Topic[(SNS topic)]
     end
 
-    User -->|HTTP| FrontSvc
+    User -->|shared ALB| FrontSvc
     WorkerPods -->|TLS PostgreSQL| RDS
     WorkerPods -->|PutObject instances.json| Bucket
     WorkerPods -->|metadata-only Publish| Topic
@@ -174,20 +177,27 @@ runtime source is the Terraform-owned, versioned S3 object `index.html`.
 
 ## Jenkins model
 
-The CI pipeline performs checkout, Python compilation/testing,
-Dockerfile checks, Helm lint/render checks, image builds with Kaniko, and pushes
-frontend/backend/worker images under one immutable tag. Trivy scanning remains
-optional while an inherited-vulnerability policy is finalized.
+The CI pipeline performs checkout, Python testing with published JUnit results,
+Bandit and flake8 checks, mandatory HIGH/CRITICAL Trivy scanning for source-build
+runs, Helm lint/render checks, and Kaniko builds without a Docker socket. It
+pushes frontend/backend/worker images under one immutable tag and records each
+registry digest.
 
 Successful CI does **not** require automatic deployment. CD is controlled by
 `DEPLOY_TO_EKS` and a separate job. This preserves the security boundary that only
 the deployer job receives namespace-scoped Kubernetes mutation permissions.
 
-The frontend Kubernetes `LoadBalancer` Service is the only public application
-endpoint. Jenkins remains ClusterIP-only with no Ingress or public load balancer.
-Ansible seeds CD before CI from a hardened short-lived in-cluster Job that reads
-the official chart admin Secret through `secretKeyRef`; credentials are not sent
-to the control node. When interactive UI access is needed, an operator can use:
+The Terraform-owned shared ALB is the only public entry point. Its default route
+serves the frontend through fixed NodePort `32081`; only the exact
+`/github-webhook/` path from GitHub's current IPv4 `hooks` CIDRs reaches the
+dedicated Jenkins webhook NodePort `32080`. All other Jenkins paths fall through
+to the frontend, and the normal Jenkins Service remains ClusterIP-only. GitHub
+HMAC validation is required before the SCM-backed CI job runs; CD stays separate
+and manual unless CI is explicitly configured to trigger it. CD archives the CI
+job/build URL, commit, image tag, and available image digests, plus best-effort
+logs/events on failure. Ansible seeds CD before CI from a hardened short-lived
+in-cluster Job; credentials are not sent to the control node. For interactive UI
+access, use a short-lived operator port-forward:
 
 ```bash
 kubectl --kubeconfig Ansible-modules-01/recovery/target-kubeconfig \
@@ -250,7 +260,7 @@ sudo apt-get install -y \
 Clone the repository and select the project branch:
 
 ```bash
-git clone --branch aws3-containerized --single-branch \
+git clone --branch aws4-jenkins-cicd --single-branch \
   https://github.com/ZeR0W1/DevOpsProject1.git
 cd DevOpsProject1
 ```
@@ -274,6 +284,22 @@ kubectl, Helm, and Ansible collections under the repository. It then creates or
 retains an ignored mode-`0600` `.vault-password` and prompts for the local
 environment values stored as individually Ansible-Vault-encrypted entries in the
 ignored mode-`0600` `vault/local-environment.yml`.
+
+Setup also installs the repository pre-push CIDR warning. If GitHub reports a
+new `hooks` IPv4 set, the issue-only GitHub Action opens or updates one tracking
+issue; it never mutates AWS. After reviewing that warning against the intended
+Terraform-owned environment, run the guarded refresh from the repository root:
+
+```bash
+./setup.sh refresh-github-hooks
+```
+
+The refresh command requires this working directory to be already initialized
+against the retained S3 Terraform backend. It creates a saved targeted plan,
+rejects every mutation outside the public-ALB webhook listener rules, displays
+the exact addresses, and requires typing `REFRESH`. Only after a successful apply
+does it synchronize the local input/snapshot and redeliver at most the latest
+failed push for `aws4-jenkins-cicd`; CD is never triggered directly.
 
 Configure the AWS credential chain after activating `.venv`. Prefer temporary
 credentials from AWS IAM Identity Center or an assumed role. For a named SSO
@@ -323,9 +349,12 @@ file. The token is never committed or printed.
 
 The reviewed scope includes the AWS account and region, retained state-backend
 decision, VPC/NAT, private EKS nodes, private RDS, application S3/SNS/IAM,
-private Jenkins, and application workloads. Type `CREATE` only when that displayed
-scope is correct. A retained bootstrap state causes the state bucket to be reused
-and the ignored mode-`0600` `terraform/remote-state.hcl` to be regenerated.
+private Jenkins UI, shared public ALB, restricted webhook route, and application
+workloads. Create time also requires either an existing Route 53 public hosted
+zone for Terraform-managed ACM DNS validation or the explicitly limited
+self-signed lab fallback. Type `CREATE` only when the displayed scope is correct.
+A retained bootstrap state causes the state bucket to be reused and the ignored
+mode-`0600` `terraform/remote-state.hcl` to be regenerated.
 
 The destroy lifecycle remains default-off. A harmless inspection run is:
 
@@ -350,7 +379,8 @@ export KUBECONFIG="$PWD/recovery/target-kubeconfig"
 ```
 
 After CI and standalone FULL CD succeed, verify that nodes are healthy, all
-application replicas are Ready, and only the intended frontend is public:
+application replicas are Ready, and the fixed frontend/webhook NodePorts are the
+only shared-ALB targets:
 
 ```bash
 kubectl get nodes -o wide
@@ -358,24 +388,23 @@ kubectl get namespaces
 kubectl get pods -n devops-app -o wide
 kubectl get deployments -n devops-app -o wide
 kubectl get services -n devops-app -o wide
-kubectl get ingress -n devops-app
 kubectl describe pod <worker-pod> -n devops-app
 kubectl logs <worker-pod> -n devops-app --tail=20
 ```
 
-`kubectl get ingress` is expected to report no resources: the frontend Service is
-the only public `LoadBalancer`; backend, worker, and Jenkins are ClusterIP-only.
-Operational output must never expose Secret values, tokens, Terraform state, or
-private input files.
+The frontend Service uses fixed NodePort `32081`; the dedicated Jenkins webhook
+Service uses `32080`, while the normal Jenkins Service remains ClusterIP. Confirm
+the Terraform-output ALB hostname and listener rules without printing state or
+secret values. Operational output must never expose Secrets, tokens, Terraform
+state, saved plans, or private input files.
 
 For functional verification, derive the current frontend hostname rather than
 storing an ephemeral URL in documentation:
 
 ```bash
-FRONTEND_HOST=$(kubectl get service frontend -n devops-app \
-  -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
-curl -fsS "http://${FRONTEND_HOST}/health"
-curl -fsS "http://${FRONTEND_HOST}/machines"
+PUBLIC_URL=$(terraform -chdir=terraform output -raw public_application_url)
+curl -fsS "${PUBLIC_URL}/health"
+curl -fsS "${PUBLIC_URL}/machines"
 ```
 
 The `/health` response identifies `backend-api`, proving frontend nginx proxying to
@@ -450,21 +479,25 @@ lifecycle stage.
   into `worker-db-secret` with suppressed output; Pods consume it through
   `secretKeyRef`. Real credentials, state, plans, kubeconfig, and local vault files
   are ignored by Git.
-- Only the frontend `LoadBalancer` is public. Backend, worker, and Jenkins are
-  ClusterIP-only. RDS is private and accepts PostgreSQL traffic only from the EKS
-  node security group and the explicitly configured administrator CIDR.
+- The Terraform-owned shared ALB is the only public endpoint. Its default route
+  reaches frontend NodePort `32081`; only GitHub's current hooks CIDRs on exact
+  `/github-webhook/` reach Jenkins NodePort `32080`. The normal Jenkins Service,
+  backend, and worker remain ClusterIP-only. RDS is private and accepts PostgreSQL
+  traffic only from required EKS callers and the approved administrator boundary.
 - Application containers run as non-root, disallow privilege escalation, drop
   Linux capabilities, use seccomp, and use read-only root filesystems where the
   runtime permits. Images use immutable tags rather than `latest`.
-- Public application traffic is HTTP in this implementation. Production hardening
-  would add TLS through ACM or cert-manager and, where needed, WAF controls.
+- The ALB terminates TLS. Trusted mode uses Terraform-managed ACM DNS validation
+  in an existing Route 53 public hosted zone. The documented domainless lab
+  fallback imports an Ansible-generated self-signed certificate and necessarily
+  disables GitHub SSL verification.
 - PostgreSQL uses encrypted transport with `sslmode=require`. Packaging or mounting
   the AWS RDS CA bundle would allow `verify-full` hostname and CA verification.
-- The project uses a Service of type `LoadBalancer` instead of an Ingress
-  controller, reducing platform components at the cost of fewer L7 routing and TLS
-  features.
-- Trivy scanning is optional until a policy distinguishes actionable project
-  findings from inherited base-image findings.
+- Terraform, not Kubernetes, owns the shared ALB, listener rules, target groups,
+  and TLS resources; Kubernetes owns only the stable NodePort Services.
+- Source-build CI runs fail on HIGH/CRITICAL Trivy vulnerability or secret
+  findings. Promoted prebuilt-image mode does not claim to rescan unavailable
+  source-built images.
 
 ## Detailed documentation
 

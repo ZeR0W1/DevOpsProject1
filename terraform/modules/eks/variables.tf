@@ -54,6 +54,16 @@ variable "public_subnet_ids" {
   }
 }
 
+variable "vpc_id" {
+  description = "VPC ID used for the managed-node load balancer security boundary"
+  type        = string
+
+  validation {
+    condition     = can(regex("^vpc-[0-9a-f]+$", var.vpc_id))
+    error_message = "vpc_id must be a valid VPC ID."
+  }
+}
+
 variable "node_instance_types" {
   description = "Instance types for the EKS managed node group"
   type        = list(string)

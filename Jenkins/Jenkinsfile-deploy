@@ -67,6 +67,14 @@ spec:
                     def workerDbSecretName = params.WORKER_DB_SECRET_NAME?.trim()
                     def workerS3Bucket = params.WORKER_S3_BUCKET?.trim()
                     def workerSnsTopicArn = params.WORKER_SNS_TOPIC_ARN?.trim()
+                    def ciJobName = params.CI_JOB_NAME?.trim()
+                    def ciBuildNumber = params.CI_BUILD_NUMBER?.trim()
+                    def ciBuildUrl = params.CI_BUILD_URL?.trim()
+                    def imageDigests = [
+                        frontend: params.FRONTEND_IMAGE_DIGEST?.trim(),
+                        backend: params.BACKEND_IMAGE_DIGEST?.trim(),
+                        worker: params.WORKER_IMAGE_DIGEST?.trim()
+                    ]
                     def repositories = [
                         frontend: params.FRONTEND_IMAGE_REPOSITORY?.trim(),
                         backend: params.BACKEND_IMAGE_REPOSITORY?.trim(),
@@ -121,6 +129,20 @@ spec:
                         if (!workerSnsTopicArn || !(workerSnsTopicArn ==~ /arn:[a-z0-9-]+:sns:[a-z0-9-]+:[0-9]{12}:[A-Za-z0-9_-]+/)) {
                             error('WORKER_SNS_TOPIC_ARN must be a valid SNS topic ARN for FULL mode.')
                         }
+                        if (ciJobName || ciBuildNumber || ciBuildUrl) {
+                            if (!ciJobName || !ciBuildNumber || !(ciBuildNumber ==~ /[0-9]+/) || !ciBuildUrl || !(ciBuildUrl ==~ /https?:\/\/.+\/$/)) {
+                                error('CI_JOB_NAME, CI_BUILD_NUMBER, and CI_BUILD_URL must be supplied together with valid values.')
+                            }
+                        }
+                        def suppliedDigests = imageDigests.values().findAll { it }
+                        if (suppliedDigests && suppliedDigests.size() != imageDigests.size()) {
+                            error('All three image digests must be supplied together.')
+                        }
+                        imageDigests.each { component, digest ->
+                            if (digest && !(digest ==~ /sha256:[0-9a-f]{64}/)) {
+                                error("${component.toUpperCase()}_IMAGE_DIGEST must be a valid sha256 digest.")
+                            }
+                        }
                     }
                     if (namespace != 'devops-app') {
                         error('This CD pipeline is restricted to the devops-app namespace.')
@@ -150,6 +172,12 @@ spec:
                     env.WORKER_DB_SECRET_NAME_RESOLVED = workerDbSecretName ?: ''
                     env.WORKER_S3_BUCKET_RESOLVED = workerS3Bucket ?: ''
                     env.WORKER_SNS_TOPIC_ARN_RESOLVED = workerSnsTopicArn ?: ''
+                    env.CI_JOB_NAME_RESOLVED = ciJobName ?: ''
+                    env.CI_BUILD_NUMBER_RESOLVED = ciBuildNumber ?: ''
+                    env.CI_BUILD_URL_RESOLVED = ciBuildUrl ?: ''
+                    env.FRONTEND_IMAGE_DIGEST_RESOLVED = imageDigests.frontend ?: ''
+                    env.BACKEND_IMAGE_DIGEST_RESOLVED = imageDigests.backend ?: ''
+                    env.WORKER_IMAGE_DIGEST_RESOLVED = imageDigests.worker ?: ''
                     currentBuild.displayName = deployMode == 'FULL' ? "#${env.BUILD_NUMBER} app:${tag}" : "#${env.BUILD_NUMBER} content-only"
                     echo "Validated CD inputs: mode=${deployMode}, namespace=${namespace}, cluster=${clusterName}, content=s3://${contentBucket}/${contentKey}"
                 }
@@ -170,6 +198,28 @@ spec:
                     ])
                     env.DEPLOY_GIT_SHA = sh(script: 'git rev-parse HEAD', returnStdout: true).trim()
                 }
+            }
+        }
+
+        stage('Record Deployment Traceability') {
+            steps {
+                sh '''#!/bin/sh
+                    set -eu
+                    {
+                      printf 'cd_job=%s\n' "${JOB_NAME}"
+                      printf 'cd_build=%s\n' "${BUILD_NUMBER}"
+                      printf 'ci_job=%s\n' "${CI_JOB_NAME_RESOLVED}"
+                      printf 'ci_build=%s\n' "${CI_BUILD_NUMBER_RESOLVED}"
+                      printf 'ci_url=%s\n' "${CI_BUILD_URL_RESOLVED}"
+                      printf 'git_commit=%s\n' "${DEPLOY_GIT_SHA}"
+                      printf 'deploy_mode=%s\n' "${DEPLOY_MODE_RESOLVED}"
+                      printf 'image_tag=%s\n' "${IMAGE_TAG_RESOLVED}"
+                      printf 'frontend_digest=%s\n' "${FRONTEND_IMAGE_DIGEST_RESOLVED}"
+                      printf 'backend_digest=%s\n' "${BACKEND_IMAGE_DIGEST_RESOLVED}"
+                      printf 'worker_digest=%s\n' "${WORKER_IMAGE_DIGEST_RESOLVED}"
+                    } > deployment-traceability.txt
+                '''
+                archiveArtifacts artifacts: 'deployment-traceability.txt', fingerprint: true
             }
         }
 
@@ -376,9 +426,27 @@ spec:
         }
         failure {
             echo 'CD failed. FULL-mode Helm releases use --atomic; inspect the content-sync and rollout stages for CONTENT_ONLY failures.'
+            sh '''#!/bin/sh
+                set +e
+                test -s "${KUBECONFIG}" || exit 0
+                kubectl get deployment,pods,service \
+                  --namespace "${DEPLOY_NAMESPACE_RESOLVED}" \
+                  -o wide > failure-workloads.txt 2>&1
+                kubectl get events \
+                  --namespace "${DEPLOY_NAMESPACE_RESOLVED}" \
+                  --sort-by=.metadata.creationTimestamp > failure-events.txt 2>&1
+                for component in worker backend frontend; do
+                  kubectl logs deployment/$component \
+                    --namespace "${DEPLOY_NAMESPACE_RESOLVED}" \
+                    --all-containers=true \
+                    --tail=200 > "failure-${component}.log" 2>&1
+                done
+                exit 0
+            '''
+            archiveArtifacts artifacts: 'failure-*.txt,failure-*.log', allowEmptyArchive: true, fingerprint: true
         }
         always {
-            archiveArtifacts artifacts: 'rendered-*.yaml,deployed-values-*.yaml', allowEmptyArchive: true, fingerprint: true
+            archiveArtifacts artifacts: 'rendered-*.yaml,deployed-values-*.yaml,deployment-traceability.txt', allowEmptyArchive: true, fingerprint: true
             sh 'rm -f "${KUBECONFIG}"'
             deleteDir()
         }

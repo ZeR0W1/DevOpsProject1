@@ -11,18 +11,19 @@ image:
 replicaCount: 2
 
 service:
-  # The frontend LoadBalancer is the only public application endpoint.
-  # Backend and worker Services remain internal ClusterIPs.
-  type: LoadBalancer
+  # The Terraform-owned shared ALB targets this fixed NodePort. The node security
+  # group accepts it only from the ALB security group.
+  type: NodePort
   port: 80
   targetPort: 8080
+  nodePort: 32081
 
 backendService:
   host: backend
   port: 8000
 
 ingress:
-  # Disabled because the frontend LoadBalancer Service is the public entry point.
+  # Disabled because Terraform owns the shared public ALB and listener routing.
   enabled: false
   className: nginx
   annotations: {}

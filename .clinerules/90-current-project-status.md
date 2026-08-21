@@ -33,54 +33,54 @@ superseded evidence belong in `misc/recovery/PROJECT_HISTORY.md`.
 
 ## Current implementation state
 
-- The supported lifecycle is `bash setup.sh`, then
-  `Ansible-modules-01/playbooks/create.yml`; teardown is the separate default-off
-  `playbooks/destroy.yml`. Ansible commands run from `Ansible-modules-01` with its
-  single `ansible.cfg`.
-- The clean option-2 `BUILD_AND_DEPLOY` acceptance completed end to end after the
-  Ansible vault-ID and cross-play fact-namespace fixes. Retained state discovery,
-  all Terraform resources, private Jenkins, registry synchronization, separate CI
-  and FULL CD, application delivery, and teardown were exercised in order.
-- CI built and published frontend, backend, and worker with one immutable tag;
-  standalone FULL CD deployed two Ready replicas of each service. The frontend
-  LoadBalancer was the only public endpoint; backend, worker, and Jenkins remained
-  ClusterIP-only.
-- Acceptance verified nodes/namespaces/workloads/Services, no-Ingress design, pod
-  description/logs, public HTTP, frontend-to-backend communication, PostgreSQL
-  write/read persistence, versioned S3 `instances.json`, metadata-only SNS, and
-  continued operation after one approved worker Pod replacement.
-- Worker PostgreSQL uses TLS `require`; packaging or mounting the AWS RDS CA bundle
-  for `verify-full` remains an optional future hardening item.
-- Project-facing documentation is project-focused and split across the root,
-  Ansible, Terraform, Jenkins, and service READMEs. Root documentation includes
-  workstation bootstrap, single-branch clone, AWS credential scope, architecture,
-  reproduction, verification/evidence links, security, teardown, and trade-offs.
-- `p3_evidence/` contains 17 non-secret screenshots and is currently untracked.
-  `HANDIN_READINESS_CHECKLIST.md` remains local, ignored, and removed from the Git
-  index. No commit or push has been performed for this documentation/evidence pass.
-- Final local checks passed for Python compilation, Ansible create/site/destroy
-  syntax, all Helm lint/renders, both Terraform validations plus recursive format,
-  shell syntax, Markdown links, evidence integrity, Git whitespace, ignored private
-  paths, and scoped secret patterns. Worker tests passed locally (`7 passed`) in an
-  isolated ignored service `.venv`. Both service and controller dependency checks
-  are clean; the root controller environment retains its accepted AWS CLI `1.45.9`
-  and boto3/botocore `1.43.9` pins.
+- Assignment 4 work continues on local branch `aws4-jenkins-cicd`, branched from
+  Assignment 3 commit `db8f9f7`. The implementation is locally validated and is
+  recorded in one user-approved local commit; no push or cloud/GitHub mutation
+  has occurred.
+- The Assignment 4 webhook direction is a direct GitHub-to-Jenkins webhook, not
+  the discarded Lambda/SQS relay. The planned controls are the current GitHub
+  `hooks` CIDR allowlist, GitHub webhook HMAC validation, private Jenkins UI
+  access, and separate SCM-backed CI/CD jobs.
+- The approved TLS concept offers two create-time choices: an existing Route 53
+  public hosted zone with Terraform-managed ACM DNS validation and GitHub SSL
+  verification enabled, or an explicitly documented domainless lab fallback
+  using an Ansible-generated/imported self-signed certificate with GitHub SSL
+  verification disabled. Current trusted-mode scope is Route 53 only, but inputs
+  should preserve a clean future external-DNS validation extension point.
+- The approved shared public-entry design is locally implemented through a
+  Terraform-owned ALB: frontend defaults to fixed NodePort `32081`; the exact
+  `/github-webhook/` path from refreshed GitHub IPv4 hook CIDRs is forwarded to a
+  separate Jenkins NodePort `32080`; all other Jenkins paths fall through to the
+  frontend. The normal Jenkins Service remains ClusterIP-only. GitHub CIDRs are
+  batched two per listener rule.
+- The local CIDR lifecycle is implemented: committed applied snapshot,
+  deterministic read-only checker, pre-push warning, issue-only GitHub Action,
+  and `./setup.sh refresh-github-hooks`. Refresh requires an already initialized
+  S3 backend, restricts a saved plan to ALB webhook listener rules, requires exact
+  confirmation, and redelivers at most the latest failed target-branch push.
+- CI/CD pipeline compliance edits are local: mandatory source-build Trivy,
+  published JUnit results, failure-safe credential cleanup, CI-to-CD commit/build/
+  digest traceability, and archived CD failure diagnostics.
+- Full local Terraform formatting/validation, all Ansible playbook syntax checks,
+  Helm lint/render for all three charts, shell syntax, Git whitespace checks, and
+  seven worker tests pass. Both current Jenkinsfiles also pass the pinned local
+  controller's authoritative Declarative Pipeline validator.
+- End-to-end cloud acceptance remains pending by user decision and will follow
+  this local checkpoint; any findings will be recorded in a separate fix commit.
 
 ## Immediate work queue
 
-1. Review the documentation/evidence diff with the user.
-2. Commit and push only if the user explicitly requests those actions.
-3. Optionally harden PostgreSQL to `verify-full` in a future rebuilt worker image.
+1. Prepare and review the full create/webhook/CI/CD/verification/teardown E2E plan.
+2. Finish submission evidence guidance.
+3. Obtain separate explicit approval before any push or cloud/GitHub mutation;
+   the Terraform-owned target stack remains destroyed.
 
 ## Exact resume point
 
-Resume with user review of the current documentation/evidence diff. Do not rerun
-cloud acceptance unless requirements or relevant external state change. Main
-Terraform state is empty, the target billable-resource audit is clean, and only the
-retained state bucket remains. Preserve PostgreSQL-primary storage, fixed
-`instances.json`, metadata-only SNS, versioned `index.html`, separate Pod
-Identities, CD-owned frontend content, and Kubernetes Secret boundaries. Do not
-commit or push without an explicit user request.
+Resume on local branch `aws4-jenkins-cicd` by preparing the full E2E plan, then
+finish remaining submission-evidence guidance. Do not run Terraform plan/apply,
+backend reinitialization, cloud acceptance, another commit, push, domain
+registration, or cloud/GitHub mutation without explicit user approval.
 
 ## Status-file maintenance rule
 

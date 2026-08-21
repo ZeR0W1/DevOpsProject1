@@ -55,3 +55,28 @@ output "eks_oidc_provider_arn" {
 output "worker_role_arn" {
   value = module.iam.worker_role_arn
 }
+
+output "public_alb_dns_name" {
+  description = "AWS-generated DNS name for the Terraform-owned shared public ALB"
+  value       = module.public_alb.dns_name
+}
+
+output "public_url" {
+  description = "Canonical HTTPS URL for the public frontend"
+  value       = module.public_alb.public_url
+}
+
+output "jenkins_webhook_url" {
+  description = "GitHub webhook URL restricted by the shared ALB listener rules"
+  value       = module.public_alb.jenkins_webhook_url
+}
+
+output "public_tls_mode" {
+  description = "Selected certificate mode for downstream lifecycle orchestration"
+  value       = var.public_tls_mode
+}
+
+output "self_signed_certificate_arn" {
+  description = "Ansible-owned imported certificate ARN used only for dependency-ordered self-signed teardown"
+  value       = module.public_alb.self_signed_certificate_arn
+}

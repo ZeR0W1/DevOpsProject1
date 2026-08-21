@@ -9,6 +9,9 @@
 - name: Prepare effective Terraform inputs
   ansible.builtin.import_playbook: prepare_terraform_inputs.yml
 
+- name: Prepare public TLS and current GitHub network inputs
+  ansible.builtin.import_playbook: prepare_public_tls.yml
+
 - name: Configure Terraform state and infrastructure lifecycle
   ansible.builtin.import_playbook: configure_terraform_state.yml
 
@@ -20,6 +23,9 @@
 
 - name: Seed separate Jenkins CI and CD jobs
   ansible.builtin.import_playbook: seed_jenkins_jobs.yml
+
+- name: Configure Jenkins HMAC validation and GitHub repository webhook
+  ansible.builtin.import_playbook: configure_github_webhook.yml
 
 - name: Synchronize the worker database Kubernetes Secret
   ansible.builtin.import_playbook: prepare_application_secret.yml
