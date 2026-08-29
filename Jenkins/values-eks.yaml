@@ -36,15 +36,15 @@ controller:
   authorizationStrategy: |-
     loggedInUsersCanDoAnything:
       allowAnonymousRead: false
+  csrf:
+    defaultCrumbIssuer:
+      proxyCompatability: false
   JCasC:
     defaultConfig: true
     configScripts:
       controller-security: |
         jenkins:
           systemMessage: "Private Jenkins controller managed by Ansible and Helm on the Terraform-owned EKS platform."
-          crumbIssuer:
-            standard:
-              excludeClientIPFromCrumb: false
 
 # Kubernetes plugin agents are ephemeral. The current Docker-socket inbound
 # agent is intentionally not configured here; migrate its build strategy before
