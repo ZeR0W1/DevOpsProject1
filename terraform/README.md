@@ -67,7 +67,7 @@ The state bucket and application bucket are intentionally separate:
 - state retention/versioning has a different lifecycle from application objects.
 
 The state bootstrap is automated through
-`../Ansible-modules-01/playbooks/configure_terraform_state.yml`; no manual bucket
+`../Ansible-modules-01/playbooks/create/configure_terraform_state.yml`; no manual bucket
 creation is required in the intended final workflow. The state bucket is retained
 by default, and deleting it is a separate explicit retained-data decision.
 
@@ -88,7 +88,7 @@ and validation:
 cd Ansible-modules-01
 source ../.venv/bin/activate
 export ANSIBLE_CONFIG="$PWD/ansible.cfg"
-ansible-playbook playbooks/configure_terraform_state.yml
+ansible-playbook playbooks/create/configure_terraform_state.yml
 ```
 
 Equivalent focused checks are:

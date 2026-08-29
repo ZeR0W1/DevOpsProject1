@@ -1,0 +1,20 @@
+---
+- name: Back up optional application data
+  ansible.builtin.import_playbook: backup_application_data.yml
+  when: destroy_normal_lifecycle_enabled | default(false) | bool
+
+- name: Remove the project GitHub webhook
+  ansible.builtin.import_playbook: remove_github_webhook.yml
+  when: destroy_normal_lifecycle_enabled | default(false) | bool
+
+- name: Purge the verified dedicated EKS platform
+  ansible.builtin.import_playbook: purge_eks_platform.yml
+  when: destroy_normal_lifecycle_enabled | default(false) | bool
+
+- name: Destroy the Terraform-owned main stack
+  ansible.builtin.import_playbook: destroy_terraform_state.yml
+  when: destroy_normal_lifecycle_enabled | default(false) | bool
+
+- name: Clean up released Ansible-owned public TLS
+  ansible.builtin.import_playbook: cleanup_public_tls.yml
+  when: destroy_normal_lifecycle_enabled | default(false) | bool

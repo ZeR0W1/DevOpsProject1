@@ -40,6 +40,9 @@
     bootstrap_dir: "{{ terraform_state_bootstrap_dir }}"
     terraform_example: "{{ terraform_dir }}/terraform.tfvars.example"
     bootstrap_inputs: "{{ bootstrap_dir }}/terraform.tfvars"
+    create_confirmation_override: >-
+      {{ lookup('ansible.builtin.env', 'CREATE_CONFIRMATION_OVERRIDE')
+         | default('', true) }}
 
   tasks:
     - name: Require project-local setup artifacts and tools
@@ -192,11 +195,19 @@
         create_confirmation.user_input | trim | upper in ['CREATE', 'CANCEL']
       retries: 5
       delay: 0
+      when: create_confirmation_override | length == 0
+
+    - name: Select interactive or preauthorized creation confirmation
+      ansible.builtin.set_fact:
+        effective_create_confirmation: >-
+          {{ create_confirmation_override
+             if create_confirmation_override | length > 0
+             else create_confirmation.user_input }}
 
     - name: Validate exact creation confirmation
       ansible.builtin.assert:
         that:
-          - create_confirmation.user_input | trim | upper == 'CREATE'
+          - effective_create_confirmation | trim | upper == 'CREATE'
         fail_msg: "Creation explicitly cancelled; no cloud mutation was performed."
 
     - name: Write deterministic state-bootstrap inputs
@@ -210,13 +221,13 @@
           environment       = "shared"
 
 - name: Prepare on-demand registry credentials
-  ansible.builtin.import_playbook: prepare_registry_credentials.yml
+  ansible.builtin.import_playbook: create/prepare_registry_credentials.yml
   vars:
     prepare_registry_credentials: "{{ hostvars['localhost']['create_prepare_registry_credentials'] }}"
     registry_delivery_required: "{{ hostvars['localhost']['create_delivery_mode'] == 'BUILD_AND_DEPLOY' }}"
 
 - name: Run the complete composable platform lifecycle
-  ansible.builtin.import_playbook: site.yml
+  ansible.builtin.import_playbook: create/lifecycle.yml
   vars:
     prepare_terraform_inputs: true
     prepare_public_tls: true
@@ -233,7 +244,7 @@
     deploy_jenkins_platform: true
     apply_jenkins_rbac: true
     eks_platform_mutation_confirmation: EKS_PLATFORM_MUTATION_APPROVED
-    jenkins_helm_binary: "{{ playbook_dir }}/../../.venv/bin/helm"
+    jenkins_helm_binary: "{{ project_helm_binary }}"
     prepare_application_runtime: true
     seed_jenkins_jobs: true
     jenkins_job_mutation_confirmation: JENKINS_JOB_MUTATION_APPROVED

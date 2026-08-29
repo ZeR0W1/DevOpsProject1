@@ -1,0 +1,54 @@
+---
+- name: Purge the verified dedicated EKS platform before Terraform teardown
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars_files:
+    - ../../vars/project.yml
+
+  vars:
+    destroy_eks_purge_authorization: ""
+    destroy_application_bucket: ""
+
+  tasks:
+    - name: Validate dedicated-cluster purge authorization
+      ansible.builtin.assert:
+        that:
+          - destroy_eks_purge_authorization == 'DESTROY_EKS_PURGE_AUTHORIZED'
+          - project_helm_binary is file
+          - project_kubectl_binary is file
+          - kubeconfig_file is file
+          - destroy_application_bucket | length > 0
+        fail_msg: The guarded destroy wrapper did not authorize this EKS purge stage.
+
+    - name: Purge all user-installed content from the verified dedicated EKS cluster
+      ansible.builtin.command:
+        argv:
+          - "{{ ansible_playbook_python }}"
+          - "{{ project_root }}/scripts/destroy/purge_eks_cluster.py"
+      environment:
+        HELM_BIN: "{{ project_helm_binary }}"
+        KUBECTL_BIN: "{{ project_kubectl_binary }}"
+        KUBECONFIG_PATH: "{{ kubeconfig_file }}"
+      changed_when: true
+
+    - name: Report verified dedicated-cluster purge boundary
+      ansible.builtin.debug:
+        msg: >-
+          The dedicated EKS cluster contains no user namespaces, Helm releases,
+          Ingresses, LoadBalancer Services, or EBS-backed PersistentVolumes.
+          Terraform platform destroy may proceed.
+
+    - name: Delete the exact application bucket objects  # noqa no-changed-when
+      ansible.builtin.command:
+        argv:
+          - aws
+          - s3api
+          - delete-object
+          - --bucket
+          - "{{ destroy_application_bucket }}"
+          - --key
+          - "{{ item }}"
+      loop: "{{ application_object_keys }}"
+      no_log: true

@@ -164,8 +164,10 @@ role is restricted to the required `instances.json` S3 object and SNS topic.
 | `terraform/state-bootstrap/` | Separate retained Terraform-state bucket root |
 | `setup.sh` | One-time pinned local tool and private-input setup |
 | `Ansible-modules-01/playbooks/create.yml` | Complete guarded create lifecycle |
-| `Ansible-modules-01/playbooks/site.yml` | Composable internal lifecycle orchestrator |
-| `Ansible-modules-01/playbooks/destroy.yml` | Separate guarded destroy entry point |
+| `Ansible-modules-01/playbooks/create/` | Internal create stages and ordered lifecycle |
+| `Ansible-modules-01/playbooks/create/setup/` | Operator-invoked local setup and CIDR maintenance helpers |
+| `Ansible-modules-01/playbooks/destroy.yml` | Guarded normal/resume destroy entry point |
+| `Ansible-modules-01/playbooks/destroy/` | Internal destroy stages and ordered lifecycle |
 | `Jenkins/Jenkinsfile.eks` | Mandatory EKS-native CI pipeline |
 | `Jenkins/Jenkinsfile-deploy` | Optional standalone CD pipeline |
 | `helm/frontend`, `helm/backend`, `helm/worker` | Independent application charts |
@@ -382,8 +384,29 @@ To deliberately enable teardown, set `DESTROY_EXECUTE=true`; optionally set
 `RETAIN_APPLICATION_DATA=true` to copy `index.html` and `instances.json` into the
 ignored private recovery directory first. The enabled path verifies Terraform
 ownership and the explicit project kubeconfig, displays the exact scope, and asks
-for the cluster/bucket confirmation before removing Kubernetes/Jenkins state and
-running one Terraform destroy. The separate remote-state bucket is retained.
+for exact `DESTROY` confirmation before purging all user-installed content from the
+verified dedicated EKS cluster and running one full Terraform destroy. The purge
+removes Ingresses and LoadBalancer Services first, custom resources while their
+controllers remain active, user and system Helm releases in dependency order,
+user workloads, PVCs and EBS-backed PVs, and non-system namespaces. It never strips
+finalizers automatically: unresolved controller cleanup stops teardown before
+Terraform. The separate remote-state bucket is retained.
+
+If Terraform reports a narrowly classified transient provider, network, timeout,
+or throttling failure, the destroy stage waits briefly and retries the same
+state-driven destroy exactly once. Any final failure is fail-closed: Ansible prints
+human-readable Terraform error text with credential-like patterns redacted, lists
+only the remaining Terraform state addresses, preserves partial state, and does not
+delete out-of-state AWS resources. Correct the reported root cause or verify the
+exact external blocker, then resume through the same guarded entry point:
+
+```bash
+DESTROY_EXECUTE=true DESTROY_RESUME=true ansible-playbook playbooks/destroy.yml
+```
+
+Resume mode displays and reconfirms only the remaining Terraform-owned count. It
+reuses the same bounded retry and diagnostics but does not repeat Kubernetes purge,
+GitHub webhook removal, application-data handling, or certificate cleanup.
 
 ## Operational verification
 

@@ -23,7 +23,7 @@ if [[ "${1:-}" == "refresh-github-hooks" ]]; then
   export PATH="${VENV_DIR}/bin:${PATH}"
   export ANSIBLE_CONFIG="${ANSIBLE_DIR}/ansible.cfg"
   cd "${ANSIBLE_DIR}"
-  exec ansible-playbook playbooks/refresh_github_hook_cidrs.yml
+  exec ansible-playbook playbooks/create/setup/refresh_github_hook_cidrs.yml
 fi
 
 if [[ $# -ne 0 ]]; then
@@ -122,7 +122,7 @@ fi
 export PATH="${VENV_DIR}/bin:${PATH}"
 export ANSIBLE_CONFIG="${ANSIBLE_DIR}/ansible.cfg"
 cd "${ANSIBLE_DIR}"
-ansible-playbook playbooks/setup_local_environment.yml
+ansible-playbook playbooks/create/setup/setup_local_environment.yml
 
 chmod 0755 "${PROJECT_ROOT}/.githooks/pre-push"
 git -C "${PROJECT_ROOT}" config --local core.hooksPath .githooks

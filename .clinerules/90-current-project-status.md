@@ -12,16 +12,14 @@ superseded evidence belong in `misc/recovery/PROJECT_HISTORY.md`.
 - Terraform Phase 1 ended by explicit user approval on 2026-08-11.
 - The separate retained, versioned, encrypted state bucket was created and the
   main stack now uses its S3 backend with native lock files.
-- The Terraform-owned target stack in AWS account `058264247987`, region
-  `us-east-1`, was destroyed successfully after the completed final acceptance
-  run. Main remote state is empty.
-- The post-destroy read-only audit found no target EKS cluster, RDS instance, NAT
-  gateway, load balancer, or application-data bucket. The separate versioned,
-  encrypted remote-state bucket remains intentionally retained.
-- The live `devops-app-eks` environment remains externally owned by
-  `eksctl`/CloudFormation and outside Terraform state. It is a lecture-lab cluster
-  containing only a Jenkins controller/plugins setup; disregard it when reasoning
-  about target project architecture and do not mutate it for project work.
+- The configured main S3 backend is shared with the sister workspace
+  `/home/geeta/Project1-prometheus-lab`. The monitoring-lab teardown completed in
+  AWS account `058264247987`, region `us-east-1`, after exact authorized deletion
+  of one verified orphan EKS service-created security group. Shared main Terraform
+  state is empty and the former VPC is absent. Only the separate versioned,
+  encrypted remote-state bucket is intentionally retained.
+- The old external `devops-app-eks` lecture-lab cluster was verified absent in
+  `us-east-1` on 2026-08-29 and is no longer an active ownership boundary.
 - Any future Terraform-owned stack remains a parallel recreation,
   not an import/adoption of the live environment.
 - The external S3 bucket `quick-demo-058264247987-us-east-1-an` and protected
@@ -34,11 +32,10 @@ superseded evidence belong in `misc/recovery/PROJECT_HISTORY.md`.
 ## Current implementation state
 
 - Assignment 4 work continues on local branch `aws4-jenkins-cicd`, branched from
-  Assignment 3 commit `db8f9f7`. The implementation is locally validated and is
-  recorded in one user-approved local commit. That checkpoint was explicitly
-  pushed as a fast-forward to default branch `main` so the scheduled GitHub CIDR
-  workflow is available; the Jenkins-watched `aws4-jenkins-cicd` branch was not
-  pushed, and no cloud mutation occurred.
+  Assignment 3 commit `db8f9f7`. The hardening checkpoint is commit `6b6706b` and
+  was explicitly pushed to `origin/aws4-jenkins-cicd`. The lifecycle-organization
+  and destroy-hardening checkpoint is authorized for commit and push before E2E.
+  No Assignment 4 cloud mutation has occurred.
 - The Assignment 4 webhook direction is a direct GitHub-to-Jenkins webhook, not
   the discarded Lambda/SQS relay. The planned controls are the current GitHub
   `hooks` CIDR allowlist, GitHub webhook HMAC validation, private Jenkins UI
@@ -75,11 +72,29 @@ superseded evidence belong in `misc/recovery/PROJECT_HISTORY.md`.
   trigger cause and resolved Git author identity, passes them to standalone CD,
   and CD archives them with commit, build, tag, and digest traceability. Jenkins
   JCasC explicitly disables signup and anonymous read while retaining CSRF crumbs.
+- The create playbook retains its interactive `CREATE` gate by default and also
+  supports exact `CREATE_CONFIRMATION_OVERRIDE=CREATE` preauthorization for the
+  reviewed unattended runner; all other values are rejected by the same assertion.
 - Main Terraform apply failures now stop the lifecycle before EKS/Jenkins and
   application stages, preserve remote-state progress, report only state-owned
   addresses, and direct the operator to resolve the smallest reviewed conflict or
   provider issue before rerunning the idempotent create lifecycle. No automatic
   import, delete, rename, retry, or rollback occurs.
+- Top-level `playbooks/create.yml` and `playbooks/destroy.yml` are now the guarded
+  operator entry points. Internal create stages are grouped under
+  `playbooks/create/`; internal destroy stages are standalone imported playbooks
+  under `playbooks/destroy/`. Local setup and CIDR maintenance helpers are grouped
+  under `playbooks/create/setup/`.
+- Destroy normal/resume mode selection, exact `DESTROY`, scope display, and state
+  ownership checks remain in the wrapper. The ordered normal lifecycle performs
+  optional backup, exact webhook removal, dedicated-cluster purge, application
+  object deletion, full Terraform destroy, state-empty verification, and released
+  self-signed-certificate cleanup. Resume runs only the shared Terraform stage.
+- Terraform destroy failures use uniform human-readable diagnostics for every
+  resource type: narrowly classified transient provider/network errors receive one
+  delayed retry; final errors have credential-like patterns redacted, remaining
+  state addresses are displayed, partial state is preserved, and no generic
+  out-of-state AWS deletion is attempted.
 - Full local Terraform formatting/validation, all Ansible playbook syntax checks,
   production-profile `ansible-lint`, Helm lint/render for all three charts, shell
   syntax, deterministic CIDR checking, Git whitespace checks, and seven worker
@@ -103,20 +118,27 @@ superseded evidence belong in `misc/recovery/PROJECT_HISTORY.md`.
 
 ## Immediate work queue
 
-1. Complete and verify the authorized Assignment 4 hardening commit and push of
-   only the `aws4-jenkins-cicd` acceptance branch.
-2. Run the reviewed E2E acceptance gates only with stage-specific approval.
-3. After acceptance, switch the Jenkins-watched branch and related defaults to
+1. Commit and push the authorized lifecycle-organization/destroy-hardening
+   checkpoint to `aws4-jenkins-cicd`.
+2. Run the reviewed E2E acceptance gates only with stage-specific approval; the
+   shared main state and exact target-name collision checks passed read-only
+   immediately before this checkpoint.
+3. After acceptance and teardown, switch the Jenkins-watched branch and related defaults to
    `main` and validate the resulting trigger behavior.
 
 ## Exact resume point
 
-Resume on local branch `aws4-jenkins-cicd` by completing and verifying the
-explicitly authorized hardening commit/push boundary, then stop before the
-read-only acceptance precheck unless the user continues. Preserve untracked
-`k8s/logging/` class-lab files. Do not run Terraform plan/apply, backend
-reinitialization, cloud acceptance, another commit, push, domain registration,
-or other cloud/GitHub mutation without explicit user approval.
+Resume with the authorized acceptance-branch checkpoint commit and push, then the
+separately approved E2E create gate. Read-only preflight confirmed AWS account
+`058264247987`, region `us-east-1`, empty shared main state, and absence of the
+exact proposed EKS cluster, application bucket, and RDS identifier.
+All 23 playbooks pass syntax checks and production-profile `ansible-lint`;
+Terraform formatting/validation, four purge tests, Python compile, shell syntax,
+CIDR checking, Helm lint/render, seven worker tests, and Git whitespace checks
+pass. Shared main state was verified empty after monitoring-lab teardown, but must
+be reverified immediately before create acceptance. Preserve untracked
+`k8s/logging/` class-lab files. Do not commit, push, plan, apply, destroy,
+reinitialize a backend, or mutate cloud/GitHub state without explicit approval.
 
 ## Status-file maintenance rule
 

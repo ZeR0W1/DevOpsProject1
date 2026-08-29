@@ -25,7 +25,7 @@ independently pinned AWS SDK versions and must not share one Python environment.
 ## What this Ansible layer does
 
 - validates and orchestrates Terraform state/infrastructure through guarded,
-  opt-in lifecycle stages (`playbooks/configure_terraform_state.yml`)
+  opt-in lifecycle stages (`playbooks/create/configure_terraform_state.yml`)
 - creates encrypted local environment inputs and, only when enabled, regenerates
   effective Terraform inputs from the committed example
 - optionally writes reviewed, non-password Terraform runtime outputs to ignored
@@ -38,25 +38,25 @@ independently pinned AWS SDK versions and must not share one Python environment.
 ## Main playbooks
 
 - `playbooks/create.yml` — supported interactive complete create lifecycle
-- `playbooks/site.yml` — composable internal lifecycle orchestrator used by create
-- `playbooks/setup_local_environment.yml` — one-time interactive email/CIDR setup,
+- `playbooks/create/lifecycle.yml` — ordered internal create lifecycle orchestrator
+- `playbooks/create/setup/setup_local_environment.yml` — one-time interactive email/CIDR setup,
   deterministic DB username derivation, and local Ansible Vault creation
-- `playbooks/prepare_terraform_inputs.yml` — gated `terraform.tfvars` regeneration
+- `playbooks/create/prepare_terraform_inputs.yml` — gated `terraform.tfvars` regeneration
   and read-only AWS caller-identity preflight
-- `playbooks/configure_terraform_state.yml` — remote-state bootstrap and guarded
+- `playbooks/create/configure_terraform_state.yml` — remote-state bootstrap and guarded
   Terraform lifecycle tasks
-- `playbooks/configure_eks_platform.yml` — guarded Terraform-output kubeconfig,
+- `playbooks/create/configure_eks_platform.yml` — guarded Terraform-output kubeconfig,
   pinned Jenkins Helm release, and namespace-scoped deployer RBAC lifecycle
-- `playbooks/prepare_application_runtime.yml` — independently gated non-secret
+- `playbooks/create/prepare_application_runtime.yml` — independently gated non-secret
   Terraform-output handoff preparation
-- `playbooks/prepare_application_secret.yml` — independently gated Secrets Manager
+- `playbooks/create/prepare_application_secret.yml` — independently gated Secrets Manager
   to Kubernetes Secret synchronization from the prepared handoff
-- `playbooks/seed_jenkins_jobs.yml` — Ansible-native in-cluster Jenkins HTTP API
+- `playbooks/create/seed_jenkins_jobs.yml` — Ansible-native in-cluster Jenkins HTTP API
   seeding for separate inline CI and CD jobs from the non-secret runtime handoff
-- `playbooks/trigger_jenkins_ci.yml` — guarded in-cluster queue handoff to CI with
+- `playbooks/create/trigger_jenkins_ci.yml` — guarded in-cluster queue handoff to CI with
   `DEPLOY_TO_EKS=true`; Jenkins owns all subsequent CI and standalone CD work
-- `playbooks/destroy.yml` — separate dependency-ordered full-stack teardown; it is
-  intentionally not imported by `site.yml`
+- `playbooks/destroy.yml` — supported guarded destroy and Terraform-resume wrapper
+- `playbooks/destroy/lifecycle.yml` — ordered internal normal-destroy orchestrator
 
 ## Create lifecycle
 
@@ -100,11 +100,25 @@ then requires the exact confirmation:
 DESTROY
 ```
 
+If Terraform reports a narrowly classified transient provider, network, timeout,
+or throttling failure, Ansible waits briefly and retries the same state-driven
+destroy exactly once. A final failure preserves partial state and prints a
+human-readable Terraform error summary with credential-like patterns redacted,
+plus only the remaining Terraform state addresses. It never performs generic
+out-of-state cleanup. Correct the reported root cause or verify the exact external
+blocker, then rerun the same wrapper with
+`DESTROY_EXECUTE=true DESTROY_RESUME=true`. Resume mode displays and confirms only
+the remaining Terraform-owned count and reuses the same retry/diagnostic policy;
+it does not repeat Kubernetes, GitHub webhook, application-data, or certificate
+stages.
+
 When explicitly enabled, the playbook optionally downloads `index.html` and
-`instances.json` into ignored `recovery/<UTC timestamp>/`, removes application and
-Jenkins Helm releases, deletes the disposable Jenkins PVC and namespaces, deletes
-those two application objects, and runs one Terraform main-stack destroy. The
-separate Terraform remote-state bucket remains retained.
+`instances.json` into ignored `recovery/<UTC timestamp>/`, removes the exact
+project GitHub webhook, purges all user-installed content from the verified
+dedicated EKS cluster, deletes those two application objects, and runs one full
+Terraform main-stack destroy. Any released Ansible-owned self-signed certificate
+is removed only after Terraform succeeds. The separate Terraform remote-state
+bucket remains retained.
 
 ```bash
 DESTROY_EXECUTE=true \

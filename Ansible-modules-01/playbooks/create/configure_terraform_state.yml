@@ -5,7 +5,7 @@
   gather_facts: false
 
   vars_files:
-    - ../vars/project.yml
+    - ../../vars/project.yml
 
   vars:
     terraform_remote_state_config: "{{ terraform_dir }}/remote-state.hcl"

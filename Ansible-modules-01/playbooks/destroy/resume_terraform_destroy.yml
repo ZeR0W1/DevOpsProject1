@@ -1,0 +1,56 @@
+---
+- name: Resume only the interrupted Terraform-owned teardown
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars_files:
+    - ../../vars/project.yml
+
+  vars:
+    destroy_resume_authorization: ""
+
+  tasks:
+    - name: Validate Terraform resume authorization
+      ansible.builtin.assert:
+        that:
+          - destroy_resume_authorization == 'DESTROY_RESUME_AUTHORIZED'
+          - project_terraform_binary is file
+        fail_msg: The guarded destroy wrapper did not authorize Terraform resume.
+
+    - name: List remaining Terraform-owned resources
+      ansible.builtin.command:
+        argv: ["{{ project_terraform_binary }}", "-chdir={{ terraform_dir }}", state, list]
+      register: resume_terraform_resources
+      changed_when: false
+
+    - name: Report already-complete resumed teardown
+      ansible.builtin.debug:
+        msg: >-
+          Main Terraform state is already empty. The separate remote-state bucket
+          remains intentionally retained.
+      when: resume_terraform_resources.stdout_lines | length == 0
+
+    - name: Enable the shared Terraform destroy stage for remaining state
+      ansible.builtin.set_fact:
+        destroy_resume_has_remaining_state: >-
+          {{ resume_terraform_resources.stdout_lines | length > 0 }}
+
+- name: Run the shared Terraform destroy stage for resume
+  ansible.builtin.import_playbook: destroy_terraform_state.yml
+  when: destroy_resume_has_remaining_state | default(false) | bool
+  vars:
+    destroy_terraform_authorization: DESTROY_TERRAFORM_AUTHORIZED
+
+- name: Report completed resumed teardown
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  tasks:
+    - name: Report retained backend after successful resume
+      ansible.builtin.debug:
+        msg: >-
+          Main-stack state is empty. The separate Terraform remote-state bucket
+          remains intentionally retained.
+      when: destroy_resume_has_remaining_state | default(false) | bool

@@ -5,7 +5,7 @@
   gather_facts: false
 
   vars_files:
-    - ../vars/project.yml
+    - ../../vars/project.yml
 
   vars:
     prepare_application_runtime: >-

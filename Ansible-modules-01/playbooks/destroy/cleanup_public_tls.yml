@@ -1,0 +1,45 @@
+---
+- name: Clean up released Ansible-owned public TLS after Terraform teardown
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars_files:
+    - ../../vars/project.yml
+
+  vars:
+    destroy_tls_cleanup_authorization: ""
+    destroy_self_signed_certificate_arn: ""
+    destroy_aws_region: ""
+
+  tasks:
+    - name: Validate public TLS cleanup authorization
+      ansible.builtin.assert:
+        that:
+          - destroy_tls_cleanup_authorization == 'DESTROY_TLS_CLEANUP_AUTHORIZED'
+          - destroy_aws_region | length > 0
+          - >-
+            destroy_self_signed_certificate_arn | length == 0 or
+            destroy_self_signed_certificate_arn
+            is match('^arn:aws:acm:[a-z0-9-]+:[0-9]{12}:certificate/.+$')
+        fail_msg: The guarded destroy wrapper did not authorize this TLS cleanup stage.
+
+    - name: Delete the released Ansible-owned self-signed ACM certificate
+      ansible.builtin.command:
+        argv:
+          - aws
+          - acm
+          - delete-certificate
+          - --certificate-arn
+          - "{{ destroy_self_signed_certificate_arn }}"
+          - --region
+          - "{{ destroy_aws_region }}"
+      changed_when: true
+      no_log: true
+      when: destroy_self_signed_certificate_arn | length > 0
+
+    - name: Report retained state bucket boundary
+      ansible.builtin.debug:
+        msg: >-
+          Main-stack state is empty. The separate Terraform remote-state bucket
+          remains intentionally retained.

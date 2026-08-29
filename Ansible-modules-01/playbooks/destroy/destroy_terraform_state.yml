@@ -1,0 +1,145 @@
+---
+- name: Destroy the verified Terraform-owned main stack
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars_files:
+    - ../../vars/project.yml
+
+  vars:
+    destroy_terraform_authorization: ""
+    destroy_transient_error_pattern: >-
+      (?i)(throttl|requestlimitexceeded|serviceunavailable|internalerror|
+      internalfailure|temporar|timeout|timed out|connection reset|
+      connection refused|unexpected eof|try again|rate exceeded)
+
+  tasks:
+    - name: Validate Terraform destroy authorization
+      ansible.builtin.assert:
+        that:
+          - destroy_terraform_authorization == 'DESTROY_TERRAFORM_AUTHORIZED'
+          - project_terraform_binary is file
+        fail_msg: The guarded destroy wrapper did not authorize Terraform teardown.
+
+    - name: Run the first full Terraform destroy attempt  # noqa no-changed-when
+      ansible.builtin.command:
+        argv:
+          - "{{ project_terraform_binary }}"
+          - "-chdir={{ terraform_dir }}"
+          - destroy
+          - -auto-approve
+          - -input=false
+          - -no-color
+      async: 7200
+      poll: 10
+      register: destroy_first_attempt
+      failed_when: false
+
+    - name: Classify and sanitize the first Terraform failure
+      ansible.builtin.set_fact:
+        destroy_first_error: >-
+          {{
+            destroy_first_attempt.stderr | default('No Terraform error text was returned.', true)
+            | regex_replace('AKIA[0-9A-Z]{16}', '[REDACTED_AWS_ACCESS_KEY]')
+            | regex_replace(
+                '(?i)((?:access[_ -]?key|secret[_ -]?key|session[_ -]?token|password|token)\\s*[=:]\\s*)\\S+',
+                '\\1[REDACTED]'
+              )
+          }}
+        destroy_first_error_is_transient: >-
+          {{
+            destroy_first_attempt.rc != 0 and
+            destroy_first_attempt.stderr | default('')
+            is search(destroy_transient_error_pattern)
+          }}
+
+    - name: Explain the bounded transient retry
+      ansible.builtin.debug:
+        msg: >-
+          Terraform reported a likely transient provider or network failure.
+          Waiting 20 seconds, then retrying the same state-driven destroy once.
+      when: destroy_first_error_is_transient | bool
+
+    - name: Wait before the bounded transient retry
+      ansible.builtin.pause:
+        seconds: 20
+      when: destroy_first_error_is_transient | bool
+
+    - name: Retry the full Terraform destroy once  # noqa no-changed-when
+      ansible.builtin.command:
+        argv:
+          - "{{ project_terraform_binary }}"
+          - "-chdir={{ terraform_dir }}"
+          - destroy
+          - -auto-approve
+          - -input=false
+          - -no-color
+      async: 7200
+      poll: 10
+      register: destroy_retry_attempt
+      failed_when: false
+      when: destroy_first_error_is_transient | bool
+
+    - name: Select the final Terraform result and human-readable error
+      ansible.builtin.set_fact:
+        destroy_final_rc: >-
+          {{
+            destroy_retry_attempt.rc
+            if destroy_first_error_is_transient | bool
+            else destroy_first_attempt.rc
+          }}
+        destroy_final_error: >-
+          {{
+            (
+              destroy_retry_attempt.stderr
+              if destroy_first_error_is_transient | bool
+              else destroy_first_error
+            )
+            | default('No Terraform error text was returned.', true)
+            | regex_replace('AKIA[0-9A-Z]{16}', '[REDACTED_AWS_ACCESS_KEY]')
+            | regex_replace(
+                '(?i)((?:access[_ -]?key|secret[_ -]?key|session[_ -]?token|password|token)\\s*[=:]\\s*)\\S+',
+                '\\1[REDACTED]'
+              )
+          }}
+
+    - name: List remaining Terraform state addresses after final failure
+      ansible.builtin.command:
+        argv: ["{{ project_terraform_binary }}", "-chdir={{ terraform_dir }}", state, list]
+      register: destroy_residual_state
+      changed_when: false
+      failed_when: false
+      when: destroy_final_rc | int != 0
+
+    - name: Report uniform fail-closed Terraform diagnostics
+      ansible.builtin.fail:
+        msg:
+          - >-
+            Terraform destroy did not complete. Partial progress remains recorded
+            in Terraform state; no out-of-state AWS resource was deleted.
+          - >-
+            Retry policy: {{
+              'one bounded retry was attempted because the first error matched the transient allowlist'
+              if destroy_first_error_is_transient | bool
+              else 'no retry was attempted because the error was not classified as transient'
+            }}.
+          - "Terraform error summary (credential patterns redacted):"
+          - "{{ destroy_final_error }}"
+          - >-
+            Remaining Terraform-owned addresses
+            ({{ destroy_residual_state.stdout_lines | length }}):
+          - "{{ destroy_residual_state.stdout_lines | join('\n') }}"
+          - >-
+            Correct the reported root cause or verify the exact external blocker,
+            then rerun top-level destroy.yml with
+            DESTROY_EXECUTE=true DESTROY_RESUME=true. Do not delete or import
+            unrelated resources.
+      when: destroy_final_rc | int != 0
+
+    - name: Verify main Terraform state is empty
+      ansible.builtin.command:
+        argv: ["{{ project_terraform_binary }}", "-chdir={{ terraform_dir }}", state, list]
+      register: post_destroy_state
+      changed_when: false
+      failed_when: post_destroy_state.stdout_lines | length > 0

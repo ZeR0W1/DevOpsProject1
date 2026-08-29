@@ -15,7 +15,7 @@
       private: true
 
   vars_files:
-    - ../vars/project.yml
+    - ../../../vars/project.yml
 
   vars:
     terraform_example: "{{ project_root }}/terraform/terraform.tfvars.example"

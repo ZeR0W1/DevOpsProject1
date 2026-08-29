@@ -6,7 +6,7 @@
   gather_facts: false
 
   vars_files:
-    - ../vars/project.yml
+    - ../../vars/project.yml
 
   vars:
     seed_jenkins_jobs: >-
@@ -99,7 +99,7 @@
           - >-
             '<flow-definition plugin="workflow-job">' in lookup(
               'ansible.builtin.template',
-              playbook_dir + '/../templates/jenkins-pipeline-job.xml.j2',
+              playbook_dir + '/../../templates/jenkins-pipeline-job.xml.j2',
               template_vars={'jenkins_job': item}
             )
           - item.scm_url is match('^https://github.com/.+\\.git$')
@@ -168,7 +168,7 @@
                 config.xml: >-
                   {{ lookup(
                     'ansible.builtin.template',
-                    playbook_dir + '/../templates/jenkins-pipeline-job.xml.j2',
+                    playbook_dir + '/../../templates/jenkins-pipeline-job.xml.j2',
                     template_vars={'jenkins_job': item}
                   ) }}
           loop: "{{ jenkins_jobs }}"

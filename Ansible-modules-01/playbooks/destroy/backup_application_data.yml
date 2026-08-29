@@ -1,0 +1,70 @@
+---
+- name: Back up optional application data before teardown
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars_files:
+    - ../../vars/project.yml
+
+  vars:
+    destroy_backup_authorization: ""
+    retain_application_data: false
+    destroy_application_bucket: ""
+
+  tasks:
+    - name: Validate application-data backup authorization
+      ansible.builtin.assert:
+        that:
+          - destroy_backup_authorization == 'DESTROY_BACKUP_AUTHORIZED'
+          - destroy_application_bucket | length > 0
+        fail_msg: The guarded destroy wrapper did not authorize this backup stage.
+
+    - name: Create recovery timestamp
+      ansible.builtin.command:
+        argv: [date, -u, +%Y%m%dT%H%M%SZ]
+      register: recovery_timestamp
+      changed_when: false
+      when: retain_application_data | bool
+
+    - name: Create private local recovery directory
+      ansible.builtin.file:
+        path: "{{ recovery_root }}/{{ recovery_timestamp.stdout }}"
+        state: directory
+        mode: "0700"
+      when: retain_application_data | bool
+
+    - name: Download exact application objects locally  # noqa no-changed-when
+      ansible.builtin.command:
+        argv:
+          - aws
+          - s3api
+          - get-object
+          - --bucket
+          - "{{ destroy_application_bucket }}"
+          - --key
+          - "{{ item }}"
+          - "{{ recovery_root }}/{{ recovery_timestamp.stdout }}/{{ item }}"
+      loop: "{{ application_object_keys }}"
+      no_log: true
+      when: retain_application_data | bool
+
+    - name: Validate recovered catalog JSON
+      ansible.builtin.command:
+        argv:
+          - python3
+          - -m
+          - json.tool
+          - "{{ recovery_root }}/{{ recovery_timestamp.stdout }}/instances.json"
+      changed_when: false
+      no_log: true
+      when: retain_application_data | bool
+
+    - name: Report application-data disposition
+      ansible.builtin.debug:
+        msg: >-
+          {{
+            'The exact application objects were copied to the private local recovery directory.'
+            if retain_application_data | bool
+            else 'Application-data retention was not requested; no local backup was created.'
+          }}

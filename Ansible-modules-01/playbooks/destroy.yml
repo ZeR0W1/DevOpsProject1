@@ -1,5 +1,5 @@
 ---
-- name: Destroy the Terraform-owned platform in dependency order
+- name: Review and authorize the platform destruction lifecycle
   hosts: localhost
   connection: local
   gather_facts: false
@@ -10,20 +10,24 @@
   vars:
     destroy_execute: >-
       {{ lookup('ansible.builtin.env', 'DESTROY_EXECUTE')
-         | default('false', true)
-         | bool }}
+         | default('false', true) | bool }}
     retain_application_data: >-
       {{ lookup('ansible.builtin.env', 'RETAIN_APPLICATION_DATA')
-         | default('false', true)
-         | bool }}
+         | default('false', true) | bool }}
+    destroy_resume: >-
+      {{ lookup('ansible.builtin.env', 'DESTROY_RESUME')
+         | default('false', true) | bool }}
 
   tasks:
     - name: Validate destroy flags locally
       ansible.builtin.assert:
         that:
           - not retain_application_data or destroy_execute
+          - not destroy_resume or destroy_execute
+          - not destroy_resume or not retain_application_data
         fail_msg: >-
-          Local recovery requires DESTROY_EXECUTE=true.
+          Retention and resume require DESTROY_EXECUTE=true. Resume cannot repeat
+          the initial application-data backup or other completed teardown stages.
 
     - name: Report safe local-only mode
       ansible.builtin.debug:
@@ -32,284 +36,204 @@
           network, or file-write operation was attempted.
       when: not destroy_execute
 
-    - name: Verify Terraform ownership before destroy
+    - name: Inspect Terraform ownership and select teardown mode
       when: destroy_execute
       block:
-        - name: Require project-local teardown tools and kubeconfig
+        - name: Require the project-local Terraform binary
           ansible.builtin.assert:
             that:
               - project_terraform_binary is file
-              - project_helm_binary is file
-              - project_kubectl_binary is file
-              - kubeconfig_file is file
-            fail_msg: "Run bash ../setup.sh and create.yml before teardown."
+            fail_msg: "Run bash ../setup.sh before teardown."
 
         - name: List Terraform-owned resources
           ansible.builtin.command:
             argv: ["{{ project_terraform_binary }}", "-chdir={{ terraform_dir }}", state, list]
-          register: terraform_resources
+          register: destroy_terraform_resources
           changed_when: false
 
-        - name: Read Terraform lifecycle outputs
-          ansible.builtin.command:
-            argv: ["{{ project_terraform_binary }}", "-chdir={{ terraform_dir }}", output, -json]
-          register: terraform_output_command
-          changed_when: false
-          no_log: true
-
-        - name: Parse Terraform lifecycle outputs
+        - name: Select normal, resume, or already-complete mode
           ansible.builtin.set_fact:
-            terraform_outputs: "{{ terraform_output_command.stdout | from_json }}"
-          no_log: true
+            destroy_mode: >-
+              {{
+                'complete'
+                if destroy_terraform_resources.stdout_lines | length == 0
+                else ('resume' if destroy_resume else 'normal')
+              }}
 
-        - name: Check for a recorded Ansible-owned self-signed certificate ARN
-          ansible.builtin.stat:
-            path: "{{ public_tls_certificate_arn_file }}"
-          register: destroy_recorded_certificate_arn
+        - name: Report already-complete teardown
+          ansible.builtin.debug:
+            msg: >-
+              Main Terraform state is already empty. The separate remote-state
+              bucket remains intentionally retained; no mutation was attempted.
+          when: destroy_mode == 'complete'
 
-        - name: Read the recorded Ansible-owned self-signed certificate ARN
-          ansible.builtin.slurp:
-            src: "{{ public_tls_certificate_arn_file }}"
-          register: destroy_recorded_certificate_arn_content
-          no_log: true
-          when: destroy_recorded_certificate_arn.stat.exists
+        - name: Prepare normal teardown ownership context
+          when: destroy_mode == 'normal'
+          block:
+            - name: Require normal teardown tools and kubeconfig
+              ansible.builtin.assert:
+                that:
+                  - project_helm_binary is file
+                  - project_kubectl_binary is file
+                  - kubeconfig_file is file
+                  - local_environment_file is file
+                fail_msg: "Run bash ../setup.sh and create.yml before normal teardown."
 
-        - name: Validate the recorded self-signed certificate ownership boundary
-          ansible.builtin.assert:
-            that:
-              - >-
-                destroy_recorded_certificate_arn_content.content | b64decode | trim
-                == terraform_outputs.self_signed_certificate_arn.value
-            fail_msg: >-
-              The recorded Ansible-owned certificate ARN does not match the ARN
-              consumed by Terraform; refusing certificate deletion.
-          no_log: true
-          when: destroy_recorded_certificate_arn.stat.exists
+            - name: Read Terraform lifecycle outputs
+              ansible.builtin.command:
+                argv: ["{{ project_terraform_binary }}", "-chdir={{ terraform_dir }}", output, -json]
+              register: destroy_terraform_output_command
+              changed_when: false
+              no_log: true
 
-        - name: Verify required Terraform-owned resources
-          ansible.builtin.assert:
-            that:
-              - terraform_resources.stdout_lines | length > 0
-              - "'module.eks.aws_eks_cluster.project' in terraform_resources.stdout_lines"
-              - "'module.rds_postgresql.aws_db_instance.postgres' in terraform_resources.stdout_lines"
-              - "'module.s3_bucket.aws_s3_bucket.machine_catalog' in terraform_resources.stdout_lines"
-            fail_msg: >-
-              Terraform state does not own the required EKS, RDS, and application
-              S3 resources. Nothing was changed.
+            - name: Parse Terraform lifecycle outputs
+              ansible.builtin.set_fact:
+                destroy_terraform_outputs: >-
+                  {{ destroy_terraform_output_command.stdout | from_json }}
+              no_log: true
 
-        - name: Read current Kubernetes context and API endpoint
-          ansible.builtin.command:
-            argv: "{{ item }}"
-          loop:
-            - - "{{ project_kubectl_binary }}"
-              - --kubeconfig
-              - "{{ kubeconfig_file }}"
-              - config
-              - current-context
-            - - "{{ project_kubectl_binary }}"
-              - --kubeconfig
-              - "{{ kubeconfig_file }}"
-              - config
-              - view
-              - --minify
-              - -o
-              - "jsonpath={.clusters[0].cluster.server}"
-          register: kubernetes_target
-          changed_when: false
-          no_log: true
+            - name: Verify required Terraform-owned resources
+              ansible.builtin.assert:
+                that:
+                  - "'module.eks.aws_eks_cluster.project' in destroy_terraform_resources.stdout_lines"
+                  - "'module.rds_postgresql.aws_db_instance.postgres' in destroy_terraform_resources.stdout_lines"
+                  - "'module.s3_bucket.aws_s3_bucket.machine_catalog' in destroy_terraform_resources.stdout_lines"
+                fail_msg: >-
+                  Terraform state does not own the required EKS, RDS, and
+                  application S3 resources. Nothing was changed.
 
-        - name: Verify explicit kubeconfig targets the Terraform-owned API
-          ansible.builtin.assert:
-            that:
-              - kubernetes_target.results[1].stdout == terraform_outputs.eks_cluster_endpoint.value
-            fail_msg: >-
-              The ignored project kubeconfig does not target the Terraform-owned
-              EKS API endpoint. Nothing was changed.
-          no_log: true
+            - name: Read current Kubernetes API endpoint
+              ansible.builtin.command:
+                argv:
+                  - "{{ project_kubectl_binary }}"
+                  - --kubeconfig
+                  - "{{ kubeconfig_file }}"
+                  - config
+                  - view
+                  - --minify
+                  - -o
+                  - "jsonpath={.clusters[0].cluster.server}"
+              register: destroy_kubernetes_endpoint
+              changed_when: false
+              no_log: true
 
-        - name: Display destructive scope and retained boundary
+            - name: Verify kubeconfig targets the Terraform-owned API
+              ansible.builtin.assert:
+                that:
+                  - >-
+                    destroy_kubernetes_endpoint.stdout ==
+                    destroy_terraform_outputs.eks_cluster_endpoint.value
+                fail_msg: >-
+                  The ignored project kubeconfig does not target the
+                  Terraform-owned EKS API endpoint. Nothing was changed.
+              no_log: true
+
+            - name: Check for recorded Ansible-owned certificate ARN
+              ansible.builtin.stat:
+                path: "{{ public_tls_certificate_arn_file }}"
+              register: destroy_recorded_certificate_arn
+
+            - name: Read recorded Ansible-owned certificate ARN
+              ansible.builtin.slurp:
+                src: "{{ public_tls_certificate_arn_file }}"
+              register: destroy_recorded_certificate_arn_content
+              no_log: true
+              when: destroy_recorded_certificate_arn.stat.exists
+
+            - name: Select and validate certificate cleanup boundary
+              ansible.builtin.set_fact:
+                destroy_self_signed_certificate_arn: >-
+                  {{
+                    destroy_recorded_certificate_arn_content.content | b64decode | trim
+                    if destroy_recorded_certificate_arn.stat.exists else ''
+                  }}
+              no_log: true
+
+            - name: Validate recorded certificate ownership
+              ansible.builtin.assert:
+                that:
+                  - >-
+                    destroy_self_signed_certificate_arn | length == 0 or
+                    destroy_self_signed_certificate_arn ==
+                    destroy_terraform_outputs.self_signed_certificate_arn.value
+                fail_msg: >-
+                  The recorded Ansible-owned certificate ARN does not match the
+                  ARN consumed by Terraform; refusing certificate deletion.
+              no_log: true
+
+            - name: Display normal destructive scope and retained boundary
+              ansible.builtin.debug:
+                msg:
+                  - "EKS cluster: {{ destroy_terraform_outputs.eks_cluster_name.value }}"
+                  - >-
+                    All user-installed content in this verified dedicated cluster
+                    is included, including ad-hoc lab installations.
+                  - "Application bucket: {{ destroy_terraform_outputs.s3_bucket_name.value }}"
+                  - >-
+                    Terraform-owned resources:
+                    {{ destroy_terraform_resources.stdout_lines | length }}
+                  - >-
+                    Application-data backup requested:
+                    {{ retain_application_data | bool }}
+                  - "The separate remote-state bucket is retained."
+
+        - name: Display resumed destructive scope and retained boundary
           ansible.builtin.debug:
             msg:
-              - "EKS cluster: {{ terraform_outputs.eks_cluster_name.value }}"
               - >-
-                All Helm releases and cloud-backed Kubernetes resources in this
-                verified dedicated cluster are included, including ad-hoc lab installs.
-              - "Application bucket: {{ terraform_outputs.s3_bucket_name.value }}"
-              - "Terraform-owned resources: {{ terraform_resources.stdout_lines | length }}"
+                Resume mode will destroy the remaining
+                {{ destroy_terraform_resources.stdout_lines | length }}
+                Terraform state-owned resources only.
+              - >-
+                Kubernetes, GitHub webhook, application-data, and certificate
+                cleanup stages will not be repeated.
               - "The separate remote-state bucket is retained."
+          when: destroy_mode == 'resume'
 
         - name: Require exact teardown confirmation
           ansible.builtin.pause:
             prompt: >-
-              Type DESTROY to authorize teardown of the displayed Terraform-owned
-              scope and every workload in its dedicated EKS cluster, or CANCEL to stop
-          register: teardown_confirmation
+              Type DESTROY to authorize the displayed {{ destroy_mode }} teardown
+              scope, or CANCEL to stop
+          register: destroy_confirmation
           until: >-
-            teardown_confirmation.user_input | trim | upper in ['DESTROY', 'CANCEL']
+            destroy_confirmation.user_input | trim | upper in ['DESTROY', 'CANCEL']
           retries: 5
           delay: 0
+          when: destroy_mode in ['normal', 'resume']
 
         - name: Validate exact teardown confirmation
           ansible.builtin.assert:
             that:
-              - teardown_confirmation.user_input | trim | upper == 'DESTROY'
+              - destroy_confirmation.user_input | trim | upper == 'DESTROY'
             fail_msg: "Teardown cancelled; nothing was changed."
+          when: destroy_mode in ['normal', 'resume']
 
-    - name: Back up optional application data and destroy the platform
-      when: destroy_execute
-      block:
-        - name: Create timestamp for local recovery
-          ansible.builtin.command:
-            argv: [date, -u, +%Y%m%dT%H%M%SZ]
-          register: recovery_timestamp
-          changed_when: false
-          when: retain_application_data
+- name: Run the authorized normal destroy lifecycle
+  ansible.builtin.import_playbook: destroy/lifecycle.yml
+  vars:
+    destroy_normal_lifecycle_enabled: >-
+      {{ hostvars['localhost']['destroy_mode'] | default('disabled') == 'normal' }}
+    destroy_backup_authorization: DESTROY_BACKUP_AUTHORIZED
+    destroy_webhook_authorization: DESTROY_WEBHOOK_AUTHORIZED
+    destroy_eks_purge_authorization: DESTROY_EKS_PURGE_AUTHORIZED
+    destroy_terraform_authorization: DESTROY_TERRAFORM_AUTHORIZED
+    destroy_tls_cleanup_authorization: DESTROY_TLS_CLEANUP_AUTHORIZED
+    retain_application_data: >-
+      {{ hostvars['localhost']['retain_application_data'] | default(false) }}
+    destroy_application_bucket: >-
+      {{ hostvars['localhost']['destroy_terraform_outputs']['s3_bucket_name']['value'] | default('') }}
+    destroy_jenkins_webhook_url: >-
+      {{ hostvars['localhost']['destroy_terraform_outputs']['jenkins_webhook_url']['value'] | default('') }}
+    destroy_self_signed_certificate_arn: >-
+      {{ hostvars['localhost']['destroy_self_signed_certificate_arn'] | default('') }}
+    destroy_aws_region: >-
+      {{ hostvars['localhost']['destroy_terraform_outputs']['aws_region']['value'] | default('') }}
 
-        - name: Create private local recovery directory
-          ansible.builtin.file:
-            path: "{{ recovery_root }}/{{ recovery_timestamp.stdout }}"
-            state: directory
-            mode: "0700"
-          when: retain_application_data
-
-        # These guarded lifecycle commands delegate exact no-op/change detection
-        # to AWS and the teardown helper.
-        - name: Download exact application objects locally  # noqa no-changed-when
-          ansible.builtin.command:
-            argv:
-              - aws
-              - s3api
-              - get-object
-              - --bucket
-              - "{{ terraform_outputs.s3_bucket_name.value }}"
-              - --key
-              - "{{ item }}"
-              - "{{ recovery_root }}/{{ recovery_timestamp.stdout }}/{{ item }}"
-          loop: "{{ application_object_keys }}"
-          no_log: true
-          when: retain_application_data
-
-        - name: Validate recovered catalog JSON
-          ansible.builtin.command:
-            argv:
-              - python3
-              - -m
-              - json.tool
-              - "{{ recovery_root }}/{{ recovery_timestamp.stdout }}/instances.json"
-          changed_when: false
-          no_log: true
-          when: retain_application_data
-
-        - name: Load encrypted GitHub lifecycle credential
-          ansible.builtin.include_vars:
-            file: "{{ local_environment_file }}"
-          no_log: true
-
-        - name: Read current GitHub repository webhooks
-          ansible.builtin.uri:
-            url: https://api.github.com/repos/ZeR0W1/DevOpsProject1/hooks
-            method: GET
-            return_content: true
-            status_code: 200
-            headers:
-              Accept: application/vnd.github+json
-              Authorization: "Bearer {{ github_api_token }}"
-              X-GitHub-Api-Version: "2022-11-28"
-          register: destroy_github_webhooks
-          changed_when: false
-          no_log: true
-
-        - name: Select only the Terraform-output project webhook
-          ansible.builtin.set_fact:
-            destroy_project_github_webhooks: >-
-              {{
-                destroy_github_webhooks.json
-                | selectattr('config.url', 'equalto', terraform_outputs.jenkins_webhook_url.value)
-                | list
-              }}
-          no_log: true
-
-        - name: Delete the project GitHub webhook before Jenkins and ALB teardown
-          ansible.builtin.uri:
-            url: >-
-              https://api.github.com/repos/ZeR0W1/DevOpsProject1/hooks/{{ item.id }}
-            method: DELETE
-            status_code: 204
-            headers:
-              Accept: application/vnd.github+json
-              Authorization: "Bearer {{ github_api_token }}"
-              X-GitHub-Api-Version: "2022-11-28"
-          loop: "{{ destroy_project_github_webhooks }}"
-          loop_control:
-            label: project-webhook
-          no_log: true
-
-        - name: Remove Kubernetes workloads and Jenkins state  # noqa no-changed-when
-          ansible.builtin.command:
-            argv: >-
-              {{
-                [
-                  'bash',
-                  project_root ~ '/scripts/destroy_kubernetes_workloads.sh',
-                  application_namespace,
-                  jenkins_namespace,
-                  jenkins_release_name
-                ] + application_releases
-              }}
-          environment:
-            HELM_BIN: "{{ project_helm_binary }}"
-            KUBECTL_BIN: "{{ project_kubectl_binary }}"
-            KUBECONFIG_PATH: "{{ kubeconfig_file }}"
-
-        - name: Delete the two application bucket objects  # noqa no-changed-when
-          ansible.builtin.command:
-            argv:
-              - aws
-              - s3api
-              - delete-object
-              - --bucket
-              - "{{ terraform_outputs.s3_bucket_name.value }}"
-              - --key
-              - "{{ item }}"
-          loop: "{{ application_object_keys }}"
-          no_log: true
-
-        # Terraform state, not command execution, determines the exact resource changes.
-        - name: Destroy the verified Terraform-owned main stack  # noqa no-changed-when
-          ansible.builtin.command:
-            argv:
-              - "{{ project_terraform_binary }}"
-              - "-chdir={{ terraform_dir }}"
-              - destroy
-              - -auto-approve
-              - -input=false
-              - -no-color
-          async: 7200
-          poll: 10
-
-        - name: Verify main Terraform state is empty
-          ansible.builtin.command:
-            argv: ["{{ project_terraform_binary }}", "-chdir={{ terraform_dir }}", state, list]
-          register: post_destroy_state
-          changed_when: false
-          failed_when: post_destroy_state.stdout_lines | length > 0
-
-        - name: Delete the released Ansible-owned self-signed ACM certificate
-          ansible.builtin.command:
-            argv:
-              - aws
-              - acm
-              - delete-certificate
-              - --certificate-arn
-              - "{{ destroy_recorded_certificate_arn_content.content | b64decode | trim }}"
-              - --region
-              - "{{ terraform_outputs.aws_region.value }}"
-          changed_when: true
-          no_log: true
-          when: destroy_recorded_certificate_arn.stat.exists
-
-        - name: Report retained state bucket boundary
-          ansible.builtin.debug:
-            msg: >-
-              Main-stack state is empty. The separate Terraform remote-state
-              bucket remains intentionally retained.
+- name: Run the authorized Terraform destroy resume
+  ansible.builtin.import_playbook: destroy/resume_terraform_destroy.yml
+  when: destroy_resume_lifecycle_enabled | default(false) | bool
+  vars:
+    destroy_resume_lifecycle_enabled: >-
+      {{ hostvars['localhost']['destroy_mode'] | default('disabled') == 'resume' }}
+    destroy_resume_authorization: DESTROY_RESUME_AUTHORIZED
