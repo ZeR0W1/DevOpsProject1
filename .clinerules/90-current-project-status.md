@@ -57,18 +57,43 @@ superseded evidence belong in `misc/recovery/PROJECT_HISTORY.md`.
   batched two per listener rule.
 - The local CIDR lifecycle is implemented: committed applied snapshot,
   deterministic read-only checker, pre-push warning, issue-only GitHub Action,
-  and `./setup.sh refresh-github-hooks`. Refresh requires an already initialized
+  and `bash setup.sh refresh-github-hooks`. Refresh requires an already initialized
   S3 backend, restricts a saved plan to ALB webhook listener rules, requires exact
   confirmation, and redelivers at most the latest failed target-branch push.
 - CI/CD pipeline compliance edits are local: mandatory source-build Trivy,
   published JUnit results, failure-safe credential cleanup, CI-to-CD commit/build/
-  digest traceability, and archived CD failure diagnostics.
+  digest traceability, archived CD failure diagnostics, bounded hardened agent
+  Pods, and a real frontend-to-backend/worker HTTP smoke test in standalone CD.
+- The custom CI agent now uses a digest-pinned Jenkins inbound-agent base. With
+  explicit user approval, image
+  `zer0w1/devops-project1-jenkins-agent:eks-python-v2` was built and pushed to
+  Docker Hub at manifest digest
+  `sha256:c226666c65258fe952bc44375f489255d64845a20e3d6f55c297e4d7bd09050d`;
+  local verification confirmed UID 1000 and the required tool entry points.
+- The create lifecycle now derives and verifies the Terraform-owned public ALB
+  URL instead of reusing the private Jenkins service URL. CI records the Jenkins
+  trigger cause and resolved Git author identity, passes them to standalone CD,
+  and CD archives them with commit, build, tag, and digest traceability. Jenkins
+  JCasC explicitly disables signup and anonymous read while retaining CSRF crumbs.
+- Main Terraform apply failures now stop the lifecycle before EKS/Jenkins and
+  application stages, preserve remote-state progress, report only state-owned
+  addresses, and direct the operator to resolve the smallest reviewed conflict or
+  provider issue before rerunning the idempotent create lifecycle. No automatic
+  import, delete, rename, retry, or rollback occurs.
 - Full local Terraform formatting/validation, all Ansible playbook syntax checks,
-  Helm lint/render for all three charts, shell syntax, Git whitespace checks, and
-  seven worker tests pass. Both current Jenkinsfiles also pass the pinned local
-  controller's authoritative Declarative Pipeline validator.
+  production-profile `ansible-lint`, Helm lint/render for all three charts, shell
+  syntax, deterministic CIDR checking, Git whitespace checks, and seven worker
+  tests pass. Both current Jenkinsfiles also pass the pinned local controller's
+  authoritative Declarative Pipeline validator.
 - End-to-end cloud acceptance remains pending by user decision and will follow
-  this local checkpoint; any findings will be recorded in a separate fix commit.
+  the approved hardening checkpoint; any findings will be recorded in a separate
+  fix commit.
+- The command-by-command E2E create/webhook/CI/CD/verification/teardown checklist
+  has been reviewed. The Assignment 4 hardening commit and push of only
+  `aws4-jenkins-cicd` were explicitly authorized; Jenkins is seeded against that
+  remote acceptance branch.
+- The untracked `k8s/logging/` directory is unrelated class-lab work; preserve it
+  untouched and exclude it from Assignment 4 commits and acceptance reasoning.
 - During current acceptance work, Jenkins intentionally watches only
   `aws4-jenkins-cicd` while `main` carries the default-branch scheduled workflow
   without triggering project CI. After acceptance is complete, change the seeded
@@ -78,17 +103,20 @@ superseded evidence belong in `misc/recovery/PROJECT_HISTORY.md`.
 
 ## Immediate work queue
 
-1. Prepare and review the full create/webhook/CI/CD/verification/teardown E2E plan.
-2. Finish submission evidence guidance.
+1. Complete and verify the authorized Assignment 4 hardening commit and push of
+   only the `aws4-jenkins-cicd` acceptance branch.
+2. Run the reviewed E2E acceptance gates only with stage-specific approval.
 3. After acceptance, switch the Jenkins-watched branch and related defaults to
    `main` and validate the resulting trigger behavior.
 
 ## Exact resume point
 
-Resume on local branch `aws4-jenkins-cicd` by preparing the full E2E plan, then
-finish remaining submission-evidence guidance. Do not run Terraform plan/apply,
-backend reinitialization, cloud acceptance, another commit, push, domain
-registration, or cloud/GitHub mutation without explicit user approval.
+Resume on local branch `aws4-jenkins-cicd` by completing and verifying the
+explicitly authorized hardening commit/push boundary, then stop before the
+read-only acceptance precheck unless the user continues. Preserve untracked
+`k8s/logging/` class-lab files. Do not run Terraform plan/apply, backend
+reinitialization, cloud acceptance, another commit, push, domain registration,
+or other cloud/GitHub mutation without explicit user approval.
 
 ## Status-file maintenance rule
 

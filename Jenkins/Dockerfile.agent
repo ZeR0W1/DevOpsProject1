@@ -1,4 +1,4 @@
-FROM jenkins/inbound-agent:latest-jdk21
+FROM jenkins/inbound-agent:3384.v60d89463d9e0-2-jdk21@sha256:7735404a1c86ddce6e01538e14095f32e8d08cbf52861928dbfc5448cf7a8e9d
 
 LABEL org.opencontainers.image.title="DevOps Project Jenkins Python Agent" \
       org.opencontainers.image.description="Jenkins agent tool image used by the EKS CI pipeline for checkout and Python checks." \
@@ -62,8 +62,8 @@ RUN set -eux; \
     rm -f /tmp/sonar-scanner.zip; \
     sonar-scanner --version
 
-# Trivy remains available for optional diagnostics. Active EKS CI uses a separate
-# pinned Trivy container for its opt-in scan.
+# Trivy remains available for operator diagnostics. Active EKS CI runs its
+# mandatory source-build scan in a separate pinned Trivy container.
 RUN set -eux; \
     curl -fsSL https://aquasecurity.github.io/trivy-repo/deb/public.key \
         | gpg --dearmor -o /usr/share/keyrings/trivy.gpg; \

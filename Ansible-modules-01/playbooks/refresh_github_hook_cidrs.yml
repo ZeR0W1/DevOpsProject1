@@ -207,7 +207,8 @@
           - refresh_confirmation.user_input | trim | upper == 'REFRESH'
         fail_msg: CIDR refresh cancelled; nothing was applied.
 
-    - name: Apply the exact reviewed CIDR refresh plan
+    # Terraform state and the reviewed saved plan determine exact changes.
+    - name: Apply the exact reviewed CIDR refresh plan  # noqa no-changed-when
       ansible.builtin.command:
         argv:
           - "{{ project_terraform_binary }}"

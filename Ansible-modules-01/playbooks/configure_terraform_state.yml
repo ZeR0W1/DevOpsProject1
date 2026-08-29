@@ -75,7 +75,9 @@
       changed_when: false
       when: terraform_state_bootstrap_apply | bool
 
-    - name: Apply the state-bootstrap configuration
+    # Terraform state, not command execution, determines whether these guarded
+    # lifecycle operations make changes.
+    - name: Apply the state-bootstrap configuration  # noqa no-changed-when
       ansible.builtin.command:
         cmd: terraform -chdir={{ terraform_state_bootstrap_dir }} apply -auto-approve -input=false
       async: 1800
@@ -115,7 +117,7 @@
         - terraform_main_init | bool
         - not (terraform_main_migrate_state | bool)
 
-    - name: Migrate existing main-stack state to remote state
+    - name: Migrate existing main-stack state to remote state  # noqa no-changed-when
       ansible.builtin.command:
         cmd: >-
           terraform -chdir={{ terraform_dir }} init -input=false -migrate-state -force-copy
@@ -124,12 +126,59 @@
         - terraform_main_init | bool
         - terraform_main_migrate_state | bool
 
-    - name: Apply the main Terraform infrastructure
-      ansible.builtin.command:
-        cmd: terraform -chdir={{ terraform_dir }} apply -auto-approve -input=false
-      async: 7200
-      poll: 10
+    - name: Apply the main stack with safe failure diagnostics
       when: terraform_main_apply | bool
+      block:
+        - name: Apply the main Terraform infrastructure  # noqa no-changed-when
+          ansible.builtin.command:
+            cmd: terraform -chdir={{ terraform_dir }} apply -auto-approve -input=false
+          async: 7200
+          poll: 10
+      rescue:
+        - name: Read state-owned addresses after the failed apply
+          ansible.builtin.command:
+            cmd: terraform -chdir={{ terraform_dir }} state list
+          register: terraform_failed_apply_state
+          changed_when: false
+          failed_when: false
+
+        - name: Report preserved Terraform progress and safe resume boundary
+          ansible.builtin.debug:
+            msg:
+              - >-
+                Main Terraform apply failed, so Ansible stopped before EKS/Jenkins
+                platform and application stages. No automatic destroy, import,
+                rename, or retry was attempted.
+              - >-
+                Terraform preserved {{
+                  terraform_failed_apply_state.stdout_lines | default([]) | length
+                }} state-owned resource addresses in the configured remote state.
+              - "State-owned addresses: {{ terraform_failed_apply_state.stdout_lines | default([]) }}"
+              - >-
+                Resolve the reported failure with the smallest reviewed input or
+                ownership correction, then rerun create.yml against this same
+                backend; Terraform will refresh preserved resources and continue.
+          when: terraform_failed_apply_state.rc == 0
+
+        - name: Report unavailable Terraform state diagnostics
+          ansible.builtin.debug:
+            msg:
+              - >-
+                Main Terraform apply failed, so Ansible stopped before EKS/Jenkins
+                platform and application stages. No automatic destroy, import,
+                rename, or retry was attempted.
+              - >-
+                The read-only Terraform state-address check also failed. Preserve
+                the configured remote state and resolve backend access before
+                retrying or making any ownership decision.
+          when: terraform_failed_apply_state.rc != 0
+
+        - name: Stop the lifecycle for controller-assisted resolution
+          ansible.builtin.fail:
+            msg: >-
+              Main Terraform apply failed. Preserve the remote state, resolve the
+              reported conflict or provider error, and rerun create.yml. Use the
+              guarded destroy lifecycle only after a separate teardown decision.
 
     - name: Report local-only validation mode
       ansible.builtin.debug:

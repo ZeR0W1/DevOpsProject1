@@ -42,7 +42,7 @@
               - project_helm_binary is file
               - project_kubectl_binary is file
               - kubeconfig_file is file
-            fail_msg: "Run ../../setup.sh and create.yml before teardown."
+            fail_msg: "Run bash ../setup.sh and create.yml before teardown."
 
         - name: List Terraform-owned resources
           ansible.builtin.command:
@@ -172,7 +172,9 @@
             mode: "0700"
           when: retain_application_data
 
-        - name: Download exact application objects locally
+        # These guarded lifecycle commands delegate exact no-op/change detection
+        # to AWS and the teardown helper.
+        - name: Download exact application objects locally  # noqa no-changed-when
           ansible.builtin.command:
             argv:
               - aws
@@ -242,7 +244,7 @@
             label: project-webhook
           no_log: true
 
-        - name: Remove Kubernetes workloads and Jenkins state
+        - name: Remove Kubernetes workloads and Jenkins state  # noqa no-changed-when
           ansible.builtin.command:
             argv: >-
               {{
@@ -259,7 +261,7 @@
             KUBECTL_BIN: "{{ project_kubectl_binary }}"
             KUBECONFIG_PATH: "{{ kubeconfig_file }}"
 
-        - name: Delete the two application bucket objects
+        - name: Delete the two application bucket objects  # noqa no-changed-when
           ansible.builtin.command:
             argv:
               - aws
@@ -272,7 +274,8 @@
           loop: "{{ application_object_keys }}"
           no_log: true
 
-        - name: Destroy the verified Terraform-owned main stack
+        # Terraform state, not command execution, determines the exact resource changes.
+        - name: Destroy the verified Terraform-owned main stack  # noqa no-changed-when
           ansible.builtin.command:
             argv:
               - "{{ project_terraform_binary }}"

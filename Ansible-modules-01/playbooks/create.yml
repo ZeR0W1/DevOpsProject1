@@ -52,7 +52,7 @@
           - requested_delivery_option | trim in ['1', '2']
           - requested_tls_option | trim in ['1', '2']
         fail_msg: >-
-          Run ../../setup.sh first and select supported delivery and TLS modes.
+          Run bash ../setup.sh first and select supported delivery and TLS modes.
 
     - name: Read committed non-secret Terraform defaults
       ansible.builtin.set_fact:

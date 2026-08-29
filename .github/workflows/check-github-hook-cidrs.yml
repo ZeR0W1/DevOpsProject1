@@ -53,7 +53,7 @@ jobs:
             echo "Added: $(jq -r --argjson old "${applied}" '. - $old | join(", ")' <<<"${current}")"
             echo "Removed: $(jq -r --argjson new "${current}" '. - $new | join(", ")' <<<"${applied}")"
             echo
-            echo 'Run `./setup.sh refresh-github-hooks`, review the Terraform plan, and explicitly approve the refresh.'
+            echo 'Run `bash setup.sh refresh-github-hooks`, review the Terraform plan, and explicitly approve the refresh.'
             echo 'After a successful refresh, redeliver only the latest missed `aws4-jenkins-cicd` push. CD remains manual.'
             echo 'EOF'
           } >>"${GITHUB_OUTPUT}"

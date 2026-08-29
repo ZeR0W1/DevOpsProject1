@@ -291,7 +291,7 @@ issue; it never mutates AWS. After reviewing that warning against the intended
 Terraform-owned environment, run the guarded refresh from the repository root:
 
 ```bash
-./setup.sh refresh-github-hooks
+bash setup.sh refresh-github-hooks
 ```
 
 The refresh command requires this working directory to be already initialized
@@ -356,6 +356,22 @@ self-signed lab fallback. Type `CREATE` only when the displayed scope is correct
 A retained bootstrap state causes the state bucket to be reused and the ignored
 mode-`0600` `terraform/remote-state.hcl` to be regenerated.
 
+Normal create manages resources already recorded in this stack's Terraform state
+and creates new resources under the configured `name_prefix` and `environment`.
+Choose those values so the resulting AWS names do not conflict with another
+environment. A matching live name does not grant Terraform ownership and is not
+overwritten or adopted automatically: preserving an existing resource requires a
+separately reviewed import, while replacing one requires an explicitly approved,
+dependency-aware delete/recreate procedure. Neither ownership transition is part
+of the normal create lifecycle.
+
+If Terraform encounters a name collision or provider failure, Ansible stops before
+the EKS/Jenkins and application stages, preserves the configured remote state, and
+reports only state-owned resource addresses. Resolve the failure with the smallest
+reviewed input or ownership correction, then rerun `create.yml`; Terraform refreshes
+the preserved resources and continues. No automatic import, delete, rename, retry,
+or rollback occurs.
+
 The destroy lifecycle remains default-off. A harmless inspection run is:
 
 ```bash
@@ -402,7 +418,7 @@ For functional verification, derive the current frontend hostname rather than
 storing an ephemeral URL in documentation:
 
 ```bash
-PUBLIC_URL=$(terraform -chdir=terraform output -raw public_application_url)
+PUBLIC_URL=$(terraform -chdir=terraform output -raw public_url)
 curl -fsS "${PUBLIC_URL}/health"
 curl -fsS "${PUBLIC_URL}/machines"
 ```

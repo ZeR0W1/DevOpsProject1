@@ -41,6 +41,6 @@ echo "WARNING: GitHub webhook source ranges changed." >&2
 echo "Push will continue, but Jenkins CI may wait for the ALB allowlist refresh." >&2
 echo "Added:   ${added:-none}" >&2
 echo "Removed: ${removed:-none}" >&2
-echo "Recovery: ./setup.sh refresh-github-hooks" >&2
+echo "Recovery: bash setup.sh refresh-github-hooks" >&2
 echo "After approval, the latest aws4-jenkins-cicd push is redelivered; CD remains manual." >&2
 exit 3

@@ -198,25 +198,60 @@
             fail_msg: >-
               The in-cluster Jenkins CI trigger failed before queue handoff.
 
-        - name: Wait for the frontend public hostname
-          kubernetes.core.k8s_info:
-            api_version: v1
-            kind: Service
-            name: frontend
-            namespace: "{{ application_namespace }}"
-            kubeconfig: "{{ kubeconfig_file }}"
-          register: frontend_service_status
+        - name: Read the Terraform-owned public application URL
+          ansible.builtin.command:
+            argv:
+              - "{{ project_terraform_binary }}"
+              - "-chdir={{ terraform_dir }}"
+              - output
+              - -raw
+              - public_url
+          register: public_application_url_command
+          changed_when: false
+
+        - name: Validate the Terraform-owned public application URL
+          ansible.builtin.assert:
+            that:
+              - public_application_url_command.stdout | trim is match('^https://[^/]+$')
+            fail_msg: >-
+              Terraform output public_url must contain the canonical HTTPS shared
+              ALB URL before Jenkins delivery can be verified.
+
+        - name: Set the canonical public frontend URL
+          ansible.builtin.set_fact:
+            frontend_url: "{{ public_application_url_command.stdout | trim }}"
+
+        - name: Read the selected public TLS mode
+          ansible.builtin.command:
+            argv:
+              - "{{ project_terraform_binary }}"
+              - "-chdir={{ terraform_dir }}"
+              - output
+              - -raw
+              - public_tls_mode
+          register: public_tls_mode_command
+          changed_when: false
+
+        - name: Validate the selected public TLS mode
+          ansible.builtin.assert:
+            that:
+              - public_tls_mode_command.stdout | trim in ['route53', 'self_signed']
+            fail_msg: Terraform output public_tls_mode is missing or invalid.
+
+        - name: Wait for the shared ALB frontend health endpoint
+          ansible.builtin.uri:
+            url: "{{ frontend_url }}/health"
+            method: GET
+            return_content: true
+            status_code: 200
+            validate_certs: "{{ public_tls_mode_command.stdout | trim == 'route53' }}"
+          register: frontend_health_response
           until: >-
-            frontend_service_status.resources | length == 1 and
-            frontend_service_status.resources[0].status.loadBalancer.ingress |
-            default([]) | length > 0
+            frontend_health_response.status | default(0) == 200 and
+            frontend_health_response.json.status | default('') == 'ok' and
+            frontend_health_response.json.service | default('') == 'backend-api'
           retries: 90
           delay: 10
-
-        - name: Set the public frontend URL
-          ansible.builtin.set_fact:
-            frontend_url: >-
-              http://{{ frontend_service_status.resources[0].status.loadBalancer.ingress[0].hostname }}
 
         - name: Create the local generated-output directory
           ansible.builtin.file:
@@ -233,6 +268,8 @@
         - name: Report the public frontend address
           ansible.builtin.debug:
             msg:
-              - "Jenkins accepted the delivery and the frontend endpoint is available."
+              - >-
+                Jenkins accepted the delivery and the Terraform-owned shared ALB
+                health endpoint is available.
               - "Open the application: {{ frontend_url }}"
               - "The URL is also saved at {{ frontend_url_file }}"

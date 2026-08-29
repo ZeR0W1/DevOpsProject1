@@ -17,7 +17,7 @@ if [[ "${1:-}" == "refresh-github-hooks" ]]; then
     exit 2
   fi
   if [[ ! -x "${VENV_DIR}/bin/ansible-playbook" ]]; then
-    echo "ERROR: Run ./setup.sh before refreshing GitHub hook CIDRs." >&2
+    echo "ERROR: Run bash setup.sh before refreshing GitHub hook CIDRs." >&2
     exit 1
   fi
   export PATH="${VENV_DIR}/bin:${PATH}"
@@ -27,7 +27,7 @@ if [[ "${1:-}" == "refresh-github-hooks" ]]; then
 fi
 
 if [[ $# -ne 0 ]]; then
-  echo "Usage: ./setup.sh [refresh-github-hooks]" >&2
+  echo "Usage: bash setup.sh [refresh-github-hooks]" >&2
   exit 2
 fi
 

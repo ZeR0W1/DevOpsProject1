@@ -7,7 +7,7 @@ Main project documentation: [../README.md](../README.md)
 
 ## Runtime convention
 
-Run [`../setup.sh`](../setup.sh) first, then invoke every playbook from this
+Run `bash ../setup.sh` first, then invoke every playbook from this
 directory with the project-local environment and the single authoritative config:
 
 ```bash

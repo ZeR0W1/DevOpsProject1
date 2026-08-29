@@ -26,12 +26,25 @@ controller:
   additionalPlugins: []
   overwritePluginsFromImage: false
   initializeOnce: true
+  # The chart-created local bootstrap user is the only account by default:
+  # self-registration and anonymous read are explicitly disabled. CSRF crumbs
+  # remain enabled and bind to the client address.
+  securityRealm: |-
+    local:
+      allowsSignup: false
+      enableCaptcha: false
+  authorizationStrategy: |-
+    loggedInUsersCanDoAnything:
+      allowAnonymousRead: false
   JCasC:
     defaultConfig: true
     configScripts:
-      controller-message: |
+      controller-security: |
         jenkins:
           systemMessage: "Private Jenkins controller managed by Ansible and Helm on the Terraform-owned EKS platform."
+          crumbIssuer:
+            standard:
+              excludeClientIPFromCrumb: false
 
 # Kubernetes plugin agents are ephemeral. The current Docker-socket inbound
 # agent is intentionally not configured here; migrate its build strategy before
