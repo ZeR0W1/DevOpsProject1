@@ -55,7 +55,7 @@
         public_tls_aws_region: >-
           {{
             (lookup('ansible.builtin.file', terraform_input_example)
-             | regex_search('(?m)^aws_region\\s*=\\s*"([a-z0-9-]+)"', '\\1')
+             | regex_search('(?m)^aws_region\s*=\s*"([a-z0-9-]+)"', '\1')
              | first)
           }}
       when: prepare_public_tls | bool
