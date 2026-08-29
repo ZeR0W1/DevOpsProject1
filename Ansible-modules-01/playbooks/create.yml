@@ -45,6 +45,16 @@
          | default('', true) }}
 
   tasks:
+    - name: Require the authoritative Ansible project configuration
+      ansible.builtin.assert:
+        that:
+          - ansible_config_file | default('') | length > 0
+          - ansible_config_file | dirname == ansible_root
+          - ansible_config_file | basename == 'ansible.cfg'
+        fail_msg: >-
+          Run this playbook from the Ansible root after activating the project
+          environment: cd Ansible-modules-01 && ansible-playbook playbooks/create.yml
+
     - name: Require project-local setup artifacts and tools
       ansible.builtin.assert:
         that:

@@ -1,11 +1,12 @@
 ---
 # Shared non-secret lifecycle constants. Playbook-specific gates and confirmations
 # remain beside the tasks they protect.
-project_root: "{{ playbook_dir }}/../.."
+ansible_root: "{{ ansible_config_file | dirname }}"
+project_root: "{{ ansible_root }}/.."
 terraform_dir: "{{ project_root }}/terraform"
 terraform_state_bootstrap_dir: "{{ terraform_dir }}/state-bootstrap"
-recovery_root: "{{ playbook_dir }}/../recovery"
-generated_output_root: "{{ playbook_dir }}/../generated"
+recovery_root: "{{ ansible_root }}/recovery"
+generated_output_root: "{{ ansible_root }}/generated"
 public_tls_artifact_dir: "{{ generated_output_root }}/public-tls"
 public_tls_certificate_arn_file: "{{ public_tls_artifact_dir }}/certificate-arn.txt"
 runtime_values_file: "{{ recovery_root }}/application-runtime.yml"
@@ -14,8 +15,8 @@ frontend_url_file: "{{ generated_output_root }}/frontend-url.txt"
 project_terraform_binary: "{{ project_root }}/.venv/bin/terraform"
 project_helm_binary: "{{ project_root }}/.venv/bin/helm"
 project_kubectl_binary: "{{ project_root }}/.venv/bin/kubectl"
-local_environment_file: "{{ playbook_dir }}/../vault/local-environment.yml"
-local_vault_password_file: "{{ playbook_dir }}/../.vault-password"
+local_environment_file: "{{ ansible_root }}/vault/local-environment.yml"
+local_vault_password_file: "{{ ansible_root }}/.vault-password"
 
 application_namespace: devops-app
 application_releases: [frontend, backend, worker]
