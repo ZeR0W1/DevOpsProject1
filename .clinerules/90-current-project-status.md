@@ -121,7 +121,7 @@ superseded evidence belong in `misc/recovery/PROJECT_HISTORY.md`.
   `cninodes.vpcresources.k8s.aws` for the Terraform-owned EKS/CNI lifecycle while
   retaining fail-closed deletion for all other custom resources. Five purge tests,
   Python compilation, and Git whitespace validation pass; the corrected rerun
-  completed the full teardown. This fix is local and not yet committed or pushed.
+  completed the full teardown. The fix is pushed in checkpoint `e0946df`.
 - Full local Terraform formatting/validation, all Ansible playbook syntax checks,
   production-profile `ansible-lint`, Helm lint/render for all three charts, shell
   syntax, deterministic CIDR checking, Git whitespace checks, and seven worker
@@ -157,19 +157,15 @@ superseded evidence belong in `misc/recovery/PROJECT_HISTORY.md`.
 
 ## Immediate work queue
 
-1. Review, commit, and push the narrow system-managed `CNINode` purge fix only
-   after explicit Git authorization.
-2. Run the clean create/webhook/CI/CD/verification/teardown E2E with stage-specific
+1. Run the clean create/webhook/CI/CD/verification/teardown E2E with stage-specific
    approvals.
-3. After clean acceptance and final teardown, check out `main`, rerun setup so the ignored
+2. After clean acceptance and final teardown, check out `main`, rerun setup so the ignored
    watched-branch selection becomes `main`, and validate the production trigger.
 
 ## Exact resume point
 
-Resume by reviewing the local lifecycle fix in
-`/home/geeta/Project1/scripts/destroy/purge_eks_cluster.py` and its regression test.
-Current local and remote `aws4-jenkins-cicd` remain `b17dc86`; do not commit or push
-without explicit approval. The authorized no-backup teardown completed in account
+Resume from pushed lifecycle checkpoint `e0946df` on local and remote
+`aws4-jenkins-cicd`. The authorized no-backup teardown completed in account
 `058264247987`, region `us-east-1`; main Terraform state has zero addresses. The
 `doa-staging` EKS cluster, RDS instance, ALB, NAT gateways, available tagged EBS
 volumes, VPC, application bucket, webhook, and self-signed certificate are absent.
