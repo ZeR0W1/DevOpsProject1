@@ -84,6 +84,39 @@ class ClusterPurgerTests(unittest.TestCase):
         self.assertIn("application", uninstall)
         self.assertNotIn("controller", uninstall)
 
+    def test_custom_resource_purge_preserves_eks_vpc_cni_nodes(self) -> None:
+        purger = self.purger()
+        purger.kubectl_json = Mock(
+            return_value={
+                "items": [
+                    {
+                        "spec": {
+                            "group": "vpcresources.k8s.aws",
+                            "names": {"plural": "cninodes"},
+                            "scope": "Cluster",
+                        }
+                    },
+                    {
+                        "spec": {
+                            "group": "example.io",
+                            "names": {"plural": "widgets"},
+                            "scope": "Namespaced",
+                        }
+                    },
+                ]
+            }
+        )
+        purger.delete_and_require_absent = Mock()
+
+        purger.purge_custom_resources()
+
+        purger.delete_and_require_absent.assert_called_once_with(
+            "widgets.example.io",
+            ["--all", "--all-namespaces"],
+            ["--all-namespaces"],
+            "custom resources of type widgets.example.io",
+        )
+
     def test_purge_orders_controllers_before_storage(self) -> None:
         purger = self.purger()
         calls: list[str] = []

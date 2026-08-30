@@ -12,6 +12,7 @@ from typing import Any
 
 
 SYSTEM_NAMESPACES = {"kube-system", "kube-public", "kube-node-lease"}
+SYSTEM_MANAGED_CUSTOM_RESOURCES = {"cninodes.vpcresources.k8s.aws"}
 JsonObject = dict[str, Any]
 
 
@@ -156,6 +157,9 @@ class ClusterPurger:
         for crd in self.items(self.kubectl_json("get", "customresourcedefinition")):
             spec = crd["spec"]
             resource = f"{spec['names']['plural']}.{spec['group']}"
+            if resource in SYSTEM_MANAGED_CUSTOM_RESOURCES:
+                print(f"Preserving system-managed custom resources: {resource}")
+                continue
             if spec["scope"] == "Namespaced":
                 delete_args = ["--all", "--all-namespaces"]
                 get_args = ["--all-namespaces"]

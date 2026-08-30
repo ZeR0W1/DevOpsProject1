@@ -22,9 +22,10 @@ superseded evidence belong in `misc/recovery/PROJECT_HISTORY.md`.
   `us-east-1` on 2026-08-29 and is no longer an active ownership boundary.
 - Any future Terraform-owned stack remains a parallel recreation,
   not an import/adoption of the live environment.
-- The external S3 bucket `quick-demo-058264247987-us-east-1-an` and protected
-  CloudFormation stack `eksctl-learn-eks-cluster` remain outside the current
-  Terraform ownership boundary.
+- The external S3 bucket `quick-demo-058264247987-us-east-1-an` remains present
+  outside the current Terraform ownership boundary. The previously protected
+  CloudFormation stack `eksctl-learn-eks-cluster` was independently verified
+  absent after teardown; the project teardown did not target that stack.
 - Existing external resources may collide with names proposed for the future
   Terraform-owned stack; relevant names must be reverified read-only before
   relying on them.
@@ -35,11 +36,17 @@ superseded evidence belong in `misc/recovery/PROJECT_HISTORY.md`.
   Assignment 3 commit `db8f9f7`. The hardening checkpoint is commit `6b6706b` and
   was explicitly pushed to `origin/aws4-jenkins-cicd`; the lifecycle-organization
   and destroy-hardening checkpoint is commit `53ebe56`; acceptance fixes through
-  `8dee0af` are also pushed. The resumed authorized E2E created all three
-  application releases from source-built immutable tag `2-8dee0af765a0`; standalone
-  CD build 1 succeeded, all workloads are healthy, public routing checks pass, and
-  an approved worker record verified RDS persistence, encrypted S3 synchronization,
-  and the synchronous SNS publish path. The acceptance stack remains live.
+  `8dee0af` and lifecycle checkpoint `b17dc86` are also pushed. The resumed
+  authorized E2E created all three application releases from source-built immutable
+  tag `2-8dee0af765a0`; standalone CD builds 1 and 2 succeeded, all workloads are
+  healthy, public routing checks pass, and an approved worker record verified RDS
+  persistence, encrypted S3 synchronization, and the synchronous SNS publish path.
+  The push of `b17dc86` triggered CI build 5 through the live webhook; it completed
+  `SUCCESS` without triggering another standalone CD build. The authorized normal
+  teardown then completed without an application-data backup: the webhook and
+  application objects were removed, the dedicated cluster was purged, all 77
+  Terraform-owned addresses were destroyed, and the self-signed certificate was
+  deleted. Main state is empty; the separate state bucket is retained.
 - The Assignment 4 webhook direction is a direct GitHub-to-Jenkins webhook, not
   the discarded Lambda/SQS relay. The planned controls are the current GitHub
   `hooks` CIDR allowlist, GitHub webhook HMAC validation, private Jenkins UI
@@ -107,19 +114,28 @@ superseded evidence belong in `misc/recovery/PROJECT_HISTORY.md`.
   delayed retry; final errors have credential-like patterns redacted, remaining
   state addresses are displayed, partial state is preserved, and no generic
   out-of-state AWS deletion is attempted.
+- Cloud teardown exposed one additional lifecycle defect: the generic custom-
+  resource sweep deleted EKS VPC CNI `CNINode` objects while `aws-node` remained
+  active, so the system controller immediately recreated them and the purge stopped
+  safely before Terraform. The local fix preserves only
+  `cninodes.vpcresources.k8s.aws` for the Terraform-owned EKS/CNI lifecycle while
+  retaining fail-closed deletion for all other custom resources. Five purge tests,
+  Python compilation, and Git whitespace validation pass; the corrected rerun
+  completed the full teardown. This fix is local and not yet committed or pushed.
 - Full local Terraform formatting/validation, all Ansible playbook syntax checks,
   production-profile `ansible-lint`, Helm lint/render for all three charts, shell
   syntax, deterministic CIDR checking, Git whitespace checks, and seven worker
   tests pass. Both current Jenkinsfiles also pass the pinned local controller's
   authoritative Declarative Pipeline validator.
-- Resumed cloud acceptance exposed two final local defects: successful Kaniko/CD
-  work was marked CI failure when post-stage cleanup tried to exec into the exited
+- Resumed cloud acceptance exposed two final defects: successful Kaniko/CD work
+  was marked CI failure when post-stage cleanup tried to exec into the exited
   Kaniko container, and create accepted ALB health without requiring the exact CI
-  result. Local fixes make cleanup failure-safe and make the in-cluster trigger
-  follow its queue item and require the exact build to finish `SUCCESS` within a
-  bounded ten-minute Job. Jenkins Declarative validation, focused Ansible syntax/
-  production lint, and Git whitespace checks pass; cloud retest is pending.
-- The reviewed local acceptance checkpoint now also extracts the CI trigger,
+  result. Checkpoint `b17dc86` makes cleanup failure-safe and makes the in-cluster
+  trigger follow its queue item and require the exact build to finish `SUCCESS`
+  within a bounded ten-minute Job. The webhook-triggered CI build 5 passed, so the
+  cleanup fix is cloud-accepted; the exact create-lifecycle result gate remains to
+  be exercised during the next clean E2E.
+- The pushed acceptance checkpoint also extracts the CI trigger,
   Jenkins job seeding, registry credential configuration, and webhook Groovy
   programs from oversized inline playbook blocks into project-owned helpers.
   Focused Python/shell compilation, four-playbook syntax checks, production lint,
@@ -141,30 +157,25 @@ superseded evidence belong in `misc/recovery/PROJECT_HISTORY.md`.
 
 ## Immediate work queue
 
-1. Obtain explicit approval, then commit and push only the reviewed local
-   command-safety, CI cleanup, exact-build-result, extracted-helper, and Jenkins
-   login-documentation checkpoint to `aws4-jenkins-cicd`.
-2. Retest the fixed source-build CI path with separate mutation approval, then run
-   the reviewed teardown of the current acceptance stack.
-3. Run the clean create/webhook/CI/CD/verification/teardown E2E with stage-specific
+1. Review, commit, and push the narrow system-managed `CNINode` purge fix only
+   after explicit Git authorization.
+2. Run the clean create/webhook/CI/CD/verification/teardown E2E with stage-specific
    approvals.
-4. After acceptance and teardown, check out `main`, rerun setup so the ignored
+3. After clean acceptance and final teardown, check out `main`, rerun setup so the ignored
    watched-branch selection becomes `main`, and validate the production trigger.
 
 ## Exact resume point
 
-Resume by obtaining authorization for the reviewed local acceptance checkpoint:
-`.clinerules/01-workflow.md`, `.clinerules/90-current-project-status.md`,
-`Jenkins/Jenkinsfile.eks`, `README.md`, the four affected create playbooks, and the
-five new project-owned helpers under `scripts/`, excluding untracked
-`k8s/logging/`. Then obtain separate approval to retest source-build CI against the
-live acceptance stack. Current HEAD is `8dee0af`; CD build 1 succeeded while CI
-build 2 is FAILURE only because the already-exited Kaniko cleanup changed its final
-result. The fixed Jenkinsfile passes authoritative validation; affected helpers
-and playbooks pass focused static validation and production lint. Preserve the live
-stack and untracked class-lab files. Do not commit, push, retrigger CI, plan, apply,
-destroy, reinitialize a backend, or mutate cloud/GitHub state without explicit
-approval.
+Resume by reviewing the local lifecycle fix in
+`/home/geeta/Project1/scripts/destroy/purge_eks_cluster.py` and its regression test.
+Current local and remote `aws4-jenkins-cicd` remain `b17dc86`; do not commit or push
+without explicit approval. The authorized no-backup teardown completed in account
+`058264247987`, region `us-east-1`; main Terraform state has zero addresses. The
+`doa-staging` EKS cluster, RDS instance, ALB, NAT gateways, available tagged EBS
+volumes, VPC, application bucket, webhook, and self-signed certificate are absent.
+The separate state bucket and external `quick-demo` S3 bucket remain present. The
+previously protected CloudFormation stack is independently absent. Preserve
+untracked `k8s/logging/`. Any clean create requires separate explicit approval.
 
 ## Status-file maintenance rule
 
