@@ -193,6 +193,7 @@
                             cat > /tmp/configure-webhook.groovy <<'GROOVY'
                             import com.cloudbees.plugins.credentials.CredentialsScope
                             import com.cloudbees.plugins.credentials.SystemCredentialsProvider
+                            import com.cloudbees.plugins.credentials.domains.Domain
                             import org.jenkinsci.plugins.github.config.GitHubPluginConfig
                             import org.jenkinsci.plugins.github.config.HookSecretConfig
                             import org.jenkinsci.plugins.plaincredentials.impl.StringCredentialsImpl
@@ -206,7 +207,8 @@
                             def desired = new StringCredentialsImpl(
                               CredentialsScope.GLOBAL, id, 'GitHub webhook HMAC secret', Secret.fromString(value)
                             )
-                            existing ? store.updateCredentials(existing, desired) : store.addCredentials(desired)
+                            def domain = Domain.global()
+                            existing ? store.updateCredentials(domain, existing, desired) : store.addCredentials(domain, desired)
 
                             def config = Jenkins.get().getDescriptorByType(GitHubPluginConfig.class)
                             config.setHookUrl(System.getenv('WEBHOOK_URL'))
