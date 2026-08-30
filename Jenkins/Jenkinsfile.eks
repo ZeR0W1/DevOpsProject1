@@ -32,6 +32,17 @@ spec:
     - name: docker-config
       emptyDir: {}
   containers:
+    - name: jnlp
+      image: zer0w1/devops-project1-jenkins-agent@sha256:c226666c65258fe952bc44375f489255d64845a20e3d6f55c297e4d7bd09050d
+      resources:
+        requests: {cpu: 100m, memory: 256Mi}
+        limits: {cpu: 500m, memory: 512Mi}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        allowPrivilegeEscalation: false
+        capabilities: {drop: ['ALL']}
     - name: python
       image: zer0w1/devops-project1-jenkins-agent:eks-python-v2
       command: ['cat']
@@ -53,6 +64,9 @@ spec:
         requests: {cpu: 500m, memory: 1Gi}
         limits: {cpu: '2', memory: 3Gi}
       securityContext:
+        runAsNonRoot: false
+        runAsUser: 0
+        runAsGroup: 0
         allowPrivilegeEscalation: false
         capabilities:
           drop: ['ALL']
