@@ -269,6 +269,7 @@ spec:
                                         --snapshot-mode=redo \
                                         --cleanup
                                     done
+                                    chown -R 1000:1000 "${WORKSPACE}/image-digests"
                                 '''
                             }
                         }
@@ -399,7 +400,13 @@ spec:
                             echo 'Kaniko credential cleanup could not exec because the short-lived container had already exited; the pod-scoped emptyDir is removed with the agent Pod.'
                         }
                     }
-                    deleteDir()
+                    script {
+                        try {
+                            deleteDir()
+                        } catch (Exception workspaceCleanupError) {
+                            echo 'Workspace cleanup could not complete after the short-lived agent containers exited; the pod-scoped emptyDir is removed with the agent Pod.'
+                        }
+                    }
                 }
             }
         }

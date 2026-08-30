@@ -190,30 +190,9 @@
                         command: [bash, -ceu]
                         args:
                           - |
+                            trap 'rm -f /tmp/configure-webhook.groovy' EXIT
                             cat > /tmp/configure-webhook.groovy <<'GROOVY'
-                            import com.cloudbees.plugins.credentials.CredentialsScope
-                            import com.cloudbees.plugins.credentials.SystemCredentialsProvider
-                            import com.cloudbees.plugins.credentials.domains.Domain
-                            import org.jenkinsci.plugins.github.config.GitHubPluginConfig
-                            import org.jenkinsci.plugins.github.config.HookSecretConfig
-                            import org.jenkinsci.plugins.plaincredentials.impl.StringCredentialsImpl
-                            import hudson.util.Secret
-                            import jenkins.model.Jenkins
-
-                            def id = System.getenv('WEBHOOK_CREDENTIALS_ID')
-                            def value = System.getenv('WEBHOOK_SECRET')
-                            def store = SystemCredentialsProvider.getInstance().getStore()
-                            def existing = SystemCredentialsProvider.getInstance().getCredentials().find { it.id == id }
-                            def desired = new StringCredentialsImpl(
-                              CredentialsScope.GLOBAL, id, 'GitHub webhook HMAC secret', Secret.fromString(value)
-                            )
-                            def domain = Domain.global()
-                            existing ? store.updateCredentials(domain, existing, desired) : store.addCredentials(domain, desired)
-
-                            def config = Jenkins.get().getDescriptorByType(GitHubPluginConfig.class)
-                            config.setHookUrl(System.getenv('WEBHOOK_URL'))
-                            config.setHookSecretConfigs([new HookSecretConfig(id, 'SHA256')])
-                            config.save()
+                            {{ lookup('ansible.builtin.file', project_root + '/scripts/configure_jenkins_webhook.groovy') | indent(28) }}
                             GROOVY
                             curl -fsSL "$JENKINS_URL/jnlpJars/jenkins-cli.jar" \
                               -o /tmp/jenkins-cli.jar

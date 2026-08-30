@@ -206,6 +206,18 @@ kubectl --kubeconfig Ansible-modules-01/recovery/target-kubeconfig \
   -n jenkins port-forward svc/jenkins 18080:8080
 ```
 
+In a separate terminal, retrieve the current administrator login only when it is
+needed:
+
+```bash
+bash scripts/show_jenkins_login.sh
+```
+
+The helper requires exact `SHOW` confirmation, prints the credentials only to
+that terminal, and does not copy, cache, or write them to a file. The output can
+remain in terminal scrollback, so do not run it while screen sharing or capture
+it in submission evidence.
+
 ### Frontend runtime content
 
 CI validates the repository default and uses `FRONTEND_CONTENT_BUCKET` plus the

@@ -119,6 +119,13 @@ superseded evidence belong in `misc/recovery/PROJECT_HISTORY.md`.
   follow its queue item and require the exact build to finish `SUCCESS` within a
   bounded ten-minute Job. Jenkins Declarative validation, focused Ansible syntax/
   production lint, and Git whitespace checks pass; cloud retest is pending.
+- The reviewed local acceptance checkpoint now also extracts the CI trigger,
+  Jenkins job seeding, registry credential configuration, and webhook Groovy
+  programs from oversized inline playbook blocks into project-owned helpers.
+  Focused Python/shell compilation, four-playbook syntax checks, production lint,
+  helper-reference inspection, and Git whitespace checks pass. A confirmation-
+  gated login helper prints the private Jenkins credentials only to the operator
+  terminal and is documented with terminal-scrollback precautions.
 - The command-by-command E2E create/webhook/CI/CD/verification/teardown checklist
   has been reviewed. The Assignment 4 hardening commit and push of only
   `aws4-jenkins-cicd` were explicitly authorized; Jenkins is seeded against that
@@ -134,8 +141,9 @@ superseded evidence belong in `misc/recovery/PROJECT_HISTORY.md`.
 
 ## Immediate work queue
 
-1. Obtain explicit approval, then commit and push only the local command-safety,
-   CI cleanup, and exact-build-result lifecycle fixes to `aws4-jenkins-cicd`.
+1. Obtain explicit approval, then commit and push only the reviewed local
+   command-safety, CI cleanup, exact-build-result, extracted-helper, and Jenkins
+   login-documentation checkpoint to `aws4-jenkins-cicd`.
 2. Retest the fixed source-build CI path with separate mutation approval, then run
    the reviewed teardown of the current acceptance stack.
 3. Run the clean create/webhook/CI/CD/verification/teardown E2E with stage-specific
@@ -145,17 +153,18 @@ superseded evidence belong in `misc/recovery/PROJECT_HISTORY.md`.
 
 ## Exact resume point
 
-Resume by obtaining authorization for the four-file local acceptance checkpoint:
+Resume by obtaining authorization for the reviewed local acceptance checkpoint:
 `.clinerules/01-workflow.md`, `.clinerules/90-current-project-status.md`,
-`Jenkins/Jenkinsfile.eks`, and
-`Ansible-modules-01/playbooks/create/trigger_jenkins_ci.yml`, excluding untracked
+`Jenkins/Jenkinsfile.eks`, `README.md`, the four affected create playbooks, and the
+five new project-owned helpers under `scripts/`, excluding untracked
 `k8s/logging/`. Then obtain separate approval to retest source-build CI against the
 live acceptance stack. Current HEAD is `8dee0af`; CD build 1 succeeded while CI
 build 2 is FAILURE only because the already-exited Kaniko cleanup changed its final
-result. The fixed Jenkinsfile passes authoritative validation; the trigger playbook
-passes syntax and production lint. Preserve the live stack and untracked class-lab
-files. Do not commit, push, retrigger CI, plan, apply, destroy, reinitialize a
-backend, or mutate cloud/GitHub state without explicit approval.
+result. The fixed Jenkinsfile passes authoritative validation; affected helpers
+and playbooks pass focused static validation and production lint. Preserve the live
+stack and untracked class-lab files. Do not commit, push, retrigger CI, plan, apply,
+destroy, reinitialize a backend, or mutate cloud/GitHub state without explicit
+approval.
 
 ## Status-file maintenance rule
 
