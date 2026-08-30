@@ -390,8 +390,14 @@ spec:
             }
             post {
                 always {
-                    container('kaniko') {
-                        sh 'rm -f /kaniko/.docker/config.json'
+                    script {
+                        try {
+                            container('kaniko') {
+                                sh 'rm -f /kaniko/.docker/config.json'
+                            }
+                        } catch (Exception cleanupError) {
+                            echo 'Kaniko credential cleanup could not exec because the short-lived container had already exited; the pod-scoped emptyDir is removed with the agent Pod.'
+                        }
                     }
                     deleteDir()
                 }

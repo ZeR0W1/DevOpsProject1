@@ -34,10 +34,12 @@ superseded evidence belong in `misc/recovery/PROJECT_HISTORY.md`.
 - Assignment 4 work continues on local branch `aws4-jenkins-cicd`, branched from
   Assignment 3 commit `db8f9f7`. The hardening checkpoint is commit `6b6706b` and
   was explicitly pushed to `origin/aws4-jenkins-cicd`; the lifecycle-organization
-  and destroy-hardening checkpoint is commit `53ebe56` and is also pushed. The
-  first authorized E2E create produced the Terraform-owned stack and Jenkins but
-  stopped before application delivery when the encrypted GitHub token proved to
-  be a stale placeholder. That partial stack remains live pending guarded resume.
+  and destroy-hardening checkpoint is commit `53ebe56`; acceptance fixes through
+  `8dee0af` are also pushed. The resumed authorized E2E created all three
+  application releases from source-built immutable tag `2-8dee0af765a0`; standalone
+  CD build 1 succeeded, all workloads are healthy, public routing checks pass, and
+  an approved worker record verified RDS persistence, encrypted S3 synchronization,
+  and the synchronous SNS publish path. The acceptance stack remains live.
 - The Assignment 4 webhook direction is a direct GitHub-to-Jenkins webhook, not
   the discarded Lambda/SQS relay. The planned controls are the current GitHub
   `hooks` CIDR allowlist, GitHub webhook HMAC validation, private Jenkins UI
@@ -77,8 +79,8 @@ superseded evidence belong in `misc/recovery/PROJECT_HISTORY.md`.
 - The create playbook retains its interactive `CREATE` gate by default and also
   supports exact `CREATE_CONFIRMATION_OVERRIDE=CREATE` preauthorization for the
   reviewed unattended runner; all other values are rejected by the same assertion.
-- Clone/fork reproducibility and the credential preflight fix are local and await
-  checkpoint approval. Setup detects and confirms a GitHub HTTPS repository and
+- Clone/fork reproducibility and the credential preflight fix are pushed through
+  `8dee0af`. Setup detects and confirms a GitHub HTTPS repository and
   watched branch, writes them to ignored mode-0600 `vars/project.local.yml`, and
   verifies the hidden fine-grained token can read that repository's webhooks.
   Create revalidates the same contract before AWS/Terraform work; webhook create,
@@ -110,9 +112,13 @@ superseded evidence belong in `misc/recovery/PROJECT_HISTORY.md`.
   syntax, deterministic CIDR checking, Git whitespace checks, and seven worker
   tests pass. Both current Jenkinsfiles also pass the pinned local controller's
   authoritative Declarative Pipeline validator.
-- End-to-end cloud acceptance remains pending by user decision and will follow
-  the approved hardening checkpoint; any findings will be recorded in a separate
-  fix commit.
+- Resumed cloud acceptance exposed two final local defects: successful Kaniko/CD
+  work was marked CI failure when post-stage cleanup tried to exec into the exited
+  Kaniko container, and create accepted ALB health without requiring the exact CI
+  result. Local fixes make cleanup failure-safe and make the in-cluster trigger
+  follow its queue item and require the exact build to finish `SUCCESS` within a
+  bounded ten-minute Job. Jenkins Declarative validation, focused Ansible syntax/
+  production lint, and Git whitespace checks pass; cloud retest is pending.
 - The command-by-command E2E create/webhook/CI/CD/verification/teardown checklist
   has been reviewed. The Assignment 4 hardening commit and push of only
   `aws4-jenkins-cicd` were explicitly authorized; Jenkins is seeded against that
@@ -128,10 +134,10 @@ superseded evidence belong in `misc/recovery/PROJECT_HISTORY.md`.
 
 ## Immediate work queue
 
-1. Obtain explicit approval, then commit and push only the local credential-
-   preflight and clone/fork-reproducibility checkpoint to `aws4-jenkins-cicd`.
-2. Resume the partial create only with a separate explicit mutation approval,
-   complete delivery/verification, then run the reviewed teardown.
+1. Obtain explicit approval, then commit and push only the local command-safety,
+   CI cleanup, and exact-build-result lifecycle fixes to `aws4-jenkins-cicd`.
+2. Retest the fixed source-build CI path with separate mutation approval, then run
+   the reviewed teardown of the current acceptance stack.
 3. Run the clean create/webhook/CI/CD/verification/teardown E2E with stage-specific
    approvals.
 4. After acceptance and teardown, check out `main`, rerun setup so the ignored
@@ -139,19 +145,17 @@ superseded evidence belong in `misc/recovery/PROJECT_HISTORY.md`.
 
 ## Exact resume point
 
-Resume by obtaining authorization for the local reproducibility/preflight
-checkpoint commit and push, excluding untracked `k8s/logging/`, then obtain a
-separate approval before rerunning create against the partial stack. The current
-ignored SCM selection resolves to `ZeR0W1/DevOpsProject1` branch
-`aws4-jenkins-cicd`; a real cancellation preflight validated the refreshed token's
-webhook access and reached the scope display with `changed=0` before stopping.
-All 23 playbooks pass syntax checks and production-profile `ansible-lint`;
-Terraform formatting/validation, four purge tests, Python compile, shell syntax,
-CIDR checking, Helm lint/render, seven worker tests, and Git whitespace checks
-pass. Reverify current Terraform/Kubernetes ownership and target-name state
-read-only immediately before resumed create. Preserve untracked
-`k8s/logging/` class-lab files. Do not commit, push, plan, apply, destroy,
-reinitialize a backend, or mutate cloud/GitHub state without explicit approval.
+Resume by obtaining authorization for the four-file local acceptance checkpoint:
+`.clinerules/01-workflow.md`, `.clinerules/90-current-project-status.md`,
+`Jenkins/Jenkinsfile.eks`, and
+`Ansible-modules-01/playbooks/create/trigger_jenkins_ci.yml`, excluding untracked
+`k8s/logging/`. Then obtain separate approval to retest source-build CI against the
+live acceptance stack. Current HEAD is `8dee0af`; CD build 1 succeeded while CI
+build 2 is FAILURE only because the already-exited Kaniko cleanup changed its final
+result. The fixed Jenkinsfile passes authoritative validation; the trigger playbook
+passes syntax and production lint. Preserve the live stack and untracked class-lab
+files. Do not commit, push, retrigger CI, plan, apply, destroy, reinitialize a
+backend, or mutate cloud/GitHub state without explicit approval.
 
 ## Status-file maintenance rule
 

@@ -22,9 +22,16 @@
   code-search tools for discovery, and patch tools for edits.
 - Shell commands, including `rm`, are allowed when appropriate, but all deletion
   approval and ownership rules still apply.
-- Do not use inline Python, shell heredocs, or compound multi-line shell programs.
-  For longer logic, create a readable script through the editor as a separate
-  project-file edit, then invoke it with a short command.
+- Never include the shell `exit` builtin in commands executed through workspace
+  tools. It can close the integrated terminal without returning a usable result
+  to the output-capture tool, even though the command itself completes as
+  intended; preserve status with command chaining, bounded `timeout`, or a
+  separate check instead.
+- Do not use inline Python, shell heredocs, compound multi-line shell programs,
+  or long compound one-liners that combine setup, background-process lifecycle,
+  secret retrieval, validation, cleanup, and status propagation. For longer
+  logic, create a readable script through the editor as a separate project-file
+  edit, then invoke it with a short command.
 - Keep command output scoped to what is needed for the current decision. Avoid
   broad listings, dumps, or recursive output when a narrower query is sufficient.
 - If execution completes but output capture fails, treat the command as completed

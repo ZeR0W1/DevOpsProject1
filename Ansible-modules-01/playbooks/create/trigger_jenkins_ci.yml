@@ -97,8 +97,8 @@
                   app.kubernetes.io/name: jenkins-ci-trigger
                   app.kubernetes.io/managed-by: ansible
               spec:
-                activeDeadlineSeconds: 300
-                backoffLimit: 2
+                activeDeadlineSeconds: 600
+                backoffLimit: 0
                 ttlSecondsAfterFinished: 300
                 template:
                   metadata:
@@ -137,7 +137,7 @@
                         command: [python, -c]
                         args:
                           - |
-                            import base64, http.cookiejar, json, os, urllib.parse, urllib.request
+                            import base64, http.cookiejar, json, os, time, urllib.parse, urllib.request
 
                             root = os.environ["JENKINS_URL"].rstrip("/")
                             job = urllib.parse.quote(os.environ["JENKINS_JOB"], safe="")
@@ -158,7 +158,7 @@
                                     method=method,
                                 )
                                 with opener.open(req, timeout=30) as response:
-                                    return response.status, response.read()
+                                    return response.status, response.read(), response.headers
 
                             crumb = json.loads(request("/crumbIssuer/api/json")[1])
                             parameters = {
@@ -168,7 +168,7 @@
                             }
                             if os.environ["DELIVERY_MODE"] == "BUILD_AND_DEPLOY":
                                 parameters["DOCKERHUB_NAMESPACE"] = os.environ["DOCKERHUB_NAMESPACE"]
-                            status, _ = request(
+                            status, _, response_headers = request(
                                 f"/job/{job}/buildWithParameters",
                                 "POST",
                                 urllib.parse.urlencode(parameters).encode(),
@@ -179,7 +179,37 @@
                             )
                             if status != 201:
                                 raise RuntimeError(f"Unexpected Jenkins queue status {status}")
-                            print(f'Queued Jenkins CI in {os.environ["DELIVERY_MODE"]} mode.')
+                            queue_url = response_headers.get("Location", "").rstrip("/")
+                            if not queue_url.startswith(root + "/queue/item/"):
+                                raise RuntimeError("Jenkins queue response omitted the expected Location")
+                            queue_path = queue_url[len(root):] + "/api/json"
+                            build_url = ""
+                            for _ in range(120):
+                                queue = json.loads(request(queue_path)[1])
+                                if queue.get("cancelled"):
+                                    raise RuntimeError("Jenkins cancelled the queued CI build")
+                                if queue.get("executable", {}).get("url"):
+                                    build_url = queue["executable"]["url"].rstrip("/")
+                                    break
+                                time.sleep(5)
+                            if not build_url.startswith(root + "/job/"):
+                                raise RuntimeError("Jenkins did not assign the queued CI build")
+                            build_path = build_url[len(root):] + "/api/json"
+                            for _ in range(360):
+                                build = json.loads(request(build_path)[1])
+                                if not build.get("building", False) and build.get("result"):
+                                    if build["result"] != "SUCCESS":
+                                        raise RuntimeError(
+                                            f'Jenkins CI build {build.get("number")} finished {build["result"]}'
+                                        )
+                                    print(
+                                        f'Jenkins CI build {build.get("number")} completed SUCCESS '
+                                        f'in {os.environ["DELIVERY_MODE"]} mode.'
+                                    )
+                                    break
+                                time.sleep(10)
+                            else:
+                                raise RuntimeError("Timed out waiting for Jenkins CI completion")
                         resources:
                           requests: {cpu: 50m, memory: 64Mi}
                           limits: {cpu: 200m, memory: 128Mi}
@@ -202,15 +232,15 @@
             (jenkins_ci_trigger_status.resources[0].status.conditions | default([]) |
              selectattr('type', 'in', ['Complete', 'Failed']) |
              selectattr('status', 'equalto', 'True') | list | length) > 0
-          retries: 30
+          retries: 60
           delay: 10
 
-        - name: Require successful Jenkins CI queue handoff
+        - name: Require successful Jenkins CI completion
           ansible.builtin.assert:
             that:
               - (jenkins_ci_trigger_status.resources[0].status.succeeded | default(0) | int) == 1
             fail_msg: >-
-              The in-cluster Jenkins CI trigger failed before queue handoff.
+              The exact Jenkins CI build did not complete successfully.
 
         - name: Read the Terraform-owned public application URL
           ansible.builtin.command:
@@ -283,7 +313,7 @@
           ansible.builtin.debug:
             msg:
               - >-
-                Jenkins accepted the delivery and the Terraform-owned shared ALB
-                health endpoint is available.
+                The exact Jenkins CI build completed successfully and the
+                Terraform-owned shared ALB health endpoint is available.
               - "Open the application: {{ frontend_url }}"
               - "The URL is also saved at {{ frontend_url_file }}"
