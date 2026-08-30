@@ -62,6 +62,7 @@ src/legacy/
 vault_pass.txt
 Ansible-modules-01/.vault-password
 Ansible-modules-01/vault/local-environment.yml
+Ansible-modules-01/vars/project.local.yml
 Ansible-modules-01/recovery/
 Ansible-modules-01/generated/
 ansible.log

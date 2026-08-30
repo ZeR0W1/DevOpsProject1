@@ -6,16 +6,13 @@
 
   vars_files:
     - ../../vars/project.yml
+    - ../../vars/project.local.yml
 
   vars:
     delivery_mode: >-
       {{ lookup('ansible.builtin.env', 'DELIVERY_MODE')
          | default('DEPLOY_DEFAULT', true)
          | upper }}
-    dockerhub_namespace: >-
-      {{ lookup('ansible.builtin.env', 'DOCKERHUB_NAMESPACE')
-         | default('', true)
-         | lower }}
     deploy_image_tag: >-
       {{ lookup('ansible.builtin.env', 'DEPLOY_IMAGE_TAG')
          | default('', true) }}
@@ -28,6 +25,23 @@
          | default('', true) }}
 
   tasks:
+    - name: Load encrypted registry identity for source-build delivery
+      ansible.builtin.include_vars:
+        file: "{{ local_environment_file }}"
+        name: trigger_local_environment
+      no_log: true
+      when: delivery_mode == 'BUILD_AND_DEPLOY'
+
+    - name: Select effective source-build registry namespace
+      ansible.builtin.set_fact:
+        dockerhub_namespace: >-
+          {{
+            trigger_local_environment.dockerhub_username | default('') | lower
+            if delivery_mode == 'BUILD_AND_DEPLOY'
+            else ''
+          }}
+      no_log: true
+
     - name: Report skipped Jenkins CI trigger
       ansible.builtin.debug:
         msg: >-

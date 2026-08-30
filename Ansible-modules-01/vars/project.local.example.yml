@@ -1,0 +1,7 @@
+---
+# Non-secret controller-local SCM selection. setup.sh generates the ignored
+# project.local.yml from confirmed Git metadata. An operator may edit that file
+# and rerun the guarded lifecycle to reseed Jenkins and configure another
+# repository and branch.
+project_scm_url: https://github.com/OWNER/REPOSITORY.git
+project_scm_branch: main

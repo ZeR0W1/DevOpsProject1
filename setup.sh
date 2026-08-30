@@ -10,6 +10,7 @@ ANSIBLE_RUNTIME_DIR="${ANSIBLE_DIR}/.ansible"
 COLLECTIONS_DIR="${ANSIBLE_DIR}/collections"
 VAULT_PASSWORD_FILE="${ANSIBLE_DIR}/.vault-password"
 LOCAL_ENVIRONMENT_FILE="${ANSIBLE_DIR}/vault/local-environment.yml"
+PROJECT_LOCAL_VARS_FILE="${ANSIBLE_DIR}/vars/project.local.yml"
 
 if [[ "${1:-}" == "refresh-github-hooks" ]]; then
   if [[ $# -ne 1 ]]; then
@@ -38,7 +39,8 @@ for setup_path in \
   "${TOOLS_DIR}" \
   "${ANSIBLE_RUNTIME_DIR}" \
   "${VAULT_PASSWORD_FILE}" \
-  "${LOCAL_ENVIRONMENT_FILE}"; do
+  "${LOCAL_ENVIRONMENT_FILE}" \
+  "${PROJECT_LOCAL_VARS_FILE}"; do
   if [[ ! -e "${setup_path}" ]]; then
     SETUP_ROLLBACK_PATHS+=("${setup_path}")
   fi

@@ -6,6 +6,7 @@
 
   vars_files:
     - ../../../vars/project.yml
+    - ../../../vars/project.local.yml
 
   vars:
     refresh_plan_file: "{{ generated_output_root }}/github-hook-cidrs.tfplan"
@@ -14,7 +15,6 @@
     terraform_remote_state_config: "{{ terraform_dir }}/remote-state.hcl"
     terraform_backend_metadata: "{{ terraform_dir }}/.terraform/terraform.tfstate"
     applied_snapshot_file: "{{ project_root }}/config/github-hooks-applied.json"
-    github_repository: ZeR0W1/DevOpsProject1
 
   tasks:
     - name: Require local tools and existing Terraform inputs
@@ -25,6 +25,9 @@
           - terraform_remote_state_config is file
           - terraform_backend_metadata is file
           - local_environment_file is file
+          - project_local_vars_file is file
+          - project_github_repository is match('^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$')
+          - project_scm_branch | length > 0
         fail_msg: >-
           Run setup.sh and create the Terraform-owned stack before refreshing CIDRs.
           The existing working directory must already be initialized against its S3 backend.
@@ -259,7 +262,7 @@
 
     - name: Read current GitHub repository webhooks
       ansible.builtin.uri:
-        url: "https://api.github.com/repos/{{ github_repository }}/hooks"
+        url: "https://api.github.com/repos/{{ project_github_repository }}/hooks"
         method: GET
         return_content: true
         status_code: 200
@@ -291,7 +294,7 @@
     - name: Read recent project webhook deliveries
       ansible.builtin.uri:
         url: >-
-          https://api.github.com/repos/{{ github_repository }}/hooks/{{
+          https://api.github.com/repos/{{ project_github_repository }}/hooks/{{
             refresh_project_webhooks[0].id
           }}/deliveries?per_page=100
         method: GET
@@ -319,7 +322,7 @@
     - name: Read failed push delivery payloads
       ansible.builtin.uri:
         url: >-
-          https://api.github.com/repos/{{ github_repository }}/hooks/{{
+          https://api.github.com/repos/{{ project_github_repository }}/hooks/{{
             refresh_project_webhooks[0].id
           }}/deliveries/{{ item.id }}
         method: GET
@@ -345,7 +348,7 @@
             | selectattr(
                 'json.request.payload.ref',
                 'equalto',
-                'refs/heads/aws4-jenkins-cicd'
+                'refs/heads/' ~ project_scm_branch
               )
             | map(attribute='json')
             | sort(attribute='delivered_at', reverse=true)
@@ -358,7 +361,7 @@
     - name: Redeliver only the latest failed push after successful refresh
       ansible.builtin.uri:
         url: >-
-          https://api.github.com/repos/{{ github_repository }}/hooks/{{
+          https://api.github.com/repos/{{ project_github_repository }}/hooks/{{
             refresh_project_webhooks[0].id
           }}/deliveries/{{ refresh_latest_failed_push.id }}/attempts
         method: POST

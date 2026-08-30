@@ -259,17 +259,37 @@ sudo apt-get install -y \
   tar unzip coreutils gawk grep
 ```
 
-Clone the repository and select the project branch:
+Fork or import this repository into a GitHub repository that you can administer,
+then clone that repository over HTTPS and check out the branch Jenkins should
+watch. You do not need push or webhook access to the upstream author's repository:
 
 ```bash
-git clone --branch aws4-jenkins-cicd --single-branch \
-  https://github.com/ZeR0W1/DevOpsProject1.git
-cd DevOpsProject1
+git clone --branch <branch> --single-branch \
+  https://github.com/<owner>/<repository>.git
+cd <repository>
 ```
 
 The host needs network access to AWS and public package/container registries.
-Docker Hub credentials are optional; they are needed only for
-`BUILD_AND_DEPLOY`.
+
+Prepare these external credentials before setup:
+
+- **AWS identity:** use temporary IAM Identity Center or assumed-role credentials
+  where possible. The project cannot generate AWS credentials.
+- **GitHub webhook token:** create a fine-grained personal access token at
+  <https://github.com/settings/personal-access-tokens/new>. Select the resource
+  owner of the repository clone you will deploy, limit repository access to that
+  repository, and grant only repository **Webhooks: Read and write**. Copy it once
+  for the hidden setup prompt. GitHub requires this one-time interactive
+  authorization; the project cannot mint its own token. Rotate or revoke it in
+  the same GitHub settings page, then rerun setup to encrypt the replacement
+  locally.
+- **Docker Hub token (build mode only):** create an access token under Docker Hub
+  **Account settings -> Personal access tokens** with read/write permission for
+  the three project repositories. `DEPLOY_DEFAULT` does not need it.
+
+Never paste these values into committed files, command arguments, CI parameters,
+or chat. The supported prompts hide secret input and store it only as ignored,
+per-value Ansible Vault ciphertext.
 
 ### Project tools and AWS authentication
 
@@ -283,9 +303,29 @@ source .venv/bin/activate
 
 `setup.sh` installs pinned Python/controller dependencies, AWS CLI, Terraform,
 kubectl, Helm, and Ansible collections under the repository. It then creates or
-retains an ignored mode-`0600` `.vault-password` and prompts for the local
-environment values stored as individually Ansible-Vault-encrypted entries in the
-ignored mode-`0600` `vault/local-environment.yml`.
+retains an ignored mode-`0600` `.vault-password`; derives the deterministic
+database username; detects the clone's GitHub HTTPS `origin` and checked-out
+branch; asks the operator to confirm those values or enter another GitHub HTTPS
+repository and branch; verifies that the token can administer that repository's
+webhooks; detects and confirms the administrator `/32`; and prompts for the
+administrator email and externally created GitHub token. The SCM selection is
+written to ignored mode-`0600` `vars/project.local.yml`. Secret values are
+stored as individually Ansible-Vault-encrypted entries in the ignored mode-`0600`
+`vault/local-environment.yml`. The project generates the vault password, database
+username, Jenkins webhook HMAC secret, and self-signed lab certificate when
+selected; it does not generate AWS, GitHub, or Docker Hub credentials.
+
+Rerunning setup rewrites the encrypted core environment bundle. If build-mode
+Docker Hub fields are absent afterward, `create.yml` prompts for them before cloud
+mutation, verifies registry authentication, and appends encrypted replacements.
+To change the Jenkins/webhook repository later, edit ignored
+`Ansible-modules-01/vars/project.local.yml` using
+`Ansible-modules-01/vars/project.local.example.yml` as the schema, ensure the
+encrypted token can administer the replacement repository, and rerun the guarded
+create lifecycle. It validates token/repository compatibility before AWS identity,
+Terraform, or Kubernetes work, then displays the repository and watched branch in
+the `CREATE` scope. Existing Jenkins `REPO_URL` and ref parameters are reseeded
+from this same selection.
 
 Setup also installs the repository pre-push CIDR warning. If GitHub reports a
 new `hooks` IPv4 set, the issue-only GitHub Action opens or updates one tracking
@@ -301,7 +341,7 @@ against the retained S3 Terraform backend. It creates a saved targeted plan,
 rejects every mutation outside the public-ALB webhook listener rules, displays
 the exact addresses, and requires typing `REFRESH`. Only after a successful apply
 does it synchronize the local input/snapshot and redeliver at most the latest
-failed push for `aws4-jenkins-cicd`; CD is never triggered directly.
+failed push for the configured watched branch; CD is never triggered directly.
 
 Configure the AWS credential chain after activating `.venv`. Prefer temporary
 credentials from AWS IAM Identity Center or an assumed role. For a named SSO
@@ -341,13 +381,16 @@ export ANSIBLE_CONFIG="$PWD/ansible.cfg"
 ansible-playbook playbooks/create.yml
 ```
 
-`create.yml` prompts for `DEPLOY_DEFAULT` or `BUILD_AND_DEPLOY`, derives the AWS
-account/region resource scope, rejects an unowned remote-state bucket collision,
-and displays the billable boundary before requiring one exact typed confirmation.
-Default delivery uses promoted public images and needs no Docker Hub credential.
-Build delivery prompts for a Docker Hub owner/token only when they are absent,
-verifies them, and adds an idempotent encrypted block to the same local environment
-file. The token is never committed or printed.
+`create.yml` prompts for `DEPLOY_DEFAULT` or `BUILD_AND_DEPLOY`, decrypts and
+validates all mandatory setup values under `no_log`, validates selected-mode
+credentials, derives the AWS account/region resource scope, rejects an unowned
+remote-state bucket collision, and displays the billable boundary before requiring
+one exact typed confirmation. Incomplete core setup therefore fails before AWS or
+Terraform inspection and before `CREATE`. Default delivery uses promoted public
+images and needs no Docker Hub credential. Build delivery prompts for a Docker Hub
+owner/token only when they are absent, verifies them, and adds an idempotent
+encrypted block to the same local environment file. Tokens are never committed or
+printed.
 
 The reviewed scope includes the AWS account and region, retained state-backend
 decision, VPC/NAT, private EKS nodes, private RDS, application S3/SNS/IAM,

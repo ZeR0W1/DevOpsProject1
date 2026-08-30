@@ -6,6 +6,7 @@
 
   vars_files:
     - ../vars/project.yml
+    - ../vars/project.local.yml
 
   vars_prompt:
     - name: requested_delivery_option
@@ -59,6 +60,7 @@
       ansible.builtin.assert:
         that:
           - local_environment_file is file
+          - project_local_vars_file is file
           - "(project_root ~ '/.venv/bin/terraform') is file"
           - "(project_root ~ '/.venv/bin/kubectl') is file"
           - "(project_root ~ '/.venv/bin/helm') is file"
@@ -66,6 +68,63 @@
           - requested_tls_option | trim in ['1', '2']
         fail_msg: >-
           Run bash ../setup.sh first and select supported delivery and TLS modes.
+
+    - name: Validate controller-local SCM selection
+      ansible.builtin.assert:
+        that:
+          - >-
+            project_scm_url
+            is match('^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+\\.git$')
+          - project_github_repository is match('^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$')
+          - project_scm_branch | length > 0
+          - project_scm_branch is match('^[A-Za-z0-9][A-Za-z0-9._/-]*$')
+          - "'..' not in project_scm_branch"
+          - "'@{' not in project_scm_branch"
+          - "'//' not in project_scm_branch"
+          - not project_scm_branch.endswith('/')
+          - not project_scm_branch.endswith('.lock')
+        fail_msg: >-
+          Rerun bash ../setup.sh or correct vars/project.local.yml with a valid
+          GitHub HTTPS repository and safely named branch.
+
+    - name: Load encrypted local environment prerequisites
+      ansible.builtin.include_vars:
+        file: "{{ local_environment_file }}"
+        name: create_local_environment
+      no_log: true
+
+    - name: Validate mandatory encrypted creation prerequisites
+      ansible.builtin.assert:
+        that:
+          - >-
+            create_local_environment.admin_email | default('')
+            is match('^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$')
+          - >-
+            create_local_environment.admin_cidr | default('')
+            is match('^(25[0-5]|2[0-4][0-9]|1?[0-9]{1,2})(\\.(25[0-5]|2[0-4][0-9]|1?[0-9]{1,2})){3}/32$')
+          - >-
+            create_local_environment.db_username | default('')
+            is match('^[a-z][a-z0-9_]{0,62}$')
+          - >-
+            not (create_local_environment.db_username | default('')).startswith('pg_')
+          - create_local_environment.github_api_token | default('') | length >= 20
+        fail_msg: >-
+          Rerun bash ../setup.sh with valid administrator, database, and GitHub
+          webhook inputs before starting the creation lifecycle.
+      no_log: true
+
+    - name: Verify GitHub token access to the selected repository webhooks
+      ansible.builtin.uri:
+        url: "https://api.github.com/repos/{{ project_github_repository }}/hooks"
+        method: GET
+        return_content: false
+        status_code: 200
+        headers:
+          Accept: application/vnd.github+json
+          Authorization: "Bearer {{ create_local_environment.github_api_token }}"
+          X-GitHub-Api-Version: "2022-11-28"
+      changed_when: false
+      no_log: true
 
     - name: Read committed non-secret Terraform defaults
       ansible.builtin.set_fact:
@@ -164,12 +223,6 @@
       ansible.builtin.set_fact:
         create_bootstrap_apply: "{{ bootstrap_state.stdout_lines | length == 0 }}"
 
-    - name: Load optional stored registry values
-      ansible.builtin.include_vars:
-        file: "{{ local_environment_file }}"
-        name: create_local_environment
-      no_log: true
-
     - name: Select on-demand registry credential preparation
       ansible.builtin.set_fact:
         create_prepare_registry_credentials: >-
@@ -181,6 +234,21 @@
             )
           }}
 
+    - name: Validate stored build-delivery credentials when already configured
+      ansible.builtin.assert:
+        that:
+          - >-
+            create_local_environment.dockerhub_username | default('') | lower
+            is match('^[a-z0-9]+([._-][a-z0-9]+)*$')
+          - create_local_environment.dockerhub_token | default('') | length >= 16
+        fail_msg: >-
+          Stored Docker Hub credentials are invalid; remove or rotate them through
+          the guarded registry-credential preparation flow before cloud mutation.
+      no_log: true
+      when:
+        - create_delivery_mode == 'BUILD_AND_DEPLOY'
+        - not create_prepare_registry_credentials
+
     - name: Display billable creation scope and ownership boundaries
       ansible.builtin.debug:
         msg:
@@ -189,6 +257,8 @@
           - "Application-data bucket: {{ create_application_bucket }}"
           - "Remote-state bucket: {{ create_state_bucket }} (retained on normal destroy)"
           - "Delivery mode: {{ create_delivery_mode }}"
+          - "GitHub repository: {{ project_github_repository }}"
+          - "Jenkins watched branch: {{ project_scm_branch }}"
           - "Public TLS mode: {{ create_public_tls_mode }}"
           - >-
             This creates billable VPC/NAT, three t3.medium EKS nodes, private RDS
@@ -257,6 +327,9 @@
     jenkins_helm_binary: "{{ project_helm_binary }}"
     prepare_application_runtime: true
     seed_jenkins_jobs: true
+    project_scm_url: "{{ hostvars['localhost']['project_scm_url'] }}"
+    project_scm_branch: "{{ hostvars['localhost']['project_scm_branch'] }}"
+    project_github_repository: "{{ hostvars['localhost']['project_github_repository'] }}"
     jenkins_job_mutation_confirmation: JENKINS_JOB_MUTATION_APPROVED
     configure_github_webhook: true
     github_webhook_mutation_confirmation: GITHUB_WEBHOOK_MUTATION_APPROVED

@@ -3,22 +3,31 @@ set -u
 
 remote_name="${1:-}"
 remote_url="${2:-}"
+project_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+local_vars="${project_root}/Ansible-modules-01/vars/project.local.yml"
+
+if [[ ! -r "$local_vars" ]]; then
+  cat >/dev/null
+  exit 0
+fi
+
+configured_url="$(awk '/^project_scm_url:[[:space:]]*/ {sub(/^[^:]+:[[:space:]]*/, ""); gsub(/^"|"$/, ""); print; exit}' "$local_vars")"
+configured_branch="$(awk '/^project_scm_branch:[[:space:]]*/ {sub(/^[^:]+:[[:space:]]*/, ""); gsub(/^"|"$/, ""); print; exit}' "$local_vars")"
 
 if [[ "$remote_name" != "origin" ]] ||
-  [[ "$remote_url" != *"github.com"*"ZeR0W1/DevOpsProject1"* ]]; then
+  [[ "${remote_url%.git}" != "${configured_url%.git}" ]]; then
   cat >/dev/null
   exit 0
 fi
 
 check_required=false
 while read -r _local_ref _local_sha remote_ref _remote_sha; do
-  if [[ "$remote_ref" == "refs/heads/aws4-jenkins-cicd" ]]; then
+  if [[ "$remote_ref" == "refs/heads/${configured_branch}" ]]; then
     check_required=true
   fi
 done
 
 if [[ "$check_required" == true ]]; then
-  project_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
   bash "${project_root}/scripts/check_github_hook_cidrs.sh" || true
 fi
 

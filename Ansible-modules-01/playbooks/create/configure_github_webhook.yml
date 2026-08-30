@@ -6,6 +6,7 @@
 
   vars_files:
     - ../../vars/project.yml
+    - ../../vars/project.local.yml
 
   vars:
     configure_github_webhook: >-
@@ -15,7 +16,6 @@
     github_webhook_mutation_confirmation: >-
       {{ lookup('ansible.builtin.env', 'GITHUB_WEBHOOK_MUTATION_CONFIRMATION')
          | default('', true) }}
-    github_repository: ZeR0W1/DevOpsProject1
     jenkins_webhook_secret_name: jenkins-github-webhook
     jenkins_webhook_credentials_id: github-webhook-hmac
 
@@ -35,7 +35,9 @@
                 github_webhook_mutation_confirmation ==
                 'GITHUB_WEBHOOK_MUTATION_APPROVED'
               - local_environment_file is file
+              - project_local_vars_file is file
               - kubeconfig_file is file
+              - project_github_repository is match('^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$')
             fail_msg: >-
               Webhook configuration requires exact approval plus the encrypted
               local environment and target kubeconfig.
@@ -256,7 +258,7 @@
 
         - name: Read existing GitHub repository webhooks
           ansible.builtin.uri:
-            url: "https://api.github.com/repos/{{ github_repository }}/hooks"
+            url: "https://api.github.com/repos/{{ project_github_repository }}/hooks"
             method: GET
             return_content: true
             status_code: 200
@@ -283,7 +285,7 @@
         - name: Create or update the GitHub repository webhook
           ansible.builtin.uri:
             url: >-
-              https://api.github.com/repos/{{ github_repository }}/hooks{{
+              https://api.github.com/repos/{{ project_github_repository }}/hooks{{
                 '/' ~ existing_github_webhook.id
                 if existing_github_webhook.id is defined
                 else ''

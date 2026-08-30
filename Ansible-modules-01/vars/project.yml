@@ -17,6 +17,13 @@ project_helm_binary: "{{ project_root }}/.venv/bin/helm"
 project_kubectl_binary: "{{ project_root }}/.venv/bin/kubectl"
 local_environment_file: "{{ ansible_root }}/vault/local-environment.yml"
 local_vault_password_file: "{{ ansible_root }}/.vault-password"
+project_local_vars_file: "{{ ansible_root }}/vars/project.local.yml"
+project_github_repository: >-
+  {{
+    project_scm_url
+    | regex_replace('^https://github[.]com/', '')
+    | regex_replace('[.]git$', '')
+  }}
 
 application_namespace: devops-app
 application_releases: [frontend, backend, worker]
