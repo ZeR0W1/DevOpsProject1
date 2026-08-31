@@ -75,17 +75,17 @@ def main():
     queue_path = queue_url[len(ROOT) :] + "/api/json"
     queue_id = int(queue_url.rsplit("/", 1)[1])
     build_url = ""
-    for _ in range(120):
+    recent_builds_query = urllib.parse.urlencode(
+        {"tree": "builds[number,queueId,url,actions[queueId]]{0,20}"}
+    )
+    for _ in range(600):
         try:
             queue = json.loads(request(queue_path)[1])
         except urllib.error.HTTPError as error:
             if error.code != 404:
                 raise
             recent = json.loads(
-                request(
-                    f"/job/{JOB}/api/json?tree="
-                    "builds[number,queueId,url,actions[queueId]]{0,20}"
-                )[1]
+                request(f"/job/{JOB}/api/json?{recent_builds_query}")[1]
             )
             assigned = next(
                 (
