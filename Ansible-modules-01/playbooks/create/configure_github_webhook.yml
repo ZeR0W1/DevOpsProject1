@@ -191,7 +191,17 @@
                         args:
                           - |
                             trap 'rm -f /tmp/configure-webhook.groovy' EXIT
-                            cat > /tmp/configure-webhook.groovy <<'GROOVY'
+                            umask 077
+                            printf 'def id = new String("%s".decodeBase64(), "UTF-8")\n' \
+                              "$(printf '%s' "$WEBHOOK_CREDENTIALS_ID" | base64 | tr -d '\n')" \
+                              > /tmp/configure-webhook.groovy
+                            printf 'def value = new String("%s".decodeBase64(), "UTF-8")\n' \
+                              "$(printf '%s' "$WEBHOOK_SECRET" | base64 | tr -d '\n')" \
+                              >> /tmp/configure-webhook.groovy
+                            printf 'def hookUrl = new String("%s".decodeBase64(), "UTF-8")\n' \
+                              "$(printf '%s' "$WEBHOOK_URL" | base64 | tr -d '\n')" \
+                              >> /tmp/configure-webhook.groovy
+                            cat >> /tmp/configure-webhook.groovy <<'GROOVY'
                             {{ lookup('ansible.builtin.file', project_root + '/scripts/configure_jenkins_webhook.groovy') | indent(28) }}
                             GROOVY
                             curl -fsSL "$JENKINS_URL/jnlpJars/jenkins-cli.jar" \
