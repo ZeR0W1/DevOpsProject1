@@ -22,6 +22,11 @@
     local_vault_file: "{{ local_environment_file }}"
 
   tasks:
+    - name: Normalize the hidden GitHub token input
+      ansible.builtin.set_fact:
+        normalized_github_api_token: "{{ github_api_token | trim }}"
+      no_log: true
+
     - name: Read the controller clone GitHub origin
       ansible.builtin.command:
         argv: [git, -C, "{{ project_root }}", remote, get-url, origin]
@@ -56,7 +61,7 @@
               setup_git_origin.stdout | trim
               if setup_scm_confirmation.user_input | trim | lower in ['y', 'yes']
               else setup_scm_confirmation.user_input | trim
-            ) | regex_replace('\\.git$', '')
+            ) | regex_replace('\.git$', '')
           }}.git
         selected_project_scm_branch: >-
           {{
@@ -70,7 +75,7 @@
         that:
           - >-
             selected_project_scm_url
-            is match('^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+\\.git$')
+            is match('^https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+\.git$')
           - selected_project_scm_branch | length > 0
           - selected_project_scm_branch is match('^[A-Za-z0-9][A-Za-z0-9._/-]*$')
           - "'..' not in selected_project_scm_branch"
@@ -87,9 +92,35 @@
         selected_github_repository: >-
           {{
             selected_project_scm_url
-            | regex_replace('^https://github\\.com/', '')
-            | regex_replace('\\.git$', '')
+            | regex_replace('^https://github\.com/', '')
+            | regex_replace('\.git$', '')
           }}
+
+    - name: Verify the GitHub token is valid
+      ansible.builtin.uri:
+        url: https://api.github.com/user
+        method: GET
+        return_content: false
+        status_code: 200
+        headers:
+          Accept: application/vnd.github+json
+          Authorization: "Bearer {{ normalized_github_api_token }}"
+          X-GitHub-Api-Version: "2022-11-28"
+      changed_when: false
+      no_log: true
+
+    - name: Verify token access to the selected repository
+      ansible.builtin.uri:
+        url: "https://api.github.com/repos/{{ selected_github_repository }}"
+        method: GET
+        return_content: false
+        status_code: 200
+        headers:
+          Accept: application/vnd.github+json
+          Authorization: "Bearer {{ normalized_github_api_token }}"
+          X-GitHub-Api-Version: "2022-11-28"
+      changed_when: false
+      no_log: true
 
     - name: Verify token access to the selected repository webhooks
       ansible.builtin.uri:
@@ -99,7 +130,7 @@
         status_code: 200
         headers:
           Accept: application/vnd.github+json
-          Authorization: "Bearer {{ github_api_token }}"
+          Authorization: "Bearer {{ normalized_github_api_token }}"
           X-GitHub-Api-Version: "2022-11-28"
       changed_when: false
       no_log: true
@@ -132,10 +163,10 @@
     - name: Validate administrator email and derived identifiers
       ansible.builtin.assert:
         that:
-          - admin_email is match('^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$')
+          - admin_email is match('^[^@\s]+@[^@\s]+\.[^@\s]+$')
           - terraform_name_prefix is match('^[a-z][a-z0-9-]{1,15}$')
           - terraform_environment is match('^[a-z][a-z0-9-]{1,15}$')
-          - github_api_token | length >= 20
+          - normalized_github_api_token | length >= 20
         fail_msg: >-
           Enter a valid email and ensure name_prefix/environment in
           terraform.tfvars.example are lowercase.
@@ -171,7 +202,7 @@
     - name: Validate selected private environment inputs
       ansible.builtin.assert:
         that:
-          - selected_admin_cidr is match('^(25[0-5]|2[0-4][0-9]|1?[0-9]{1,2})(\\.(25[0-5]|2[0-4][0-9]|1?[0-9]{1,2})){3}/32$')
+          - selected_admin_cidr is match('^(25[0-5]|2[0-4][0-9]|1?[0-9]{1,2})(\.(25[0-5]|2[0-4][0-9]|1?[0-9]{1,2})){3}/32$')
           - derived_db_username is match('^[a-z][a-z0-9_]{0,62}$')
         fail_msg: "The administrator CIDR must be a valid IPv4 /32."
 
@@ -251,7 +282,7 @@
           - default
           - --stdin-name
           - github_api_token
-        stdin: "{{ github_api_token }}"
+        stdin: "{{ normalized_github_api_token }}"
         stdin_add_newline: false
       register: encrypted_github_api_token
       changed_when: false
