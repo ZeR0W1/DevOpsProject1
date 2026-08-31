@@ -160,10 +160,16 @@ Do not run the credential helper while screen sharing or capture its output.
 
 CI seeds the versioned S3 `index.html` only when absent unless an explicit reset
 is requested. Standalone CD supports `FULL` application deployment and
-`CONTENT_ONLY` ConfigMap activation. The frontend mounts that ConfigMap read-only;
-CI/CD use separate least-privilege Pod Identity roles and CD has only
-namespace-scoped Kubernetes RBAC. The external ConfigMap/chart ownership details
-are documented in the [Helm application guide](helm/README.md).
+`CONTENT_ONLY` ConfigMap activation. Its manual-only `ROLLBACK` mode requires one
+positive Helm revision that exists for all three application releases. CD validates
+the historical manifests and immutable image references before running namespace-
+scoped `helm rollback`, then waits for every rollout, verifies the restored images,
+and runs the same functional smoke test. Because frontend runtime content is owned
+outside Helm, rollback deliberately leaves the external ConfigMap unchanged. The
+frontend mounts that ConfigMap read-only; CI/CD use separate least-privilege Pod
+Identity roles and CD has only namespace-scoped Kubernetes RBAC. The external
+ConfigMap/chart ownership details are documented in the
+[Helm application guide](helm/README.md).
 
 ## Setup, create, and destroy
 
@@ -281,6 +287,18 @@ the internal backend. A machine created once through the browser form traverses
 frontend -> backend -> worker, is read back from PostgreSQL, is synchronized to
 fixed versioned S3 object `instances.json`, and emits an SNS message containing
 only `event`, `machine_count`, and `object_key` metadata.
+
+For a controlled application rollback, use only the standalone Jenkins CD job.
+First inspect `helm history` for all three releases and choose a prior positive
+revision common to `frontend`, `backend`, and `worker`. Run CD with
+`DEPLOY_MODE=ROLLBACK`, that `ROLLBACK_REVISION`, the fixed `devops-app` namespace,
+and `CONFIRM_DEPLOY=true`. The job rejects a missing revision or a historical
+`latest` image, records the target manifests and images, performs each Helm
+rollback, verifies all rollouts and restored image references, and repeats the
+functional smoke test. Do not run ad-hoc operator `helm rollback` commands during
+normal operation because CD is the application workload owner. If rollback fails,
+inspect the archived Helm/workload/event diagnostics and rerun the CD job against
+the last verified common revision; never rebuild an old image in CD.
 
 For a deliberate self-healing test, first preserve the original pod listing and
 obtain explicit approval. Delete exactly one worker pod, confirm that its

@@ -60,6 +60,7 @@ spec:
                 script {
                     def tag = params.IMAGE_TAG?.trim()
                     def deployMode = params.DEPLOY_MODE?.trim()
+                    def rollbackRevision = params.ROLLBACK_REVISION?.trim()
                     def namespace = params.DEPLOY_NAMESPACE?.trim()
                     def repoUrl = params.REPO_URL?.trim()
                     def repoRef = params.REPO_REF?.trim()
@@ -94,8 +95,11 @@ spec:
                     if (!params.CONFIRM_DEPLOY) {
                         error('CONFIRM_DEPLOY=true is required before changing EKS resources.')
                     }
-                    if (!(deployMode in ['FULL', 'CONTENT_ONLY'])) {
-                        error('DEPLOY_MODE must be FULL or CONTENT_ONLY.')
+                    if (!(deployMode in ['FULL', 'CONTENT_ONLY', 'ROLLBACK'])) {
+                        error('DEPLOY_MODE must be FULL, CONTENT_ONLY, or ROLLBACK.')
+                    }
+                    if (deployMode == 'ROLLBACK' && (!rollbackRevision || !(rollbackRevision ==~ /[1-9][0-9]*/))) {
+                        error('ROLLBACK_REVISION must be a positive Helm revision in ROLLBACK mode.')
                     }
                     if (!repoUrl || !(repoUrl ==~ /https:\/\/[A-Za-z0-9._-]+\/[A-Za-z0-9._\/-]+(?:\.git)?/)) {
                         error('REPO_URL must be a non-empty HTTPS Git repository URL.')
@@ -168,6 +172,7 @@ spec:
                     env.WORKER_IMAGE_REPOSITORY_RESOLVED = repositories.worker
                     env.IMAGE_TAG_RESOLVED = tag ?: ''
                     env.DEPLOY_MODE_RESOLVED = deployMode
+                    env.ROLLBACK_REVISION_RESOLVED = rollbackRevision ?: ''
                     env.DEPLOY_NAMESPACE_RESOLVED = namespace
                     env.REPO_URL_RESOLVED = repoUrl
                     env.REPO_REF_RESOLVED = repoRef
@@ -191,8 +196,8 @@ spec:
                     env.FRONTEND_IMAGE_DIGEST_RESOLVED = imageDigests.frontend ?: ''
                     env.BACKEND_IMAGE_DIGEST_RESOLVED = imageDigests.backend ?: ''
                     env.WORKER_IMAGE_DIGEST_RESOLVED = imageDigests.worker ?: ''
-                    currentBuild.displayName = deployMode == 'FULL' ? "#${env.BUILD_NUMBER} app:${tag}" : "#${env.BUILD_NUMBER} content-only"
-                    echo "Validated CD inputs: mode=${deployMode}, namespace=${namespace}, cluster=${clusterName}, content=s3://${contentBucket}/${contentKey}"
+                    currentBuild.displayName = deployMode == 'FULL' ? "#${env.BUILD_NUMBER} app:${tag}" : (deployMode == 'ROLLBACK' ? "#${env.BUILD_NUMBER} rollback:r${rollbackRevision}" : "#${env.BUILD_NUMBER} content-only")
+                    echo "Validated CD inputs: mode=${deployMode}, namespace=${namespace}, cluster=${clusterName}, rollbackRevision=${rollbackRevision ?: 'n/a'}, content=s3://${contentBucket}/${contentKey}"
                 }
             }
         }
@@ -229,6 +234,7 @@ spec:
                       printf 'git_author_name=%s\n' "${GIT_AUTHOR_NAME_RESOLVED}"
                       printf 'git_author_email=%s\n' "${GIT_AUTHOR_EMAIL_RESOLVED}"
                       printf 'deploy_mode=%s\n' "${DEPLOY_MODE_RESOLVED}"
+                      printf 'rollback_revision=%s\n' "${ROLLBACK_REVISION_RESOLVED}"
                       printf 'image_tag=%s\n' "${IMAGE_TAG_RESOLVED}"
                       printf 'frontend_digest=%s\n' "${FRONTEND_IMAGE_DIGEST_RESOLVED}"
                       printf 'backend_digest=%s\n' "${BACKEND_IMAGE_DIGEST_RESOLVED}"
@@ -271,6 +277,7 @@ spec:
         }
 
         stage('Synchronize Frontend Content from S3') {
+            when { expression { env.DEPLOY_MODE_RESOLVED != 'ROLLBACK' } }
             steps {
                 sh '''#!/bin/sh
                     set -eu
@@ -395,6 +402,42 @@ spec:
             }
         }
 
+        stage('Validate Rollback Revision') {
+            when { expression { env.DEPLOY_MODE_RESOLVED == 'ROLLBACK' } }
+            steps {
+                sh '''#!/bin/sh
+                    set -eu
+                    mkdir -p rollback-target
+                    for component in worker backend frontend; do
+                      helm get manifest "$component" \
+                        --namespace "${DEPLOY_NAMESPACE_RESOLVED}" \
+                        --revision "${ROLLBACK_REVISION_RESOLVED}" \
+                        > "rollback-target/${component}-manifest.yaml"
+                      expected_image="$(awk '$1 == "image:" {gsub(/"/, "", $2); print $2; exit}' "rollback-target/${component}-manifest.yaml")"
+                      test -n "$expected_image"
+                      case "$expected_image" in
+                        *:latest) printf '%s\n' "Refusing rollback target latest for ${component}." >&2; exit 1 ;;
+                      esac
+                      printf '%s\n' "$expected_image" > "rollback-target/${component}-image.txt"
+                    done
+                '''
+            }
+        }
+
+        stage('Rollback All Services with Helm') {
+            when { expression { env.DEPLOY_MODE_RESOLVED == 'ROLLBACK' } }
+            steps {
+                sh '''#!/bin/sh
+                    set -eu
+                    for component in worker backend frontend; do
+                      helm rollback "$component" "${ROLLBACK_REVISION_RESOLVED}" \
+                        --namespace "${DEPLOY_NAMESPACE_RESOLVED}" \
+                        --wait --timeout 5m
+                    done
+                '''
+            }
+        }
+
         stage('Verify Deployment') {
             when { expression { env.DEPLOY_MODE_RESOLVED == 'FULL' } }
             steps {
@@ -409,6 +452,24 @@ spec:
                         worker) expected_repository="$WORKER_IMAGE_REPOSITORY_RESOLVED" ;;
                       esac
                       test "$actual_image" = "${expected_repository}:${IMAGE_TAG_RESOLVED}"
+                      helm status "$component" --namespace "${DEPLOY_NAMESPACE_RESOLVED}"
+                      helm get values "$component" --namespace "${DEPLOY_NAMESPACE_RESOLVED}" --all > "deployed-values-${component}.yaml"
+                    done
+                    kubectl get deployment,pods,service --namespace "${DEPLOY_NAMESPACE_RESOLVED}" -o wide
+                '''
+            }
+        }
+
+        stage('Verify Rollback') {
+            when { expression { env.DEPLOY_MODE_RESOLVED == 'ROLLBACK' } }
+            steps {
+                sh '''#!/bin/sh
+                    set -eu
+                    for component in worker backend frontend; do
+                      kubectl rollout status "deployment/${component}" --namespace "${DEPLOY_NAMESPACE_RESOLVED}" --timeout=3m
+                      expected_image="$(cat "rollback-target/${component}-image.txt")"
+                      actual_image="$(kubectl get deployment "$component" --namespace "${DEPLOY_NAMESPACE_RESOLVED}" -o "jsonpath={.spec.template.spec.containers[?(@.name=='${component}')].image}")"
+                      test "$actual_image" = "$expected_image"
                       helm status "$component" --namespace "${DEPLOY_NAMESPACE_RESOLVED}"
                       helm get values "$component" --namespace "${DEPLOY_NAMESPACE_RESOLVED}" --all > "deployed-values-${component}.yaml"
                     done
@@ -460,7 +521,7 @@ spec:
             echo "CD succeeded: mode ${env.DEPLOY_MODE_RESOLVED} completed in ${env.DEPLOY_NAMESPACE_RESOLVED}."
         }
         failure {
-            echo 'CD failed. FULL-mode Helm releases use --atomic; inspect the content-sync and rollout stages for CONTENT_ONLY failures.'
+            echo 'CD failed. FULL mode is atomic per release. For ROLLBACK failures, inspect Helm history and rerun the standalone CD job with the last verified common revision; inspect content sync for CONTENT_ONLY failures.'
             sh '''#!/bin/sh
                 set +e
                 test -s "${KUBECONFIG}" || exit 0
@@ -481,7 +542,7 @@ spec:
             archiveArtifacts artifacts: 'failure-*.txt,failure-*.log', allowEmptyArchive: true, fingerprint: true
         }
         always {
-            archiveArtifacts artifacts: 'rendered-*.yaml,deployed-values-*.yaml,deployment-traceability.txt', allowEmptyArchive: true, fingerprint: true
+            archiveArtifacts artifacts: 'rendered-*.yaml,deployed-values-*.yaml,deployment-traceability.txt,rollback-target/*', allowEmptyArchive: true, fingerprint: true
             sh 'rm -f "${KUBECONFIG}"'
             deleteDir()
         }
