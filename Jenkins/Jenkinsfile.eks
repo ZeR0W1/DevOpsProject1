@@ -257,6 +257,7 @@ spec:
                             container('kaniko') {
                                 sh '''#!/bin/sh
                                     set -eu
+                                    trap 'rm -f /kaniko/.docker/config.json' EXIT HUP INT TERM
                                     auth="$(printf '%s:%s' "$DOCKERHUB_USERNAME" "$DOCKERHUB_TOKEN" | base64 | tr -d '\\n')"
                                     printf '{"auths":{"https://index.docker.io/v1/":{"auth":"%s"}}}' "$auth" > /kaniko/.docker/config.json
                                     mkdir -p "${WORKSPACE}/image-digests"
@@ -396,15 +397,6 @@ spec:
             }
             post {
                 always {
-                    script {
-                        try {
-                            container('kaniko') {
-                                sh 'rm -f /kaniko/.docker/config.json'
-                            }
-                        } catch (Exception cleanupError) {
-                            echo 'Kaniko credential cleanup could not exec because the short-lived container had already exited; the pod-scoped emptyDir is removed with the agent Pod.'
-                        }
-                    }
                     script {
                         try {
                             deleteDir()

@@ -33,6 +33,20 @@ def request(path, method="GET", body=None, headers=None):
         return response.status, response.read(), response.headers
 
 
+def build_queue_id(build):
+    """Return the queue ID exposed by either supported Jenkins API shape."""
+    if build.get("queueId") is not None:
+        return build["queueId"]
+    return next(
+        (
+            action["queueId"]
+            for action in build.get("actions", [])
+            if action.get("queueId") is not None
+        ),
+        None,
+    )
+
+
 def main():
     crumb = json.loads(request("/crumbIssuer/api/json")[1])
     parameters = {
@@ -68,10 +82,17 @@ def main():
             if error.code != 404:
                 raise
             recent = json.loads(
-                request(f"/job/{JOB}/api/json?tree=builds[number,queueId,url]{{0,20}}")[1]
+                request(
+                    f"/job/{JOB}/api/json?tree="
+                    "builds[number,queueId,url,actions[queueId]]{0,20}"
+                )[1]
             )
             assigned = next(
-                (build for build in recent.get("builds", []) if build.get("queueId") == queue_id),
+                (
+                    build
+                    for build in recent.get("builds", [])
+                    if build_queue_id(build) == queue_id
+                ),
                 None,
             )
             if assigned:
