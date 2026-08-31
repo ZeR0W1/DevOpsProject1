@@ -49,9 +49,17 @@ securityContext:
   capabilities:
     drop:
       - ALL
-  readOnlyRootFilesystem: false
+  readOnlyRootFilesystem: true
+
+podSecurityContext:
+  seccompProfile:
+    type: RuntimeDefault
 
 serviceAccount:
   create: true
   name: backend-sa
   annotations: {}
+  automountServiceAccountToken: false
+
+networkPolicy:
+  enabled: true

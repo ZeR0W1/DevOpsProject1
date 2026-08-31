@@ -1,0 +1,9 @@
+[flake8]
+max-line-length = 100
+exclude =
+    .venv,
+    .venv-jenkins,
+    */.venv/*,
+    __pycache__
+per-file-ignores =
+    src/worker/test_api.py:E402

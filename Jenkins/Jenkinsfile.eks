@@ -172,9 +172,14 @@ spec:
                                 [ ! -f requirements.txt ] || pip install --quiet -r requirements.txt
                                 [ ! -f src/backend/requirements.txt ] || pip install --quiet -r src/backend/requirements.txt
                                 [ ! -f src/worker/requirements.txt ] || pip install --quiet -r src/worker/requirements.txt
-                                bandit -r src/backend src/worker --severity-level low --confidence-level medium -f json -o "${WORKSPACE}/bandit.json" || test $? -eq 1
-                                flake8 src/backend src/worker --count --statistics || test $? -eq 1
-                                if find src/backend src/worker -type f -name '*test*.py' | grep -q .; then
+                                python_files="$(find src/backend src/worker -path '*/.venv' -prune -o -type f -name '*.py' -print)"
+                                production_files="$(find src/backend src/worker -path '*/.venv' -prune -o -type f -name '*.py' ! -name 'test_*.py' -print)"
+                                test_files="$(find src/backend src/worker -path '*/.venv' -prune -o -type f -name 'test_*.py' -print)"
+                                test -n "${python_files}"
+                                test -n "${production_files}"
+                                bandit ${production_files} --severity-level low --confidence-level medium -f json -o "${WORKSPACE}/bandit.json"
+                                flake8 ${python_files} --count --statistics
+                                if [ -n "${test_files}" ]; then
                                   pytest -q --junitxml="${WORKSPACE}/pytest-results.xml"
                                 fi
                             '''

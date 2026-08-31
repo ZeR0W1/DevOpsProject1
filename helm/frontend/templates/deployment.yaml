@@ -16,6 +16,9 @@ spec:
         {{- include "frontend.selectorLabels" . | nindent 8 }}
     spec:
       serviceAccountName: {{ .Values.serviceAccount.name }}
+      automountServiceAccountToken: {{ .Values.serviceAccount.automountServiceAccountToken }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
         - name: frontend
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
@@ -40,7 +43,15 @@ spec:
             - name: frontend-content
               mountPath: {{ .Values.frontendContent.mountPath }}
               readOnly: true
+            - name: nginx-runtime
+              mountPath: /tmp/nginx
+            - name: nginx-cache
+              mountPath: /var/cache/nginx
       volumes:
         - name: frontend-content
           configMap:
             name: {{ .Values.frontendContent.configMapName }}
+        - name: nginx-runtime
+          emptyDir: {}
+        - name: nginx-cache
+          emptyDir: {}

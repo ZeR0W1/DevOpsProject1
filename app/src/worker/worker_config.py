@@ -12,6 +12,8 @@ def env_flag(name: str, default: bool = False) -> bool:
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
+# Container ingress must bind every interface; Kubernetes controls exposure.
+API_HOST = os.getenv("API_HOST", "0.0.0.0")  # nosec B104
 API_PORT = int(os.getenv("API_PORT", "8000"))
 BACKEND_HOST = os.getenv("BACKEND_HOST", "backend")
 BACKEND_PORT = int(os.getenv("BACKEND_PORT", "8000"))

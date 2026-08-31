@@ -70,9 +70,18 @@ securityContext:
   capabilities:
     drop:
       - ALL
-  readOnlyRootFilesystem: false
+  readOnlyRootFilesystem: true
+
+podSecurityContext:
+  seccompProfile:
+    type: RuntimeDefault
 
 serviceAccount:
   create: true
   name: worker-sa
   annotations: {}
+  # Retained because EKS Pod Identity supplies the worker's short-lived AWS identity.
+  automountServiceAccountToken: true
+
+networkPolicy:
+  enabled: true

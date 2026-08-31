@@ -68,10 +68,19 @@ superseded evidence belong in `misc/recovery/PROJECT_HISTORY.md`.
   and `bash setup.sh refresh-github-hooks`. Refresh requires an already initialized
   S3 backend, restricts a saved plan to ALB webhook listener rules, requires exact
   confirmation, and redelivers at most the latest failed target-branch push.
-- CI/CD pipeline compliance edits are local: mandatory source-build Trivy,
-  published JUnit results, failure-safe credential cleanup, CI-to-CD commit/build/
-  digest traceability, archived CD failure diagnostics, bounded hardened agent
-  Pods, and a real frontend-to-backend/worker HTTP smoke test in standalone CD.
+- CI/CD pipeline compliance includes mandatory source-build Trivy, published
+  JUnit results, failure-safe credential cleanup, CI-to-CD commit/build/digest
+  traceability, archived CD failure diagnostics, bounded hardened agent Pods, and
+  a real frontend-to-backend/worker HTTP smoke test in standalone CD. The current
+  uncommitted hardening pass also makes Bandit and Flake8 blocking over explicit
+  first-party Python files and adds a scoped Flake8 policy.
+- The current uncommitted application hardening pass enables EKS VPC CNI
+  NetworkPolicy enforcement; adds default-deny-by-selection ingress/egress
+  policies for frontend, backend, and worker; enables `RuntimeDefault` seccomp and
+  read-only root filesystems with only required `emptyDir` mounts; and disables
+  ServiceAccount token automount for frontend/backend while retaining the worker
+  token for EKS Pod Identity. Root and Helm documentation now describe the
+  Kubernetes boundary and layered NetworkPolicy/security-group/IAM controls.
 - The custom CI agent now uses a digest-pinned Jenkins inbound-agent base. With
   explicit user approval, image
   `zer0w1/devops-project1-jenkins-agent:eks-python-v2` was built and pushed to
@@ -125,8 +134,11 @@ superseded evidence belong in `misc/recovery/PROJECT_HISTORY.md`.
 - Full local Terraform formatting/validation, all Ansible playbook syntax checks,
   production-profile `ansible-lint`, Helm lint/render for all three charts, shell
   syntax, deterministic CIDR checking, Git whitespace checks, and seven worker
-  tests pass. Both current Jenkinsfiles also pass the pinned local controller's
-  authoritative Declarative Pipeline validator.
+  tests pass. Focused Bandit and Flake8 checks also pass for the current hardening
+  edits. Both Jenkinsfiles passed the pinned local controller's authoritative
+  Declarative Pipeline validator at the previous checkpoint; the local validator
+  artifact is currently absent, so the current Jenkinsfile edit still requires
+  authoritative Declarative validation in the next clean E2E.
 - Resumed cloud acceptance exposed two final defects: successful Kaniko/CD work
   was marked CI failure when post-stage cleanup tried to exec into the exited
   Kaniko container, and create accepted ALB health without requiring the exact CI
@@ -157,15 +169,20 @@ superseded evidence belong in `misc/recovery/PROJECT_HISTORY.md`.
 
 ## Immediate work queue
 
-1. Run the clean create/webhook/CI/CD/verification/teardown E2E with stage-specific
-   approvals.
-2. After clean acceptance and final teardown, check out `main`, rerun setup so the ignored
-   watched-branch selection becomes `main`, and validate the production trigger.
+1. Review and checkpoint the current local CI, pod-hardening, NetworkPolicy, and
+   documentation changes; do not commit or push without explicit approval.
+2. Run the clean create/webhook/CI/CD/verification/teardown E2E with stage-specific
+   approvals, including authoritative Jenkinsfile validation and fresh Assignment
+   4 evidence captured outside the legacy `p3_evidence/` set.
+3. After clean acceptance and final teardown, check out `main`, rerun setup so the
+   ignored watched-branch selection becomes `main`, and validate the production
+   trigger.
 
 ## Exact resume point
 
-Resume from pushed lifecycle checkpoint `e0946df` on local and remote
-`aws4-jenkins-cicd`. The authorized no-backup teardown completed in account
+Resume on local branch `aws4-jenkins-cicd` from pushed checkpoint `9813f33` with
+the current uncommitted CI, pod-hardening, NetworkPolicy, and documentation edits.
+The authorized no-backup teardown completed in account
 `058264247987`, region `us-east-1`; main Terraform state has zero addresses. The
 `doa-staging` EKS cluster, RDS instance, ALB, NAT gateways, available tagged EBS
 volumes, VPC, application bucket, webhook, and self-signed certificate are absent.

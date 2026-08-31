@@ -6,7 +6,8 @@ from fastapi import FastAPI, HTTPException
 import httpx
 from psycopg import sql
 
-from config import (
+from worker_config import (
+    API_HOST,
     API_PORT,
     AWS_REGION,
     BACKEND_HOST,
@@ -350,8 +351,8 @@ def main():
     if POSTGRES_ENABLED:
         init_postgres_storage()
 
-    logger.info("Worker API started on %s:%s", "0.0.0.0", API_PORT)
-    uvicorn.run("api:app", host="0.0.0.0", port=API_PORT, reload=False)
+    logger.info("Worker API started on %s:%s", API_HOST, API_PORT)
+    uvicorn.run("api:app", host=API_HOST, port=API_PORT, reload=False)
 
 
 if __name__ == "__main__":

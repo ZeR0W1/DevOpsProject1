@@ -64,12 +64,20 @@ securityContext:
   capabilities:
     drop:
       - ALL
-  readOnlyRootFilesystem: false
+  readOnlyRootFilesystem: true
+
+podSecurityContext:
+  seccompProfile:
+    type: RuntimeDefault
 
 serviceAccount:
   create: true
   name: frontend-sa
   annotations: {}
+  automountServiceAccountToken: false
+
+networkPolicy:
+  enabled: true
 
 frontendContent:
   enabled: true

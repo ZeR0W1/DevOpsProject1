@@ -96,6 +96,7 @@ def test_process_machine_does_not_notify_after_s3_failure(monkeypatch):
         api.process_machine({"id": 3})
 
     assert exc_info.value.status_code == 503
+
     notification.assert_not_called()
 
 

@@ -3,7 +3,7 @@ import logging
 from fastapi import FastAPI, HTTPException
 import httpx
 
-from config import API_HOST, API_PORT, WORKER_HOST, WORKER_PORT
+from backend_config import API_HOST, API_PORT, WORKER_HOST, WORKER_PORT
 from machine import Machine, MachineInput
 from schema import CPUArchitecture, DiskType, OSName
 
@@ -149,7 +149,7 @@ def main():
     import uvicorn
 
     logger.info("Starting backend API on %s:%s", API_HOST, API_PORT)
-    uvicorn.run("api:app", host="0.0.0.0", port=API_PORT, reload=False)
+    uvicorn.run("api:app", host=API_HOST, port=API_PORT, reload=False)
 
 
 if __name__ == "__main__":
