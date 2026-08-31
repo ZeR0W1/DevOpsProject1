@@ -201,6 +201,9 @@
         argv: [terraform, "-chdir={{ bootstrap_dir }}", state, list]
       register: bootstrap_state
       changed_when: false
+      failed_when: >-
+        bootstrap_state.rc != 0 and
+        'No state file was found!' not in bootstrap_state.stderr
 
     - name: Check whether the derived state bucket already exists
       ansible.builtin.command:
