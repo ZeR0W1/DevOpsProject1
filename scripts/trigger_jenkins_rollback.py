@@ -70,9 +70,9 @@ def main():
     queue_url = headers.get("Location", "").rstrip("/")
     if not queue_url.startswith(ROOT + "/queue/item/"):
         raise RuntimeError("Jenkins queue response omitted the expected Location")
-    queue_path = queue_url[len(ROOT) :] + "/api/json"
+    queue_path = queue_url[len(ROOT):] + "/api/json"
     queue_id = int(queue_url.rsplit("/", 1)[1])
-    build_url = ""
+    build_number = None
     recent_query = urllib.parse.urlencode(
         {"tree": "builds[number,queueId,url,actions[queueId]]{0,20}"}
     )
@@ -92,20 +92,20 @@ def main():
                 None,
             )
             if assigned:
-                build_url = assigned["url"].rstrip("/")
+                build_number = assigned["number"]
                 break
             time.sleep(1)
             continue
         if queue.get("cancelled"):
             raise RuntimeError("Jenkins cancelled the queued rollback build")
-        if queue.get("executable", {}).get("url"):
-            build_url = queue["executable"]["url"].rstrip("/")
+        if queue.get("executable", {}).get("number") is not None:
+            build_number = queue["executable"]["number"]
             break
         time.sleep(5)
 
-    if not build_url.startswith(ROOT + "/job/"):
+    if build_number is None:
         raise RuntimeError("Jenkins did not assign the queued rollback build")
-    build_path = build_url[len(ROOT) :] + "/api/json"
+    build_path = f"/job/{JOB}/{build_number}/api/json"
     for _ in range(360):
         build = json.loads(request(build_path)[1])
         if not build.get("building", False) and build.get("result"):
