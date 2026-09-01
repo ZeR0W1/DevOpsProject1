@@ -1,0 +1,189 @@
+---
+- name: Trigger one guarded Jenkins application rollback
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars_files:
+    - ../../vars/project.yml
+    - ../../vars/project.local.yml
+
+  vars:
+    trigger_jenkins_rollback: >-
+      {{ lookup('ansible.builtin.env', 'TRIGGER_JENKINS_ROLLBACK')
+         | default('false', true)
+         | bool }}
+    rollback_revision: >-
+      {{ lookup('ansible.builtin.env', 'ROLLBACK_REVISION')
+         | default('', true) }}
+    rollback_confirmation: >-
+      {{ lookup('ansible.builtin.env', 'JENKINS_ROLLBACK_CONFIRMATION')
+         | default('', true) }}
+    jenkins_cd_job_name: devops-project1-eks-deploy
+
+  tasks:
+    - name: Report skipped Jenkins rollback
+      ansible.builtin.debug:
+        msg: >-
+          Jenkins rollback is disabled. Set TRIGGER_JENKINS_ROLLBACK=true,
+          provide a reviewed positive ROLLBACK_REVISION, and use the exact
+          rollback confirmation only after verifying common Helm history.
+      when: not trigger_jenkins_rollback
+
+    - name: Trigger Jenkins rollback when explicitly enabled
+      when: trigger_jenkins_rollback
+      block:
+        - name: Validate Jenkins rollback boundary
+          ansible.builtin.assert:
+            that:
+              - rollback_confirmation == 'JENKINS_ROLLBACK_MUTATION_APPROVED'
+              - kubeconfig_file is file
+              - project_scm_branch | length > 0
+              - project_scm_branch is match('^[A-Za-z0-9][A-Za-z0-9._/-]*$')
+              - rollback_revision is match('^[1-9][0-9]*$')
+            fail_msg: >-
+              Jenkins rollback requires the exact confirmation, prepared target
+              kubeconfig, reviewed SCM branch, and a positive Helm revision.
+
+        - name: Read current Helm history for every application release
+          ansible.builtin.command:
+            argv:
+              - "{{ project_helm_binary }}"
+              - history
+              - "{{ item }}"
+              - --namespace
+              - "{{ application_namespace }}"
+              - --kubeconfig
+              - "{{ kubeconfig_file }}"
+              - --output
+              - json
+          loop: "{{ application_releases }}"
+          register: rollback_release_histories
+          changed_when: false
+
+        - name: Require the requested revision in all three releases
+          ansible.builtin.assert:
+            that:
+              - >-
+                (item.stdout | from_json |
+                 selectattr('revision', 'equalto', rollback_revision | int) |
+                 list | length) == 1
+            fail_msg: >-
+              Revision {{ rollback_revision }} is not present in every application
+              release. No rollback was submitted.
+          loop: "{{ rollback_release_histories.results }}"
+          loop_control:
+            label: "{{ item.item }}"
+
+        - name: Launch short-lived in-cluster Jenkins rollback trigger
+          kubernetes.core.k8s:
+            state: present
+            kubeconfig: "{{ kubeconfig_file }}"
+            definition:
+              apiVersion: batch/v1
+              kind: Job
+              metadata:
+                generateName: jenkins-rollback-trigger-
+                namespace: "{{ jenkins_namespace }}"
+                labels:
+                  app.kubernetes.io/name: jenkins-rollback-trigger
+                  app.kubernetes.io/managed-by: ansible
+              spec:
+                activeDeadlineSeconds: 1800
+                backoffLimit: 0
+                ttlSecondsAfterFinished: 300
+                template:
+                  metadata:
+                    labels:
+                      app.kubernetes.io/name: jenkins-rollback-trigger
+                  spec:
+                    automountServiceAccountToken: false
+                    restartPolicy: Never
+                    securityContext:
+                      runAsNonRoot: true
+                      runAsUser: 65532
+                      runAsGroup: 65532
+                      fsGroup: 65532
+                      seccompProfile:
+                        type: RuntimeDefault
+                    containers:
+                      - name: trigger
+                        image: python:3.12.11-alpine3.22@sha256:5e511b0e940def74dd23389510300c76017ca9bbc92484c40cff0951adf32245
+                        imagePullPolicy: IfNotPresent
+                        env:
+                          - {name: JENKINS_URL, value: "{{ jenkins_service_url }}"}
+                          - {name: JENKINS_JOB, value: "{{ jenkins_cd_job_name }}"}
+                          - {name: REPO_REF, value: "{{ project_scm_branch }}"}
+                          - {name: ROLLBACK_REVISION, value: "{{ rollback_revision }}"}
+                          - name: JENKINS_USER
+                            valueFrom:
+                              secretKeyRef:
+                                name: "{{ jenkins_admin_secret_name }}"
+                                key: jenkins-admin-user
+                          - name: JENKINS_PASSWORD
+                            valueFrom:
+                              secretKeyRef:
+                                name: "{{ jenkins_admin_secret_name }}"
+                                key: jenkins-admin-password
+                        command: [python, -c]
+                        args:
+                          - "{{ lookup('ansible.builtin.file', project_root + '/scripts/trigger_jenkins_rollback.py') }}"
+                        resources:
+                          requests: {cpu: 50m, memory: 64Mi}
+                          limits: {cpu: 200m, memory: 128Mi}
+                        securityContext:
+                          allowPrivilegeEscalation: false
+                          capabilities: {drop: [ALL]}
+                          readOnlyRootFilesystem: true
+          register: jenkins_rollback_trigger_job
+
+        - name: Wait for the in-cluster Jenkins rollback trigger to finish
+          kubernetes.core.k8s_info:
+            api_version: batch/v1
+            kind: Job
+            name: "{{ jenkins_rollback_trigger_job.result.metadata.name }}"
+            namespace: "{{ jenkins_namespace }}"
+            kubeconfig: "{{ kubeconfig_file }}"
+          register: jenkins_rollback_trigger_status
+          until: >-
+            jenkins_rollback_trigger_status.resources | length == 1 and
+            (jenkins_rollback_trigger_status.resources[0].status.conditions | default([]) |
+             selectattr('type', 'in', ['Complete', 'Failed']) |
+             selectattr('status', 'equalto', 'True') | list | length) > 0
+          retries: 180
+          delay: 10
+
+        - name: Require successful Jenkins rollback completion
+          ansible.builtin.assert:
+            that:
+              - (jenkins_rollback_trigger_status.resources[0].status.succeeded | default(0) | int) == 1
+            fail_msg: The exact Jenkins rollback build did not complete successfully.
+
+        - name: Verify application Deployments after rollback
+          kubernetes.core.k8s_info:
+            api_version: apps/v1
+            kind: Deployment
+            name: "{{ item }}"
+            namespace: "{{ application_namespace }}"
+            kubeconfig: "{{ kubeconfig_file }}"
+          loop: "{{ application_releases }}"
+          register: rollback_deployments
+
+        - name: Require all application replicas ready after rollback
+          ansible.builtin.assert:
+            that:
+              - item.resources | length == 1
+              - (item.resources[0].status.readyReplicas | default(0) | int) == (item.resources[0].spec.replicas | int)
+              - (item.resources[0].status.updatedReplicas | default(0) | int) == (item.resources[0].spec.replicas | int)
+            fail_msg: >-
+              {{ item.item }} did not return to its configured ready replica count
+              after rollback.
+          loop: "{{ rollback_deployments.results }}"
+          loop_control:
+            label: "{{ item.item }}"
+
+        - name: Report successful guarded rollback
+          ansible.builtin.debug:
+            msg: >-
+              Jenkins restored common Helm revision {{ rollback_revision }} for
+              frontend, backend, and worker; all configured replicas are ready.
