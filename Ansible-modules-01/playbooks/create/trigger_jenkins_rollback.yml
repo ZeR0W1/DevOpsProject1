@@ -159,6 +159,36 @@
               - (jenkins_rollback_trigger_status.resources[0].status.succeeded | default(0) | int) == 1
             fail_msg: The exact Jenkins rollback build did not complete successfully.
 
+        - name: Read Helm history after rollback
+          ansible.builtin.command:
+            argv:
+              - "{{ project_helm_binary }}"
+              - history
+              - "{{ item }}"
+              - --namespace
+              - "{{ application_namespace }}"
+              - --kubeconfig
+              - "{{ kubeconfig_file }}"
+              - --output
+              - json
+          loop: "{{ application_releases }}"
+          register: completed_rollback_histories
+          changed_when: false
+
+        - name: Require each release to record the requested rollback target
+          ansible.builtin.assert:
+            that:
+              - (item.stdout | from_json | last).status == 'deployed'
+              - >-
+                (item.stdout | from_json | last).description ==
+                'Rollback to ' ~ rollback_revision
+            fail_msg: >-
+              {{ item.item }} does not record a deployed rollback to revision
+              {{ rollback_revision }}.
+          loop: "{{ completed_rollback_histories.results }}"
+          loop_control:
+            label: "{{ item.item }}"
+
         - name: Verify application Deployments after rollback
           kubernetes.core.k8s_info:
             api_version: apps/v1
