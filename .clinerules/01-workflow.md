@@ -70,6 +70,9 @@
 
 - Maintain `90-current-project-status.md` as the authoritative compact current
   state and resume record. Follow its own maintenance rules when updating it.
+- Do not record routine commit or push status in `90-current-project-status.md`.
+  Record a Git workflow restriction there only when the user explicitly imposes
+  a temporary no-commit or no-push boundary that affects the resume point.
 - Store completed milestones, dated evidence, superseded states, validation
   history, and recovery provenance in
   `/home/geeta/Project1/misc/recovery/PROJECT_HISTORY.md`.

@@ -43,8 +43,8 @@ readinessProbe:
 
 securityContext:
   runAsNonRoot: true
-  runAsUser: 999
-  runAsGroup: 999
+  runAsUser: 10001
+  runAsGroup: 10001
   allowPrivilegeEscalation: false
   capabilities:
     drop:

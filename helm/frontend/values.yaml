@@ -67,6 +67,8 @@ securityContext:
   readOnlyRootFilesystem: true
 
 podSecurityContext:
+  fsGroup: 102
+  fsGroupChangePolicy: OnRootMismatch
   seccompProfile:
     type: RuntimeDefault
 

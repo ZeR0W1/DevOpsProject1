@@ -158,6 +158,23 @@ superseded evidence belong in `misc/recovery/PROJECT_HISTORY.md`.
   has been reviewed. The Assignment 4 hardening commit and push of only
   `aws4-jenkins-cicd` were explicitly authorized; Jenkins is seeded against that
   remote acceptance branch.
+- The current clean E2E stack is live from pushed checkpoint `f8f6a9c`. CI build
+  7 and CD build 3 created common Helm revision 2 from immutable tag
+  `3-ad78fd6161cf`; queue-correlation and rollback post-verification defects found
+  during acceptance were fixed in checkpoints `6faf78b` and `f8f6a9c`. The
+  corrected guarded rollback was cloud-accepted by standalone CD build 5:
+  frontend, backend, and worker now have deployed revision 4 entries described
+  as `Rollback to 1`, remain 2/2 ready on the same immutable images, and public
+  frontend, backend health, and machines routing checks pass. Webhook CI build 9
+  also completed `SUCCESS` without application deployment.
+- A local image-remediation pass found fixable HIGH/CRITICAL findings
+  in deployed tag `3-ad78fd6161cf`. Refreshed Alpine bases, patched Python
+  packaging tools, FastAPI `0.135.0`/Starlette `1.6.0`, nested-venv Docker-context
+  exclusion, UID/GID `10001`, and matching writable-volume group ownership reduce
+  all three rebuilt local images to zero HIGH/CRITICAL findings in Trivy `0.57.1`.
+  Seven worker tests, blocking Flake8/Bandit, hardened non-root/read-only runtime
+  smoke tests, and Helm lint/render assertions pass. These images are local only
+  and have not been published or deployed.
 - The untracked `k8s/logging/` directory is unrelated class-lab work; preserve it
   untouched and exclude it from Assignment 4 commits and acceptance reasoning.
 - During current acceptance work, Jenkins intentionally watches only
@@ -169,23 +186,25 @@ superseded evidence belong in `misc/recovery/PROJECT_HISTORY.md`.
 
 ## Immediate work queue
 
-1. Run the clean create/webhook/CI/CD/verification/teardown E2E with stage-specific
-   approvals, including authoritative Jenkinsfile validation and fresh Assignment
-   4 evidence captured outside the legacy `p3_evidence/` set.
-2. After clean acceptance and final teardown, check out `main`, rerun setup so the
+1. Review and explicitly authorize immutable image publication and standalone CD.
+2. After any approved deployment verification, run the separately authorized
+   stage-gated teardown path.
+3. After final teardown, check out `main`, rerun setup so the
    ignored watched-branch selection becomes `main`, and validate the production
    trigger.
 
 ## Exact resume point
 
-Resume from pushed checkpoint `51e570b` on local branch `aws4-jenkins-cicd`.
-The authorized no-backup teardown completed in account
-`058264247987`, region `us-east-1`; main Terraform state has zero addresses. The
-`doa-staging` EKS cluster, RDS instance, ALB, NAT gateways, available tagged EBS
-volumes, VPC, application bucket, webhook, and self-signed certificate are absent.
-The separate state bucket and external `quick-demo` S3 bucket remain present. The
-previously protected CloudFormation stack is independently absent. Preserve
-untracked `k8s/logging/`. Any clean create requires separate explicit approval.
+Resume from pushed checkpoint `f8f6a9c` on local branch `aws4-jenkins-cicd` and
+the matching clean clone `/home/geeta/Project1-e2e-clean`. The authorized E2E
+stack is live in account `058264247987`, region `us-east-1`; standalone CD build
+5 successfully completed the guarded rollback to common historical revision 1,
+recorded as deployed Helm revision 4 for all three releases. Workloads are 2/2
+ready on tag `3-ad78fd6161cf`; public checks pass. Preserve untracked
+`k8s/logging/` and `scripts/recreate_state_bucket_boundary.sh`. No teardown or
+other cloud mutation is authorized beyond an explicitly approved next stage.
+Local image-remediation edits are validated; local remediated images have not
+been published or deployed.
 
 ## Status-file maintenance rule
 

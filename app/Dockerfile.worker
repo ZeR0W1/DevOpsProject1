@@ -1,20 +1,23 @@
-FROM python:3.11-slim
+FROM python:3.11-alpine3.23
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
-RUN groupadd --system app && useradd --system --gid app --create-home --home-dir /home/app app
+RUN apk upgrade --no-cache \
+    && addgroup -S -g 10001 app \
+    && adduser -S -D -H -u 10001 -G app app
 
 COPY src/shared/requirements.txt /app/src/shared/requirements.txt
 COPY src/worker/requirements.txt /app/src/worker/requirements.txt
 
-RUN pip install --no-cache-dir -r /app/src/worker/requirements.txt
+RUN pip install --no-cache-dir --upgrade setuptools wheel \
+    && pip install --no-cache-dir -r /app/src/worker/requirements.txt
 
 COPY src/worker /app/src/worker
 
-RUN chown -R app:app /app /home/app
+RUN chown -R app:app /app
 
 USER app
 WORKDIR /app/src/worker

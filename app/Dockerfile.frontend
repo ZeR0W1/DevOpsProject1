@@ -1,7 +1,8 @@
-FROM nginx:1.27-alpine
+FROM nginx:1.30-alpine3.23
 
 # Prepare writable runtime paths for nginx while still running as a non-root user.
-RUN addgroup -S app && adduser -S -G app app \
+RUN apk upgrade --no-cache \
+    && addgroup -S app && adduser -S -G app app \
     && mkdir -p /etc/nginx/templates /var/cache/nginx /tmp/nginx /usr/share/nginx/html \
     && chown -R app:app /var/cache/nginx /tmp/nginx /usr/share/nginx/html /etc/nginx/templates
 
