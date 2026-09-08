@@ -14,14 +14,16 @@
         labels:
           app.kubernetes.io/name: "{{ jenkins_helper_app_name }}"
           app.kubernetes.io/managed-by: ansible
-      data:
-        "{{ jenkins_helper_script_name }}": >-
-          {{ lookup(
-            'ansible.builtin.file',
-            project_root + '/scripts/' + jenkins_helper_script_name
-          ) }}
-        jenkins_client.py: >-
-          {{ lookup(
-            'ansible.builtin.file',
-            project_root + '/scripts/jenkins_client.py'
-          ) }}
+      data: >-
+        {{
+          {
+            jenkins_helper_script_name: lookup(
+              'ansible.builtin.file',
+              project_root + '/scripts/' + jenkins_helper_script_name
+            ),
+            'jenkins_client.py': lookup(
+              'ansible.builtin.file',
+              project_root + '/scripts/jenkins_client.py'
+            )
+          }
+        }}
