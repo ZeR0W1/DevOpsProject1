@@ -14,6 +14,12 @@
   project rules.
 - If current external state materially affects a decision, reverify only the
   relevant state read-only rather than relying on dated status/history.
+- When the current-status resume point names a separate checkout or execution
+  workspace, treat that path as part of the lifecycle context. Before using
+  generated or ignored artifacts (including kubeconfig, runtime handoff, local
+  variables, backend configuration, or credentials), verify and operate from
+  the recorded workspace unless the user explicitly approves transferring or
+  regenerating them. Do not substitute same-named artifacts from another clone.
 
 ## Prefer integrated workspace tools
 

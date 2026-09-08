@@ -204,7 +204,11 @@ ready on tag `3-ad78fd6161cf`; public checks pass. Preserve untracked
 `k8s/logging/` and `scripts/recreate_state_bucket_boundary.sh`. No teardown or
 other cloud mutation is authorized beyond an explicitly approved next stage.
 Local image-remediation edits are validated; local remediated images have not
-been published or deployed.
+been published or deployed. The live stack's ignored lifecycle artifacts
+(including target kubeconfig, runtime handoff, local variables, backend
+configuration, and credentials) belong to `/home/geeta/Project1-e2e-clean`;
+verify and run live lifecycle stages from that checkout rather than using
+same-named stale artifacts in `/home/geeta/Project1`.
 
 ## Status-file maintenance rule
 

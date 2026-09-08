@@ -356,8 +356,6 @@ spec:
                       --set namespace="${DEPLOY_NAMESPACE_RESOLVED}" \
                       --set image.repository="${BACKEND_IMAGE_REPOSITORY_RESOLVED}" \
                       --set image.tag="${IMAGE_TAG_RESOLVED}" \
-                      --set securityContext.runAsUser=999 \
-                      --set securityContext.runAsGroup=999 \
                       > rendered-backend.yaml
                     helm template frontend "${FRONTEND_CHART_DIR}" \
                       --namespace "${DEPLOY_NAMESPACE_RESOLVED}" \
@@ -389,8 +387,6 @@ spec:
                       --set namespace="${DEPLOY_NAMESPACE_RESOLVED}" \
                       --set image.repository="${BACKEND_IMAGE_REPOSITORY_RESOLVED}" \
                       --set image.tag="${IMAGE_TAG_RESOLVED}" \
-                      --set securityContext.runAsUser=999 \
-                      --set securityContext.runAsGroup=999 \
                       --atomic --wait --timeout 5m --history-max 10
                     helm upgrade --install frontend "${FRONTEND_CHART_DIR}" \
                       --namespace "${DEPLOY_NAMESPACE_RESOLVED}" \
