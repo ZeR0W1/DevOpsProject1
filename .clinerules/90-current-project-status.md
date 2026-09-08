@@ -16,9 +16,11 @@ superseded evidence belong in `misc/recovery/PROJECT_HISTORY.md`.
   `/home/geeta/Project1-prometheus-lab`. The monitoring-lab teardown completed in
   AWS account `058264247987`, region `us-east-1`, after exact authorized deletion
   of one verified orphan EKS service-created security group. Shared main Terraform
-  state is now empty after the Assignment 4 acceptance-stack teardown. The separate
-  versioned, encrypted remote-state bucket remains intentionally retained across
-  main-stack lifecycles.
+  state is now empty after the Assignment 4 acceptance-stack teardown. For the
+  final absolute-zero evidence run, the separately authorized reset removed all 23
+  retained state-bucket version entries and the bucket itself after preserving the
+  clean checkout's bootstrap state in a mode-0600 recovery backup. No active
+  bootstrap state remains.
 - The old external `devops-app-eks` lecture-lab cluster was verified absent in
   `us-east-1` on 2026-08-29 and is no longer an active ownership boundary.
 - Any future Terraform-owned stack remains a parallel recreation,
@@ -33,16 +35,12 @@ superseded evidence belong in `misc/recovery/PROJECT_HISTORY.md`.
 
 ## Current implementation state
 
-- Assignment 4 work continues on local branch `aws4-jenkins-cicd`, branched from
-  Assignment 3 commit `db8f9f7`. The hardening checkpoint is commit `6b6706b` and
-  was explicitly pushed to `origin/aws4-jenkins-cicd`; the lifecycle-organization
-  and destroy-hardening checkpoint is commit `53ebe56`; acceptance fixes through
-  `8dee0af` and lifecycle checkpoint `b17dc86` are also pushed. The resumed
+- Assignment 4 work continues on local branch `aws4-jenkins-cicd`. The resumed
   authorized E2E created all three application releases from source-built immutable
   tag `2-8dee0af765a0`; standalone CD builds 1 and 2 succeeded, all workloads are
   healthy, public routing checks pass, and an approved worker record verified RDS
   persistence, encrypted S3 synchronization, and the synchronous SNS publish path.
-  The push of `b17dc86` triggered CI build 5 through the live webhook; it completed
+  Webhook-triggered CI build 5 completed
   `SUCCESS` without triggering another standalone CD build. The authorized normal
   teardown then completed without an application-data backup: the webhook and
   application objects were removed, the dedicated cluster was purged, all 77
@@ -72,10 +70,10 @@ superseded evidence belong in `misc/recovery/PROJECT_HISTORY.md`.
 - CI/CD pipeline compliance includes mandatory source-build Trivy, published
   JUnit results, failure-safe credential cleanup, CI-to-CD commit/build/digest
   traceability, archived CD failure diagnostics, bounded hardened agent Pods, and
-  a real frontend-to-backend/worker HTTP smoke test in standalone CD. Checkpoint
-  `51e570b` also makes Bandit and Flake8 blocking over explicit first-party Python
+  a real frontend-to-backend/worker HTTP smoke test in standalone CD. CI also makes
+  Bandit and Flake8 blocking over explicit first-party Python
   files and adds a scoped Flake8 policy.
-- Checkpoint `51e570b` enables EKS VPC CNI
+- The implementation enables EKS VPC CNI
   NetworkPolicy enforcement; adds default-deny-by-selection ingress/egress
   policies for frontend, backend, and worker; enables `RuntimeDefault` seccomp and
   read-only root filesystems with only required `emptyDir` mounts; and disables
@@ -84,7 +82,7 @@ superseded evidence belong in `misc/recovery/PROJECT_HISTORY.md`.
   Kubernetes boundary and layered NetworkPolicy/security-group/IAM controls.
 - The custom CI agent now uses a digest-pinned Jenkins inbound-agent base. With
   explicit user approval, image
-  `zer0w1/devops-project1-jenkins-agent:eks-python-v2` was built and pushed to
+  `zer0w1/devops-project1-jenkins-agent:eks-python-v2` was published to
   Docker Hub at manifest digest
   `sha256:c226666c65258fe952bc44375f489255d64845a20e3d6f55c297e4d7bd09050d`;
   local verification confirmed UID 1000 and the required tool entry points.
@@ -96,8 +94,8 @@ superseded evidence belong in `misc/recovery/PROJECT_HISTORY.md`.
 - The create playbook retains its interactive `CREATE` gate by default and also
   supports exact `CREATE_CONFIRMATION_OVERRIDE=CREATE` preauthorization for the
   reviewed unattended runner; all other values are rejected by the same assertion.
-- Clone/fork reproducibility and the credential preflight fix are pushed through
-  `8dee0af`. Setup detects and confirms a GitHub HTTPS repository and
+- Clone/fork reproducibility and the credential preflight fix are implemented.
+  Setup detects and confirms a GitHub HTTPS repository and
   watched branch, writes them to ignored mode-0600 `vars/project.local.yml`, and
   verifies the hidden fine-grained token can read that repository's webhooks.
   Create revalidates the same contract before AWS/Terraform work; webhook create,
@@ -131,7 +129,7 @@ superseded evidence belong in `misc/recovery/PROJECT_HISTORY.md`.
   `cninodes.vpcresources.k8s.aws` for the Terraform-owned EKS/CNI lifecycle while
   retaining fail-closed deletion for all other custom resources. Five purge tests,
   Python compilation, and Git whitespace validation pass; the corrected rerun
-  completed the full teardown. The fix is pushed in checkpoint `e0946df`.
+  completed the full teardown.
 - Local diagnostic hardening is complete: GitHub lifecycle
   failures use a shared secret-safe Ansible filter; Jenkins Python helpers share
   one classified client staged through a reusable ConfigMap task; webhook Groovy
@@ -145,12 +143,12 @@ superseded evidence belong in `misc/recovery/PROJECT_HISTORY.md`.
 - Resumed cloud acceptance exposed two final defects: successful Kaniko/CD work
   was marked CI failure when post-stage cleanup tried to exec into the exited
   Kaniko container, and create accepted ALB health without requiring the exact CI
-  result. Checkpoint `b17dc86` makes cleanup failure-safe and makes the in-cluster
+  result. The implementation makes cleanup failure-safe and makes the in-cluster
   trigger follow its queue item and require the exact build to finish `SUCCESS`
   within a bounded ten-minute Job. The webhook-triggered CI build 5 passed, so the
   cleanup fix is cloud-accepted; the exact create-lifecycle result gate remains to
   be exercised during the next clean E2E.
-- The pushed acceptance checkpoint also extracts the CI trigger,
+- The acceptance implementation also extracts the CI trigger,
   Jenkins job seeding, registry credential configuration, and webhook Groovy
   programs from oversized inline playbook blocks into project-owned helpers.
   Focused Python/shell compilation, four-playbook syntax checks, production lint,
@@ -158,10 +156,8 @@ superseded evidence belong in `misc/recovery/PROJECT_HISTORY.md`.
   gated login helper prints the private Jenkins credentials only to the operator
   terminal and is documented with terminal-scrollback precautions.
 - The command-by-command E2E create/webhook/CI/CD/verification/teardown checklist
-  has been reviewed. The Assignment 4 hardening commit and push of only
-  `aws4-jenkins-cicd` were explicitly authorized; Jenkins is seeded against that
-  remote acceptance branch.
-- The final resumed acceptance stack from pushed checkpoint `3c3e6c0` used the
+  has been reviewed. Jenkins is seeded against the remote acceptance branch.
+- The final resumed acceptance stack used the
   source-built immutable images from CI build 12 and tag `12-6583917f0c6e`.
   Webhook CI build 13 completed `SUCCESS` with `DEPLOY_TO_EKS=false`; standalone
   CD build 7 deployed the worker writable-path correction. Frontend, backend,
@@ -199,10 +195,9 @@ superseded evidence belong in `misc/recovery/PROJECT_HISTORY.md`.
 
 ## Immediate work queue
 
-1. Run one final absolute-zero E2E specifically for reproducibility and submission
-   evidence. Before create, separately authorize the reviewed state-boundary reset
-   that backs up the current clean-checkout bootstrap state and removes the retained
-   remote-state bucket; then capture fresh state bootstrap, normal create,
+1. From the verified absolute-zero boundary, separately authorize and run one final
+   E2E specifically for reproducibility and submission evidence. Capture fresh
+   state bootstrap, normal create,
    source-build CI-to-standalone-CD handoff, exact create result gate,
    infrastructure, workload, routing, hardening, NetworkPolicy, RDS/S3/SNS, and
    self-healing evidence.
@@ -214,19 +209,19 @@ superseded evidence belong in `misc/recovery/PROJECT_HISTORY.md`.
 
 ## Exact resume point
 
-Resume from the pushed absolute-zero preparation checkpoint at the current
-`origin/aws4-jenkins-cicd` branch tip; diagnostic checkpoint `d0ed8e7` is its
-known validated predecessor.
-Main Terraform state is empty in account `058264247987`, region `us-east-1`; the retained remote-state bucket remains.
-The final evidence run must begin from absolute zero, including no remote-state
-bucket. Use only the newly reviewed reset procedure for the current ownership in
-`/home/geeta/Project1-e2e-clean`; the protected historical
+Resume on branch `aws4-jenkins-cicd` from the current local code and the verified
+absolute-zero operational boundary.
+Main Terraform state is empty in account `058264247987`, region `us-east-1`; the
+remote-state bucket and active bootstrap state are absent. One timestamped,
+mode-0600 bootstrap-state recovery backup is retained only in
+`/home/geeta/Project1-e2e-clean/terraform/state_backups/`.
+The final evidence run is at verified absolute zero. The protected historical
 `scripts/recreate_state_bucket_boundary.sh` targets retired ownership and must not
 be rerun.
 Preserve untracked `k8s/logging/` and `scripts/recreate_state_bucket_boundary.sh`.
 The active-path diagnostic hardening is complete and validated.
-Separately authorize the state-boundary reset and, after verifying absolute zero,
-the final create E2E; neither authorization implies the other.
+The state-boundary reset is complete. Setup and the final create E2E remain
+separately unauthorized.
 The ignored lifecycle artifacts in `/home/geeta/Project1-e2e-clean` remain the most recent lifecycle context;
 do not substitute same-named artifacts from another checkout without an explicit decision to regenerate them.
 

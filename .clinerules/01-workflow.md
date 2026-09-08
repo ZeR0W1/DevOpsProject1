@@ -79,6 +79,10 @@
 - Do not record routine commit or push status in `90-current-project-status.md`.
   Record a Git workflow restriction there only when the user explicitly imposes
   a temporary no-commit or no-push boundary that affects the resume point.
+- Keep operational truth independent of Git provenance. When an authorized cloud,
+  state, or external-system action materially changes current truth after a code
+  checkpoint, update `90-current-project-status.md` for that truth; do not describe
+  the update as push bookkeeping or add a hash-only follow-up.
 - Store completed milestones, dated evidence, superseded states, validation
   history, and recovery provenance in
   `/home/geeta/Project1/misc/recovery/PROJECT_HISTORY.md`.
@@ -88,12 +92,10 @@
 - At the end of a work session, update the current-status file only when current
   truth, blockers, active work, or the resume point materially changed. Add to
   `PROJECT_HISTORY.md` only for durable milestones or useful provenance.
-- Before an authorized checkpoint commit or push, finalize the current-status
-  resume text so it describes the resulting checkpoint without requiring its
-  not-yet-known hash. Do not create a routine follow-up commit or push solely to
-  replace that text with the resulting commit hash; use branch-tip-relative wording
-  or include a known prior checkpoint hash instead. A status-only checkpoint is
-  appropriate only when the user explicitly requests it or current truth changes
-  materially after the original checkpoint.
+- Before an authorized checkpoint commit or push, finalize any current-status
+  text about the code/resume state without requiring its not-yet-known hash. Do not
+  create a routine follow-up commit or push solely to record the resulting hash.
+  A later status checkpoint is appropriate only when the user explicitly requests
+  it or a subsequent operational action materially changes current truth.
 - Keep task-local progress checklists consistent with the current-status file,
   but do not copy full task transcripts or tool output into either recovery file.
