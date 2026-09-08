@@ -210,6 +210,13 @@
           loop_control:
             label: "{{ item.name }}"
 
+        - name: Stage the project-owned Jenkins job seeder helpers
+          ansible.builtin.include_tasks: ../tasks/stage_jenkins_helpers.yml
+          vars:
+            jenkins_helper_configmap_name: jenkins-job-seeder-helpers
+            jenkins_helper_app_name: jenkins-job-seeder
+            jenkins_helper_script_name: seed_jenkins_jobs.py
+
         - name: Launch short-lived in-cluster Jenkins job seeder
           kubernetes.core.k8s:
             state: present
@@ -243,7 +250,7 @@
                         type: RuntimeDefault
                     containers:
                       - name: seeder
-                        image: python:3.12.11-alpine3.22@sha256:5e511b0e940def74dd23389510300c76017ca9bbc92484c40cff0951adf32245
+                        image: "{{ jenkins_python_helper_image }}"
                         imagePullPolicy: IfNotPresent
                         env:
                           - name: JENKINS_URL
@@ -258,9 +265,7 @@
                               secretKeyRef:
                                 name: "{{ jenkins_admin_secret_name }}"
                                 key: jenkins-admin-password
-                        command: [python, -c]
-                        args:
-                          - "{{ lookup('ansible.builtin.file', project_root + '/scripts/seed_jenkins_jobs.py') }}"
+                        command: [python, /opt/project/seed_jenkins_jobs.py]
                         resources:
                           requests:
                             cpu: 50m
@@ -276,6 +281,7 @@
                         volumeMounts:
                           - {name: cd-job, mountPath: /jobs/cd, readOnly: true}
                           - {name: ci-job, mountPath: /jobs/ci, readOnly: true}
+                          - {name: helpers, mountPath: /opt/project, readOnly: true}
                     volumes:
                       - name: cd-job
                         configMap:
@@ -283,6 +289,9 @@
                       - name: ci-job
                         configMap:
                           name: jenkins-job-devops-project1-eks-pipeline
+                      - name: helpers
+                        configMap:
+                          name: jenkins-job-seeder-helpers
           register: jenkins_seeder_job
 
         - name: Wait for the in-cluster Jenkins seeder to finish

@@ -1,0 +1,27 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/ansible/schemas/main/f/ansible-tasks.json
+---
+- name: Stage project-owned Jenkins helper scripts
+  kubernetes.core.k8s:
+    state: present
+    apply: true
+    kubeconfig: "{{ kubeconfig_file }}"
+    definition:
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: "{{ jenkins_helper_configmap_name }}"
+        namespace: "{{ jenkins_namespace }}"
+        labels:
+          app.kubernetes.io/name: "{{ jenkins_helper_app_name }}"
+          app.kubernetes.io/managed-by: ansible
+      data:
+        "{{ jenkins_helper_script_name }}": >-
+          {{ lookup(
+            'ansible.builtin.file',
+            project_root + '/scripts/' + jenkins_helper_script_name
+          ) }}
+        jenkins_client.py: >-
+          {{ lookup(
+            'ansible.builtin.file',
+            project_root + '/scripts/jenkins_client.py'
+          ) }}

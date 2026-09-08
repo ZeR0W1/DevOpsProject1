@@ -33,14 +33,27 @@
         url: "https://api.github.com/repos/{{ project_github_repository }}/hooks"
         method: GET
         return_content: true
-        status_code: 200
+        status_code: [200, 401, 403, 404]
         headers:
           Accept: application/vnd.github+json
           Authorization: "Bearer {{ github_api_token }}"
           X-GitHub-Api-Version: "2022-11-28"
       register: destroy_github_webhooks
       changed_when: false
+      failed_when: false
       no_log: true
+
+    - name: Require GitHub webhook read access
+      ansible.builtin.assert:
+        that:
+          - destroy_github_webhooks.status | default(0) | int == 200
+        fail_msg: >-
+          GitHub webhook lookup failed (HTTP {{
+            destroy_github_webhooks.status | default(0) | int
+          }}): {{
+            destroy_github_webhooks.status | default(0) | int
+            | github_api_diagnostic('read repository webhooks')
+          }}. No webhook or cloud resource was changed.
 
     - name: Select only the Terraform-output project webhook
       ansible.builtin.set_fact:
@@ -57,7 +70,7 @@
         url: >-
           https://api.github.com/repos/{{ project_github_repository }}/hooks/{{ item.id }}
         method: DELETE
-        status_code: 204
+        status_code: [204, 401, 403, 404]
         headers:
           Accept: application/vnd.github+json
           Authorization: "Bearer {{ github_api_token }}"
@@ -65,4 +78,32 @@
       loop: "{{ destroy_project_github_webhooks }}"
       loop_control:
         label: project-webhook
+      register: destroy_github_webhook_deletions
+      failed_when: false
       no_log: true
+
+    - name: Select only non-secret GitHub deletion statuses
+      ansible.builtin.set_fact:
+        destroy_github_webhook_deletion_statuses: >-
+          {{
+            destroy_github_webhook_deletions.results | default([])
+            | map(attribute='status', default=0)
+            | map('int')
+            | list
+          }}
+      no_log: true
+
+    - name: Require every selected GitHub webhook deletion
+      ansible.builtin.assert:
+        that:
+          - destroy_github_webhook_deletion_statuses | reject('equalto', 204) | list | length == 0
+        fail_msg: >-
+          GitHub webhook deletion failed (HTTP {{
+            destroy_github_webhook_deletion_statuses | reject('equalto', 204) | first | default(0)
+          }}): {{
+            destroy_github_webhook_deletion_statuses
+            | reject('equalto', 204)
+            | first
+            | default(0)
+            | github_api_diagnostic('delete the selected webhook')
+          }}. Teardown stopped before later destructive stages.

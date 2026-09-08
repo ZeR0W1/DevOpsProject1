@@ -75,6 +75,13 @@
           loop_control:
             label: "{{ item.item }}"
 
+        - name: Stage the project-owned Jenkins rollback trigger helpers
+          ansible.builtin.include_tasks: ../tasks/stage_jenkins_helpers.yml
+          vars:
+            jenkins_helper_configmap_name: jenkins-rollback-trigger-helpers
+            jenkins_helper_app_name: jenkins-rollback-trigger
+            jenkins_helper_script_name: trigger_jenkins_rollback.py
+
         - name: Launch short-lived in-cluster Jenkins rollback trigger
           kubernetes.core.k8s:
             state: present
@@ -108,7 +115,7 @@
                         type: RuntimeDefault
                     containers:
                       - name: trigger
-                        image: python:3.12.11-alpine3.22@sha256:5e511b0e940def74dd23389510300c76017ca9bbc92484c40cff0951adf32245
+                        image: "{{ jenkins_python_helper_image }}"
                         imagePullPolicy: IfNotPresent
                         env:
                           - {name: JENKINS_URL, value: "{{ jenkins_service_url }}"}
@@ -125,9 +132,7 @@
                               secretKeyRef:
                                 name: "{{ jenkins_admin_secret_name }}"
                                 key: jenkins-admin-password
-                        command: [python, -c]
-                        args:
-                          - "{{ lookup('ansible.builtin.file', project_root + '/scripts/trigger_jenkins_rollback.py') }}"
+                        command: [python, /opt/project/trigger_jenkins_rollback.py]
                         resources:
                           requests: {cpu: 50m, memory: 64Mi}
                           limits: {cpu: 200m, memory: 128Mi}
@@ -135,6 +140,14 @@
                           allowPrivilegeEscalation: false
                           capabilities: {drop: [ALL]}
                           readOnlyRootFilesystem: true
+                        volumeMounts:
+                          - name: helpers
+                            mountPath: /opt/project
+                            readOnly: true
+                    volumes:
+                      - name: helpers
+                        configMap:
+                          name: jenkins-rollback-trigger-helpers
           register: jenkins_rollback_trigger_job
 
         - name: Wait for the in-cluster Jenkins rollback trigger to finish

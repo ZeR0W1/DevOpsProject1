@@ -1,51 +1,29 @@
 """Create or update the lifecycle-managed Docker Hub credential in Jenkins."""
 
-import base64
-import http.cookiejar
 import json
-import os
 import urllib.error
 import urllib.parse
-import urllib.request
 from xml.sax.saxutils import escape
 
-
-ROOT = os.environ["JENKINS_URL"].rstrip("/")
-CREDENTIAL_ID = urllib.parse.quote(os.environ["CREDENTIAL_ID"], safe="")
-AUTH = base64.b64encode(
-    f'{os.environ["JENKINS_USER"]}:{os.environ["JENKINS_PASSWORD"]}'.encode()
-).decode()
-OPENER = urllib.request.build_opener(
-    urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar())
-)
-
-
-def request(path, method="GET", body=None, headers=None, expected=(200,)):
-    request_headers = {"Authorization": f"Basic {AUTH}"}
-    request_headers.update(headers or {})
-    req = urllib.request.Request(
-        ROOT + path, data=body, headers=request_headers, method=method
-    )
-    try:
-        with OPENER.open(req, timeout=30) as response:
-            if response.status not in expected:
-                raise RuntimeError(f"Unexpected Jenkins status {response.status}")
-            return response.read()
-    except urllib.error.HTTPError as error:
-        if error.code not in expected:
-            raise
-        return error.read()
+from jenkins_client import JenkinsClient, required_environment, run_safely
 
 
 def main():
-    crumb = json.loads(request("/crumbIssuer/api/json"))
+    environment = required_environment(
+        "CREDENTIAL_ID",
+        "REGISTRY_USERNAME",
+        "REGISTRY_TOKEN",
+    )
+    credential_id = urllib.parse.quote(environment["CREDENTIAL_ID"], safe="")
+    request = JenkinsClient().request
+    crumb = json.loads(request("/crumbIssuer/api/json", expected=(200,))[1])
     xml = (
         "<com.cloudbees.plugins.credentials.impl.UsernamePasswordCredentialsImpl>"
         "<scope>GLOBAL</scope>"
-        f"<id>{escape(os.environ['CREDENTIAL_ID'])}</id>"
+        f"<id>{escape(environment['CREDENTIAL_ID'])}</id>"
         "<description>Docker Hub credential managed by guarded Ansible lifecycle</description>"
-        f"<username>{escape(os.environ['REGISTRY_USERNAME'])}</username>"
-        f"<password>{escape(os.environ['REGISTRY_TOKEN'])}</password>"
+        f"<username>{escape(environment['REGISTRY_USERNAME'])}</username>"
+        f"<password>{escape(environment['REGISTRY_TOKEN'])}</password>"
         "</com.cloudbees.plugins.credentials.impl.UsernamePasswordCredentialsImpl>"
     ).encode()
     headers = {
@@ -53,8 +31,11 @@ def main():
         crumb["crumbRequestField"]: crumb["crumb"],
     }
     try:
-        request(f"/credentials/store/system/domain/_/credential/{CREDENTIAL_ID}/config.xml")
-        path = f"/credentials/store/system/domain/_/credential/{CREDENTIAL_ID}/config.xml"
+        request(
+            f"/credentials/store/system/domain/_/credential/{credential_id}/config.xml",
+            expected=(200,),
+        )
+        path = f"/credentials/store/system/domain/_/credential/{credential_id}/config.xml"
         expected = (200,)
     except urllib.error.HTTPError as error:
         if error.code != 404:
@@ -66,4 +47,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    run_safely(main, "registry credential")

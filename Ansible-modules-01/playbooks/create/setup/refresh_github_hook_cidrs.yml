@@ -265,14 +265,27 @@
         url: "https://api.github.com/repos/{{ project_github_repository }}/hooks"
         method: GET
         return_content: true
-        status_code: 200
+        status_code: [200, 401, 403, 404]
         headers:
           Accept: application/vnd.github+json
           Authorization: "Bearer {{ github_api_token }}"
           X-GitHub-Api-Version: "2022-11-28"
       register: refresh_repository_webhooks
       changed_when: false
+      failed_when: false
       no_log: true
+
+    - name: Require GitHub webhook read access after CIDR refresh
+      ansible.builtin.assert:
+        that:
+          - refresh_repository_webhooks.status | default(0) | int == 200
+        fail_msg: >-
+          GitHub webhook lookup failed after CIDR synchronization (HTTP {{
+            refresh_repository_webhooks.status | default(0) | int
+          }}): {{
+            refresh_repository_webhooks.status | default(0) | int
+            | github_api_diagnostic('read repository webhooks')
+          }}. CIDR synchronization completed, but no delivery was inspected or redelivered; no token or response body was displayed.
 
     - name: Select the exact project webhook
       ansible.builtin.set_fact:
@@ -299,14 +312,27 @@
           }}/deliveries?per_page=100
         method: GET
         return_content: true
-        status_code: 200
+        status_code: [200, 401, 403, 404]
         headers:
           Accept: application/vnd.github+json
           Authorization: "Bearer {{ github_api_token }}"
           X-GitHub-Api-Version: "2022-11-28"
       register: refresh_webhook_deliveries
       changed_when: false
+      failed_when: false
       no_log: true
+
+    - name: Require GitHub webhook delivery read access
+      ansible.builtin.assert:
+        that:
+          - refresh_webhook_deliveries.status | default(0) | int == 200
+        fail_msg: >-
+          GitHub webhook delivery lookup failed (HTTP {{
+            refresh_webhook_deliveries.status | default(0) | int
+          }}): {{
+            refresh_webhook_deliveries.status | default(0) | int
+            | github_api_diagnostic('read webhook deliveries')
+          }}. CIDR synchronization completed, but no delivery was redelivered; no token or response body was displayed.
 
     - name: Select the latest failed push delivery
       ansible.builtin.set_fact:
@@ -327,7 +353,7 @@
           }}/deliveries/{{ item.id }}
         method: GET
         return_content: true
-        status_code: 200
+        status_code: [200, 401, 403, 404]
         headers:
           Accept: application/vnd.github+json
           Authorization: "Bearer {{ github_api_token }}"
@@ -337,7 +363,34 @@
         label: failed-push-delivery
       register: refresh_failed_push_delivery_details
       changed_when: false
+      failed_when: false
       no_log: true
+
+    - name: Select only non-secret delivery detail statuses
+      ansible.builtin.set_fact:
+        refresh_failed_delivery_detail_statuses: >-
+          {{
+            refresh_failed_push_delivery_details.results | default([])
+            | map(attribute='status', default=0)
+            | map('int')
+            | list
+          }}
+      no_log: true
+
+    - name: Require every failed push delivery detail
+      ansible.builtin.assert:
+        that:
+          - refresh_failed_delivery_detail_statuses | reject('equalto', 200) | list | length == 0
+        fail_msg: >-
+          GitHub webhook delivery detail lookup failed (HTTP {{
+            refresh_failed_delivery_detail_statuses | reject('equalto', 200) | first | default(0)
+          }}): {{
+            refresh_failed_delivery_detail_statuses
+            | reject('equalto', 200)
+            | first
+            | default(0)
+            | github_api_diagnostic('read webhook delivery details')
+          }}. CIDR synchronization completed, but no delivery was redelivered; no token or response body was displayed.
 
     - name: Select the latest failed target-branch push delivery
       ansible.builtin.set_fact:
@@ -365,12 +418,27 @@
             refresh_project_webhooks[0].id
           }}/deliveries/{{ refresh_latest_failed_push.id }}/attempts
         method: POST
-        status_code: 202
+        status_code: [202, 401, 403, 404, 422]
         headers:
           Accept: application/vnd.github+json
           Authorization: "Bearer {{ github_api_token }}"
           X-GitHub-Api-Version: "2022-11-28"
+      register: refresh_webhook_redelivery
+      failed_when: false
       no_log: true
+      when: refresh_latest_failed_push.id is defined
+
+    - name: Require successful failed-push redelivery
+      ansible.builtin.assert:
+        that:
+          - refresh_webhook_redelivery.status | default(0) | int == 202
+        fail_msg: >-
+          GitHub webhook redelivery failed (HTTP {{
+            refresh_webhook_redelivery.status | default(0) | int
+          }}): {{
+            refresh_webhook_redelivery.status | default(0) | int
+            | github_api_diagnostic('redeliver the selected webhook delivery')
+          }}. CIDR synchronization remains complete, but the failed push was not redelivered; no token or response body was displayed.
       when: refresh_latest_failed_push.id is defined
 
     - name: Report completed refresh without sensitive values

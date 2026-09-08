@@ -244,7 +244,11 @@
               - >-
                 jenkins_webhook_config_status.resources[0].status.succeeded
                 | default(0) | int == 1
-            fail_msg: Jenkins webhook HMAC configuration failed.
+            fail_msg: >-
+              Jenkins webhook HMAC configuration failed. Inspect the short-lived
+              jenkins-webhook-config Pod logs while it remains available; its
+              Groovy helper reports credential-store and GitHub-plugin categories
+              without displaying the HMAC value or raw exception details.
           no_log: true
 
         - name: Read existing GitHub repository webhooks
@@ -252,14 +256,27 @@
             url: "https://api.github.com/repos/{{ project_github_repository }}/hooks"
             method: GET
             return_content: true
-            status_code: 200
+            status_code: [200, 401, 403, 404]
             headers:
               Accept: application/vnd.github+json
               Authorization: "Bearer {{ github_api_token }}"
               X-GitHub-Api-Version: "2022-11-28"
           register: existing_github_webhooks
           changed_when: false
+          failed_when: false
           no_log: true
+
+        - name: Require GitHub webhook read access
+          ansible.builtin.assert:
+            that:
+              - existing_github_webhooks.status | default(0) | int == 200
+            fail_msg: >-
+              GitHub webhook lookup failed (HTTP {{
+                existing_github_webhooks.status | default(0) | int
+              }}): {{
+                existing_github_webhooks.status | default(0) | int
+                | github_api_diagnostic('read repository webhooks')
+              }}. No GitHub webhook was changed; no token or response body was displayed.
 
         - name: Select existing project webhook
           ansible.builtin.set_fact:
@@ -297,12 +314,28 @@
                     else '1'
                   }}
                 secret: "{{ github_webhook_hmac_secret }}"
-            status_code: "{{ [200] if existing_github_webhook.id is defined else [201] }}"
+            status_code: [200, 201, 401, 403, 404, 422]
             headers:
               Accept: application/vnd.github+json
               Authorization: "Bearer {{ github_api_token }}"
               X-GitHub-Api-Version: "2022-11-28"
+          register: configured_github_webhook
+          failed_when: false
           no_log: true
+
+        - name: Require successful GitHub webhook configuration
+          ansible.builtin.assert:
+            that:
+              - >-
+                configured_github_webhook.status | default(0) | int ==
+                (200 if existing_github_webhook.id is defined else 201)
+            fail_msg: >-
+              GitHub webhook configuration failed (HTTP {{
+                configured_github_webhook.status | default(0) | int
+              }}): {{
+                configured_github_webhook.status | default(0) | int
+                | github_api_diagnostic('create or update the repository webhook')
+              }}. The lifecycle stopped without displaying the token, HMAC secret, or response body.
 
         - name: Report configured webhook without secrets
           ansible.builtin.debug:

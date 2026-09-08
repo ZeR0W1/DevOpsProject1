@@ -83,6 +83,13 @@
               {{ worker_db_secret_name }} must exist in {{ application_namespace }}
               before CI can hand off to standalone FULL CD.
 
+        - name: Stage the project-owned Jenkins CI trigger helpers
+          ansible.builtin.include_tasks: ../tasks/stage_jenkins_helpers.yml
+          vars:
+            jenkins_helper_configmap_name: jenkins-ci-trigger-helpers
+            jenkins_helper_app_name: jenkins-ci-trigger
+            jenkins_helper_script_name: trigger_jenkins_ci.py
+
         - name: Launch short-lived in-cluster Jenkins CI trigger
           kubernetes.core.k8s:
             state: present
@@ -116,7 +123,7 @@
                         type: RuntimeDefault
                     containers:
                       - name: trigger
-                        image: python:3.12.11-alpine3.22@sha256:5e511b0e940def74dd23389510300c76017ca9bbc92484c40cff0951adf32245
+                        image: "{{ jenkins_python_helper_image }}"
                         imagePullPolicy: IfNotPresent
                         env:
                           - {name: JENKINS_URL, value: "{{ jenkins_service_url }}"}
@@ -134,9 +141,7 @@
                               secretKeyRef:
                                 name: "{{ jenkins_admin_secret_name }}"
                                 key: jenkins-admin-password
-                        command: [python, -c]
-                        args:
-                          - "{{ lookup('ansible.builtin.file', project_root + '/scripts/trigger_jenkins_ci.py') }}"
+                        command: [python, /opt/project/trigger_jenkins_ci.py]
                         resources:
                           requests: {cpu: 50m, memory: 64Mi}
                           limits: {cpu: 200m, memory: 128Mi}
@@ -144,6 +149,14 @@
                           allowPrivilegeEscalation: false
                           capabilities: {drop: [ALL]}
                           readOnlyRootFilesystem: true
+                        volumeMounts:
+                          - name: helpers
+                            mountPath: /opt/project
+                            readOnly: true
+                    volumes:
+                      - name: helpers
+                        configMap:
+                          name: jenkins-ci-trigger-helpers
           register: jenkins_ci_trigger_job
 
         - name: Wait for the in-cluster Jenkins CI trigger to finish

@@ -101,39 +101,81 @@
         url: https://api.github.com/user
         method: GET
         return_content: false
-        status_code: 200
+        status_code: [200, 401, 403]
         headers:
           Accept: application/vnd.github+json
           Authorization: "Bearer {{ normalized_github_api_token }}"
           X-GitHub-Api-Version: "2022-11-28"
+      register: setup_github_identity
       changed_when: false
+      failed_when: false
       no_log: true
+
+    - name: Require a valid GitHub token identity
+      ansible.builtin.assert:
+        that:
+          - setup_github_identity.status | default(0) | int == 200
+        fail_msg: >-
+          GitHub token validation failed (HTTP {{
+            setup_github_identity.status | default(0) | int
+          }}): {{
+            setup_github_identity.status | default(0) | int
+            | github_api_diagnostic('validate token identity')
+          }}. The token and response body were not displayed, and no local credentials were written.
 
     - name: Verify token access to the selected repository
       ansible.builtin.uri:
         url: "https://api.github.com/repos/{{ selected_github_repository }}"
         method: GET
         return_content: false
-        status_code: 200
+        status_code: [200, 401, 403, 404]
         headers:
           Accept: application/vnd.github+json
           Authorization: "Bearer {{ normalized_github_api_token }}"
           X-GitHub-Api-Version: "2022-11-28"
+      register: setup_github_repository_access
       changed_when: false
+      failed_when: false
       no_log: true
+
+    - name: Require access to the selected GitHub repository
+      ansible.builtin.assert:
+        that:
+          - setup_github_repository_access.status | default(0) | int == 200
+        fail_msg: >-
+          GitHub repository access check failed (HTTP {{
+            setup_github_repository_access.status | default(0) | int
+          }}): {{
+            setup_github_repository_access.status | default(0) | int
+            | github_api_diagnostic('access the selected repository')
+          }}. Verify the selected GitHub HTTPS repository and token repository access; no local credentials were written.
 
     - name: Verify token access to the selected repository webhooks
       ansible.builtin.uri:
         url: "https://api.github.com/repos/{{ selected_github_repository }}/hooks"
         method: GET
         return_content: false
-        status_code: 200
+        status_code: [200, 401, 403, 404]
         headers:
           Accept: application/vnd.github+json
           Authorization: "Bearer {{ normalized_github_api_token }}"
           X-GitHub-Api-Version: "2022-11-28"
+      register: setup_github_webhook_access
       changed_when: false
+      failed_when: false
       no_log: true
+
+    - name: Require selected repository webhook access
+      ansible.builtin.assert:
+        that:
+          - setup_github_webhook_access.status | default(0) | int == 200
+        fail_msg: >-
+          GitHub webhook access check failed (HTTP {{
+            setup_github_webhook_access.status | default(0) | int
+          }}): {{
+            setup_github_webhook_access.status | default(0) | int
+            | github_api_diagnostic('read selected repository webhooks')
+          }}. The token and response body were not displayed, and no local credentials were written.
 
     - name: Write non-secret controller-local SCM variables
       ansible.builtin.copy:

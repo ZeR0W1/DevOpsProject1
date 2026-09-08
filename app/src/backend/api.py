@@ -84,9 +84,9 @@ def list_machines():
     try:
         machines = fetch_worker_machines()
         return [translate_machine_for_display(machine) for machine in machines]
-    except Exception as exc:
+    except Exception:
         logger.exception("Failed to fetch machines from worker")
-        raise HTTPException(status_code=502, detail=f"Worker machines fetch failed: {exc}")
+        raise HTTPException(status_code=502, detail="Worker machine catalog unavailable")
 
 
 @app.post("/machines", response_model=Machine, status_code=201)
@@ -111,9 +111,9 @@ def create_machine(machine_input: MachineInput):
         )
         if isinstance(reassigned_id, int):
             machine.id = reassigned_id
-    except Exception as exc:
+    except Exception:
         logger.exception("Failed to deliver machine %s to worker", machine.id)
-        raise HTTPException(status_code=502, detail=f"Worker processing failed: {exc}")
+        raise HTTPException(status_code=502, detail="Worker machine processing unavailable")
 
     return machine
 
@@ -135,9 +135,9 @@ def recatalogue_machines():
         response = httpx.post(f"{WORKER_MACHINES_URL}/recatalogue", timeout=30.0)
         response.raise_for_status()
         return response.json()
-    except Exception as exc:
+    except Exception:
         logger.exception("Failed to recatalogue machines through worker")
-        raise HTTPException(status_code=502, detail=f"Worker recatalogue failed: {exc}")
+        raise HTTPException(status_code=502, detail="Worker machine recatalogue unavailable")
 
 
 @app.get("/schema/machine")

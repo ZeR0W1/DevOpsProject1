@@ -16,9 +16,9 @@ superseded evidence belong in `misc/recovery/PROJECT_HISTORY.md`.
   `/home/geeta/Project1-prometheus-lab`. The monitoring-lab teardown completed in
   AWS account `058264247987`, region `us-east-1`, after exact authorized deletion
   of one verified orphan EKS service-created security group. Shared main Terraform
-  state now owns the current Assignment 4 E2E stack with 77 addresses. The
-  separate versioned, encrypted remote-state bucket remains intentionally
-  retained across main-stack lifecycles.
+  state is now empty after the Assignment 4 acceptance-stack teardown. The separate
+  versioned, encrypted remote-state bucket remains intentionally retained across
+  main-stack lifecycles.
 - The old external `devops-app-eks` lecture-lab cluster was verified absent in
   `us-east-1` on 2026-08-29 and is no longer an active ownership boundary.
 - Any future Terraform-owned stack remains a parallel recreation,
@@ -132,14 +132,16 @@ superseded evidence belong in `misc/recovery/PROJECT_HISTORY.md`.
   retaining fail-closed deletion for all other custom resources. Five purge tests,
   Python compilation, and Git whitespace validation pass; the corrected rerun
   completed the full teardown. The fix is pushed in checkpoint `e0946df`.
-- Full local Terraform formatting/validation, all Ansible playbook syntax checks,
-  production-profile `ansible-lint`, Helm lint/render for all three charts, shell
-  syntax, deterministic CIDR checking, Git whitespace checks, and seven worker
-  tests pass. Focused Bandit and Flake8 checks also pass for the current hardening
-  edits. Both Jenkinsfiles passed the pinned local controller's authoritative
-  Declarative Pipeline validator at the previous checkpoint; the local validator
-  artifact is currently absent, so the current Jenkinsfile edit still requires
-  authoritative Declarative validation in the next clean E2E.
+- Local diagnostic hardening is complete: GitHub lifecycle
+  failures use a shared secret-safe Ansible filter; Jenkins Python helpers share
+  one classified client staged through a reusable ConfigMap task; webhook Groovy
+  reports bounded credential/plugin categories; and backend HTTP errors no longer
+  echo dependency exception text. Ten focused diagnostic tests, Python compilation,
+  all affected playbook syntax checks, production-profile `ansible-lint`, Git
+  whitespace checks, seven worker tests, Flake8, and Bandit pass. Terraform wrappers
+  and both Jenkinsfiles required no diagnostic edits. The Jenkins CLI jar exists,
+  but no local controller is running, so authoritative Declarative validation
+  remains deferred to the next clean E2E.
 - Resumed cloud acceptance exposed two final defects: successful Kaniko/CD work
   was marked CI failure when post-stage cleanup tried to exec into the exited
   Kaniko container, and create accepted ALB health without requiring the exact CI
@@ -159,12 +161,12 @@ superseded evidence belong in `misc/recovery/PROJECT_HISTORY.md`.
   has been reviewed. The Assignment 4 hardening commit and push of only
   `aws4-jenkins-cicd` were explicitly authorized; Jenkins is seeded against that
   remote acceptance branch.
-- The current clean E2E stack is live from pushed checkpoint `3c3e6c0` using the
+- The final resumed acceptance stack from pushed checkpoint `3c3e6c0` used the
   source-built immutable images from CI build 12 and tag `12-6583917f0c6e`.
   Webhook CI build 13 completed `SUCCESS` with `DEPLOY_TO_EKS=false`; standalone
-  CD build 7 then deployed the worker writable-path correction. Frontend,
-  backend, and worker are each 2/2 ready at Helm revision 6; `/`, `/health`, and
-  `/machines` return HTTP 200.
+  CD build 7 deployed the worker writable-path correction. Frontend, backend,
+  and worker reached 2/2 ready at Helm revision 6; `/`, `/health`, and `/machines`
+  returned HTTP 200.
 - The remediated images and Kubernetes hardening are cloud-accepted. The active
   VPC CNI add-on reports `enableNetworkPolicy=true`; each application release
   has an Ingress/Egress NetworkPolicy. All three Deployments use
@@ -178,6 +180,14 @@ superseded evidence belong in `misc/recovery/PROJECT_HISTORY.md`.
   the same third record; and the synchronous worker path returned only after its
   SNS `Publish` call completed. No worker error signatures appeared after the
   request.
+- The approved normal teardown then completed without an application-data backup.
+  An expired GitHub lifecycle token caused the first attempt to stop before any
+  destructive stage; rerunning setup validated and encrypted a renewed token. The
+  successful rerun removed the webhook and application objects, purged the
+  dedicated cluster, destroyed all 77 Terraform-owned addresses, verified empty
+  main state, and deleted the self-signed certificate. Read-only audit found no
+  target EKS, RDS, application bucket, ALB, NAT gateway, VPC, or certificate. The
+  retained state bucket and external quick-demo bucket remain.
 - The untracked `k8s/logging/` directory is unrelated class-lab work; preserve it
   untouched and exclude it from Assignment 4 commits and acceptance reasoning.
 - During current acceptance work, Jenkins intentionally watches only
@@ -189,34 +199,25 @@ superseded evidence belong in `misc/recovery/PROJECT_HISTORY.md`.
 
 ## Immediate work queue
 
-1. Checkpoint the accepted worker fix/status, then run the separately authorized
-   stage-gated teardown for the current resumed stack.
-2. From empty main state, run one final clean E2E specifically for submission
+1. From empty main state, run one final clean E2E specifically for submission
    evidence. Capture the normal create, source-build CI-to-standalone-CD handoff,
    exact create result gate, infrastructure, workload, routing, hardening,
    NetworkPolicy, RDS/S3/SNS, and self-healing evidence.
-3. During that final evidence E2E, capture a guarded rollback and restoration to
+2. During that final evidence E2E, capture a guarded rollback and restoration to
    the intended final release, then run final teardown and residual audit.
-4. After final teardown, check out `main`, rerun setup so the
+3. After final teardown, check out `main`, rerun setup so the
    ignored watched-branch selection becomes `main`, and validate the production
    trigger.
 
 ## Exact resume point
 
-Resume from pushed checkpoint `3c3e6c0` on local branch `aws4-jenkins-cicd` and
-the matching clean clone `/home/geeta/Project1-e2e-clean`. The authorized E2E
-stack is live in account `058264247987`, region `us-east-1`; CI build 12 and
-standalone CD build 7 deployed immutable tag `12-6583917f0c6e` as Helm revision
-6 for frontend, backend, and worker. All workloads are 2/2 ready, hardened
-runtime and NetworkPolicy checks pass, and public checks pass. Preserve untracked
-`k8s/logging/` and `scripts/recreate_state_bucket_boundary.sh`. No application
-data mutation, chart deployment, teardown, or other cloud mutation is authorized
-beyond an explicitly approved next stage. RDS and synchronized S3 currently
-contain three accepted test records. The live stack's ignored lifecycle artifacts
-(including target kubeconfig, runtime handoff, local variables, backend
-configuration, and credentials) belong to `/home/geeta/Project1-e2e-clean`;
-verify and run live lifecycle stages from that checkout rather than using
-same-named stale artifacts in `/home/geeta/Project1`.
+Resume from local status commit `9eaae22` after pushed functional checkpoint `3c3e6c0` on branch `aws4-jenkins-cicd`.
+Main Terraform state is empty in account `058264247987`, region `us-east-1`; the retained remote-state bucket remains.
+Preserve untracked `k8s/logging/` and `scripts/recreate_state_bucket_boundary.sh`.
+The active-path diagnostic hardening is complete and validated.
+Separately authorize one final clean E2E from empty state specifically for submission evidence.
+The ignored lifecycle artifacts in `/home/geeta/Project1-e2e-clean` remain the most recent lifecycle context;
+do not substitute same-named artifacts from another checkout without an explicit decision to regenerate them.
 
 ## Status-file maintenance rule
 
