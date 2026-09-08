@@ -9,6 +9,7 @@ from contextlib import redirect_stderr
 from email.message import Message
 from unittest import mock
 
+import trigger_jenkins_ci
 from jenkins_client import (
     JenkinsClient,
     JenkinsConfigurationError,
@@ -125,6 +126,33 @@ class JenkinsClientDiagnosticsTests(unittest.TestCase):
         output = stderr.getvalue()
         self.assertIn("JENKINS_PASSWORD", output)
         self.assertNotIn("secret-password", output)
+
+    def test_ci_trigger_accepts_empty_optional_image_tag(self):
+        os.environ.update(
+            {
+                "JENKINS_JOB": "example-ci",
+                "DELIVERY_MODE": "BUILD_AND_DEPLOY",
+                "DOCKERHUB_NAMESPACE": "example-owner",
+                "DEPLOY_IMAGE_TAG": "",
+            }
+        )
+        client = mock.Mock(root="http://jenkins.example")
+        client.request.side_effect = [
+            (200, b'{"crumbRequestField":"Jenkins-Crumb","crumb":"safe"}', {}),
+            (
+                201,
+                b"",
+                {"Location": "http://jenkins.example/queue/item/7"},
+            ),
+            (200, b'{"executable":{"number":1}}', {}),
+            (200, b'{"number":1,"building":false,"result":"SUCCESS"}', {}),
+        ]
+
+        with mock.patch.object(trigger_jenkins_ci, "JenkinsClient", return_value=client):
+            trigger_jenkins_ci.main()
+
+        queued_body = client.request.call_args_list[1].args[2]
+        self.assertIn(b"IMAGE_TAG=", queued_body)
 
 
 if __name__ == "__main__":

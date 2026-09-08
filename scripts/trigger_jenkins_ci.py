@@ -1,6 +1,7 @@
 """Trigger one parameterized Jenkins CI build and require its exact result."""
 
 import json
+import os
 import time
 import urllib.error
 import urllib.parse
@@ -31,7 +32,6 @@ def main():
     environment = required_environment(
         "JENKINS_JOB",
         "DELIVERY_MODE",
-        "DEPLOY_IMAGE_TAG",
     )
     client = JenkinsClient()
     root = client.root
@@ -40,7 +40,7 @@ def main():
     crumb = json.loads(request("/crumbIssuer/api/json")[1])
     parameters = {
         "DELIVERY_MODE": environment["DELIVERY_MODE"],
-        "IMAGE_TAG": environment["DEPLOY_IMAGE_TAG"],
+        "IMAGE_TAG": os.environ.get("DEPLOY_IMAGE_TAG", "").strip(),
         "DEPLOY_TO_EKS": "true",
     }
     if environment["DELIVERY_MODE"] == "BUILD_AND_DEPLOY":
