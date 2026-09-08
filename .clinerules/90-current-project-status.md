@@ -211,7 +211,8 @@ superseded evidence belong in `misc/recovery/PROJECT_HISTORY.md`.
 
 ## Exact resume point
 
-Resume from local status commit `9eaae22` after pushed functional checkpoint `3c3e6c0` on branch `aws4-jenkins-cicd`.
+Resume from the current branch tip after pushed diagnostic checkpoint `d0ed8e7`
+on branch `aws4-jenkins-cicd`.
 Main Terraform state is empty in account `058264247987`, region `us-east-1`; the retained remote-state bucket remains.
 Preserve untracked `k8s/logging/` and `scripts/recreate_state_bucket_boundary.sh`.
 The active-path diagnostic hardening is complete and validated.

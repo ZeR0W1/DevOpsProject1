@@ -88,5 +88,12 @@
 - At the end of a work session, update the current-status file only when current
   truth, blockers, active work, or the resume point materially changed. Add to
   `PROJECT_HISTORY.md` only for durable milestones or useful provenance.
+- Before an authorized checkpoint commit or push, finalize the current-status
+  resume text so it describes the resulting checkpoint without requiring its
+  not-yet-known hash. Do not create a routine follow-up commit or push solely to
+  replace that text with the resulting commit hash; use branch-tip-relative wording
+  or include a known prior checkpoint hash instead. A status-only checkpoint is
+  appropriate only when the user explicitly requests it or current truth changes
+  materially after the original checkpoint.
 - Keep task-local progress checklists consistent with the current-status file,
   but do not copy full task transcripts or tool output into either recovery file.
