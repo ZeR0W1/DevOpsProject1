@@ -1,8 +1,20 @@
 """Focused tests for project Ansible diagnostic filters."""
 
+import importlib.util
 import unittest
+from pathlib import Path
 
-from project_diagnostics import FilterModule, github_api_diagnostic
+FILTER_PLUGIN_PATH = (
+    Path(__file__).resolve().parents[1] / "filter_plugins" / "project_diagnostics.py"
+)
+SPEC = importlib.util.spec_from_file_location("project_diagnostics", FILTER_PLUGIN_PATH)
+if SPEC is None or SPEC.loader is None:
+    raise RuntimeError("Unable to load the project diagnostics filter for testing.")
+PROJECT_DIAGNOSTICS = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(PROJECT_DIAGNOSTICS)
+
+FilterModule = PROJECT_DIAGNOSTICS.FilterModule
+github_api_diagnostic = PROJECT_DIAGNOSTICS.github_api_diagnostic
 
 
 class GitHubApiDiagnosticTests(unittest.TestCase):
