@@ -199,10 +199,13 @@ superseded evidence belong in `misc/recovery/PROJECT_HISTORY.md`.
 
 ## Immediate work queue
 
-1. From empty main state, run one final clean E2E specifically for submission
-   evidence. Capture the normal create, source-build CI-to-standalone-CD handoff,
-   exact create result gate, infrastructure, workload, routing, hardening,
-   NetworkPolicy, RDS/S3/SNS, and self-healing evidence.
+1. Run one final absolute-zero E2E specifically for reproducibility and submission
+   evidence. Before create, separately authorize the reviewed state-boundary reset
+   that backs up the current clean-checkout bootstrap state and removes the retained
+   remote-state bucket; then capture fresh state bootstrap, normal create,
+   source-build CI-to-standalone-CD handoff, exact create result gate,
+   infrastructure, workload, routing, hardening, NetworkPolicy, RDS/S3/SNS, and
+   self-healing evidence.
 2. During that final evidence E2E, capture a guarded rollback and restoration to
    the intended final release, then run final teardown and residual audit.
 3. After final teardown, check out `main`, rerun setup so the
@@ -211,12 +214,19 @@ superseded evidence belong in `misc/recovery/PROJECT_HISTORY.md`.
 
 ## Exact resume point
 
-Resume from the current branch tip after pushed diagnostic checkpoint `d0ed8e7`
-on branch `aws4-jenkins-cicd`.
+Resume from the pushed absolute-zero preparation checkpoint at the current
+`origin/aws4-jenkins-cicd` branch tip; diagnostic checkpoint `d0ed8e7` is its
+known validated predecessor.
 Main Terraform state is empty in account `058264247987`, region `us-east-1`; the retained remote-state bucket remains.
+The final evidence run must begin from absolute zero, including no remote-state
+bucket. Use only the newly reviewed reset procedure for the current ownership in
+`/home/geeta/Project1-e2e-clean`; the protected historical
+`scripts/recreate_state_bucket_boundary.sh` targets retired ownership and must not
+be rerun.
 Preserve untracked `k8s/logging/` and `scripts/recreate_state_bucket_boundary.sh`.
 The active-path diagnostic hardening is complete and validated.
-Separately authorize one final clean E2E from empty state specifically for submission evidence.
+Separately authorize the state-boundary reset and, after verifying absolute zero,
+the final create E2E; neither authorization implies the other.
 The ignored lifecycle artifacts in `/home/geeta/Project1-e2e-clean` remain the most recent lifecycle context;
 do not substitute same-named artifacts from another checkout without an explicit decision to regenerate them.
 
