@@ -16,8 +16,9 @@ superseded evidence belong in `misc/recovery/PROJECT_HISTORY.md`.
   `/home/geeta/Project1-prometheus-lab`. The monitoring-lab teardown completed in
   AWS account `058264247987`, region `us-east-1`, after exact authorized deletion
   of one verified orphan EKS service-created security group. Shared main Terraform
-  state is empty and the former VPC is absent. Only the separate versioned,
-  encrypted remote-state bucket is intentionally retained.
+  state now owns the current Assignment 4 E2E stack with 77 addresses. The
+  separate versioned, encrypted remote-state bucket remains intentionally
+  retained across main-stack lifecycles.
 - The old external `devops-app-eks` lecture-lab cluster was verified absent in
   `us-east-1` on 2026-08-29 and is no longer an active ownership boundary.
 - Any future Terraform-owned stack remains a parallel recreation,
@@ -158,23 +159,26 @@ superseded evidence belong in `misc/recovery/PROJECT_HISTORY.md`.
   has been reviewed. The Assignment 4 hardening commit and push of only
   `aws4-jenkins-cicd` were explicitly authorized; Jenkins is seeded against that
   remote acceptance branch.
-- The current clean E2E stack is live from pushed checkpoint `f8f6a9c`. CI build
-  7 and CD build 3 created common Helm revision 2 from immutable tag
-  `3-ad78fd6161cf`; queue-correlation and rollback post-verification defects found
-  during acceptance were fixed in checkpoints `6faf78b` and `f8f6a9c`. The
-  corrected guarded rollback was cloud-accepted by standalone CD build 5:
-  frontend, backend, and worker now have deployed revision 4 entries described
-  as `Rollback to 1`, remain 2/2 ready on the same immutable images, and public
-  frontend, backend health, and machines routing checks pass. Webhook CI build 9
-  also completed `SUCCESS` without application deployment.
-- A local image-remediation pass found fixable HIGH/CRITICAL findings
-  in deployed tag `3-ad78fd6161cf`. Refreshed Alpine bases, patched Python
-  packaging tools, FastAPI `0.135.0`/Starlette `1.6.0`, nested-venv Docker-context
-  exclusion, UID/GID `10001`, and matching writable-volume group ownership reduce
-  all three rebuilt local images to zero HIGH/CRITICAL findings in Trivy `0.57.1`.
-  Seven worker tests, blocking Flake8/Bandit, hardened non-root/read-only runtime
-  smoke tests, and Helm lint/render assertions pass. These images are local only
-  and have not been published or deployed.
+- The current clean E2E stack is live from pushed checkpoint `6583917`. The
+  approved source-build CI build 12 and standalone CD build 6 completed
+  `SUCCESS` for full commit `6583917f0c6e907a05240767eec63cd99ef402bc` and
+  immutable tag `12-6583917f0c6e`. Frontend, backend, and worker are each 2/2
+  ready at Helm revision 5; `/`, `/health`, and `/machines` return HTTP 200.
+  Pods resolve to the archived frontend, backend, and worker registry digests.
+- The remediated images and Kubernetes hardening are cloud-accepted. The active
+  VPC CNI add-on reports `enableNetworkPolicy=true`; each application release
+  has an Ingress/Egress NetworkPolicy. All three Deployments use
+  `RuntimeDefault` seccomp, read-only root filesystems, dropped capabilities, and
+  no privilege escalation. Backend and worker run as UID/GID `10001`; frontend
+  and backend disable ServiceAccount-token automount, while worker retains it for
+  EKS Pod Identity. Required writable paths use bounded `emptyDir` volumes.
+- The final worker-record acceptance test exposed a writable-path defect before
+  teardown: two authorized POST attempts committed records 1 and 2 to RDS, then
+  returned 502 because the worker's read-only root blocked `/app/configs`; S3
+  `instances.json` and SNS were not reached. A local one-line chart fix moves the
+  worker `emptyDir` mount from `/app/src/worker/configs` to the runtime path
+  `/app/configs`; Helm lint/render and whitespace validation pass. Teardown is
+  paused until this fix is checkpointed, deployed, and the data path passes.
 - The untracked `k8s/logging/` directory is unrelated class-lab work; preserve it
   untouched and exclude it from Assignment 4 commits and acceptance reasoning.
 - During current acceptance work, Jenkins intentionally watches only
@@ -186,25 +190,28 @@ superseded evidence belong in `misc/recovery/PROJECT_HISTORY.md`.
 
 ## Immediate work queue
 
-1. Review and explicitly authorize immutable image publication and standalone CD.
-2. After any approved deployment verification, run the separately authorized
-   stage-gated teardown path.
+1. Review and explicitly authorize committing/pushing the one-line worker chart
+   mount fix, then deploy it through standalone CD and repeat the record test.
+2. After RDS/S3/SNS acceptance passes, run the separately authorized stage-gated
+   teardown path.
 3. After final teardown, check out `main`, rerun setup so the
    ignored watched-branch selection becomes `main`, and validate the production
    trigger.
 
 ## Exact resume point
 
-Resume from pushed checkpoint `f8f6a9c` on local branch `aws4-jenkins-cicd` and
+Resume from pushed checkpoint `6583917` on local branch `aws4-jenkins-cicd` and
 the matching clean clone `/home/geeta/Project1-e2e-clean`. The authorized E2E
-stack is live in account `058264247987`, region `us-east-1`; standalone CD build
-5 successfully completed the guarded rollback to common historical revision 1,
-recorded as deployed Helm revision 4 for all three releases. Workloads are 2/2
-ready on tag `3-ad78fd6161cf`; public checks pass. Preserve untracked
-`k8s/logging/` and `scripts/recreate_state_bucket_boundary.sh`. No teardown or
-other cloud mutation is authorized beyond an explicitly approved next stage.
-Local image-remediation edits are validated; local remediated images have not
-been published or deployed. The live stack's ignored lifecycle artifacts
+stack is live in account `058264247987`, region `us-east-1`; CI build 12 and
+standalone CD build 6 deployed immutable tag `12-6583917f0c6e` as Helm revision
+5 for frontend, backend, and worker. All workloads are 2/2 ready, hardened
+runtime and NetworkPolicy checks pass, and public checks pass. Preserve untracked
+`k8s/logging/` and `scripts/recreate_state_bucket_boundary.sh`. No application
+data mutation, chart deployment, teardown, or other cloud mutation is authorized
+beyond an explicitly approved next stage. RDS currently contains two partially
+accepted test records; S3 `instances.json` remains absent and SNS was not reached.
+The local worker chart mount fix is validated but not committed, pushed, or
+deployed. The live stack's ignored lifecycle artifacts
 (including target kubeconfig, runtime handoff, local variables, backend
 configuration, and credentials) belong to `/home/geeta/Project1-e2e-clean`;
 verify and run live lifecycle stages from that checkout rather than using
