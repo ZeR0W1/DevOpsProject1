@@ -159,12 +159,12 @@ superseded evidence belong in `misc/recovery/PROJECT_HISTORY.md`.
   has been reviewed. The Assignment 4 hardening commit and push of only
   `aws4-jenkins-cicd` were explicitly authorized; Jenkins is seeded against that
   remote acceptance branch.
-- The current clean E2E stack is live from pushed checkpoint `6583917`. The
-  approved source-build CI build 12 and standalone CD build 6 completed
-  `SUCCESS` for full commit `6583917f0c6e907a05240767eec63cd99ef402bc` and
-  immutable tag `12-6583917f0c6e`. Frontend, backend, and worker are each 2/2
-  ready at Helm revision 5; `/`, `/health`, and `/machines` return HTTP 200.
-  Pods resolve to the archived frontend, backend, and worker registry digests.
+- The current clean E2E stack is live from pushed checkpoint `3c3e6c0` using the
+  source-built immutable images from CI build 12 and tag `12-6583917f0c6e`.
+  Webhook CI build 13 completed `SUCCESS` with `DEPLOY_TO_EKS=false`; standalone
+  CD build 7 then deployed the worker writable-path correction. Frontend,
+  backend, and worker are each 2/2 ready at Helm revision 6; `/`, `/health`, and
+  `/machines` return HTTP 200.
 - The remediated images and Kubernetes hardening are cloud-accepted. The active
   VPC CNI add-on reports `enableNetworkPolicy=true`; each application release
   has an Ingress/Egress NetworkPolicy. All three Deployments use
@@ -172,13 +172,12 @@ superseded evidence belong in `misc/recovery/PROJECT_HISTORY.md`.
   no privilege escalation. Backend and worker run as UID/GID `10001`; frontend
   and backend disable ServiceAccount-token automount, while worker retains it for
   EKS Pod Identity. Required writable paths use bounded `emptyDir` volumes.
-- The final worker-record acceptance test exposed a writable-path defect before
-  teardown: two authorized POST attempts committed records 1 and 2 to RDS, then
-  returned 502 because the worker's read-only root blocked `/app/configs`; S3
-  `instances.json` and SNS were not reached. A local one-line chart fix moves the
-  worker `emptyDir` mount from `/app/src/worker/configs` to the runtime path
-  `/app/configs`; Helm lint/render and whitespace validation pass. Teardown is
-  paused until this fix is checkpointed, deployed, and the data path passes.
+- The worker writable-path correction is cloud-accepted. One explicitly approved
+  post-fix request returned HTTP 201 with record ID 3. The RDS-backed catalog read
+  returned all three records; encrypted, versioned S3 `instances.json` contained
+  the same third record; and the synchronous worker path returned only after its
+  SNS `Publish` call completed. No worker error signatures appeared after the
+  request.
 - The untracked `k8s/logging/` directory is unrelated class-lab work; preserve it
   untouched and exclude it from Assignment 4 commits and acceptance reasoning.
 - During current acceptance work, Jenkins intentionally watches only
@@ -190,28 +189,30 @@ superseded evidence belong in `misc/recovery/PROJECT_HISTORY.md`.
 
 ## Immediate work queue
 
-1. Review and explicitly authorize committing/pushing the one-line worker chart
-   mount fix, then deploy it through standalone CD and repeat the record test.
-2. After RDS/S3/SNS acceptance passes, run the separately authorized stage-gated
-   teardown path.
-3. After final teardown, check out `main`, rerun setup so the
+1. Checkpoint the accepted worker fix/status, then run the separately authorized
+   stage-gated teardown for the current resumed stack.
+2. From empty main state, run one final clean E2E specifically for submission
+   evidence. Capture the normal create, source-build CI-to-standalone-CD handoff,
+   exact create result gate, infrastructure, workload, routing, hardening,
+   NetworkPolicy, RDS/S3/SNS, and self-healing evidence.
+3. During that final evidence E2E, capture a guarded rollback and restoration to
+   the intended final release, then run final teardown and residual audit.
+4. After final teardown, check out `main`, rerun setup so the
    ignored watched-branch selection becomes `main`, and validate the production
    trigger.
 
 ## Exact resume point
 
-Resume from pushed checkpoint `6583917` on local branch `aws4-jenkins-cicd` and
+Resume from pushed checkpoint `3c3e6c0` on local branch `aws4-jenkins-cicd` and
 the matching clean clone `/home/geeta/Project1-e2e-clean`. The authorized E2E
 stack is live in account `058264247987`, region `us-east-1`; CI build 12 and
-standalone CD build 6 deployed immutable tag `12-6583917f0c6e` as Helm revision
-5 for frontend, backend, and worker. All workloads are 2/2 ready, hardened
+standalone CD build 7 deployed immutable tag `12-6583917f0c6e` as Helm revision
+6 for frontend, backend, and worker. All workloads are 2/2 ready, hardened
 runtime and NetworkPolicy checks pass, and public checks pass. Preserve untracked
 `k8s/logging/` and `scripts/recreate_state_bucket_boundary.sh`. No application
 data mutation, chart deployment, teardown, or other cloud mutation is authorized
-beyond an explicitly approved next stage. RDS currently contains two partially
-accepted test records; S3 `instances.json` remains absent and SNS was not reached.
-The local worker chart mount fix is validated but not committed, pushed, or
-deployed. The live stack's ignored lifecycle artifacts
+beyond an explicitly approved next stage. RDS and synchronized S3 currently
+contain three accepted test records. The live stack's ignored lifecycle artifacts
 (including target kubeconfig, runtime handoff, local variables, backend
 configuration, and credentials) belong to `/home/geeta/Project1-e2e-clean`;
 verify and run live lifecycle stages from that checkout rather than using
