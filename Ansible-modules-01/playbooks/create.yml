@@ -25,18 +25,6 @@
         Select 1 or 2
       private: false
 
-    - name: requested_public_hostname
-      prompt: >-
-        Trusted mode only: enter the public hostname (for example,
-        app.example.com); otherwise press Enter
-      private: false
-
-    - name: requested_route53_zone_id
-      prompt: >-
-        Trusted mode only: enter the existing public Route 53 hosted-zone ID;
-        otherwise press Enter
-      private: false
-
   vars:
     bootstrap_dir: "{{ terraform_state_bootstrap_dir }}"
     terraform_example: "{{ terraform_dir }}/terraform.tfvars.example"
@@ -68,6 +56,35 @@
           - requested_tls_option | trim in ['1', '2']
         fail_msg: >-
           Run bash ../setup.sh first and select supported delivery and TLS modes.
+
+    - name: Prompt for the trusted public hostname
+      ansible.builtin.pause:
+        prompt: >-
+          Enter the public hostname in the selected Route 53 public hosted zone
+          (for example, app.example.com)
+      register: create_public_hostname_prompt
+      when:
+        - requested_tls_option | trim == '1'
+        - requested_public_hostname is not defined
+
+    - name: Prompt for the trusted Route 53 hosted-zone ID
+      ansible.builtin.pause:
+        prompt: Enter the existing public Route 53 hosted-zone ID
+      register: create_route53_zone_id_prompt
+      when:
+        - requested_tls_option | trim == '1'
+        - requested_route53_zone_id is not defined
+
+    - name: Select TLS-mode-specific inputs
+      ansible.builtin.set_fact:
+        requested_public_hostname: >-
+          {{ requested_public_hostname
+             if requested_public_hostname is defined
+             else (create_public_hostname_prompt.user_input | default('')) }}
+        requested_route53_zone_id: >-
+          {{ requested_route53_zone_id
+             if requested_route53_zone_id is defined
+             else (create_route53_zone_id_prompt.user_input | default('')) }}
 
     - name: Validate controller-local SCM selection
       ansible.builtin.assert:
