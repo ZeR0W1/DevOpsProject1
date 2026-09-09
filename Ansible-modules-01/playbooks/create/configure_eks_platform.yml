@@ -31,6 +31,8 @@
     eks_platform_mutation_confirmation: >-
       {{ lookup('ansible.builtin.env', 'EKS_PLATFORM_MUTATION_CONFIRMATION')
          | default('', true) }}
+    operator_kubeconfig_file: >-
+      {{ lookup('ansible.builtin.env', 'HOME') ~ '/.kube/config' }}
 
   tasks:
     - name: Validate EKS platform lifecycle flag combinations
@@ -141,6 +143,55 @@
               - get
               - namespace
           changed_when: false
+
+        - name: Create the operator kubeconfig directory
+          ansible.builtin.file:
+            path: "{{ operator_kubeconfig_file | dirname }}"
+            state: directory
+            mode: "0700"
+
+        - name: Synchronize the operator kubeconfig after target validation
+          ansible.builtin.command:
+            argv:
+              - aws
+              - eks
+              - update-kubeconfig
+              - --name
+              - "{{ eks_platform.cluster_name }}"
+              - --region
+              - "{{ eks_platform.aws_region }}"
+              - --kubeconfig
+              - "{{ operator_kubeconfig_file }}"
+              - --alias
+              - "{{ eks_platform.cluster_name }}"
+          changed_when: true
+
+        - name: Restrict operator kubeconfig permissions
+          ansible.builtin.file:
+            path: "{{ operator_kubeconfig_file }}"
+            mode: "0600"
+
+        - name: Read the synchronized operator kubeconfig API endpoint
+          ansible.builtin.command:
+            argv:
+              - kubectl
+              - --kubeconfig
+              - "{{ operator_kubeconfig_file }}"
+              - --context
+              - "{{ eks_platform.cluster_name }}"
+              - config
+              - view
+              - --minify
+              - --output
+              - "jsonpath={.clusters[0].cluster.server}"
+          register: operator_kubeconfig_endpoint
+          changed_when: false
+
+        - name: Require operator kubeconfig to match the Terraform-owned EKS endpoint
+          ansible.builtin.assert:
+            that:
+              - operator_kubeconfig_endpoint.stdout == eks_platform.cluster_endpoint
+            fail_msg: Operator kubeconfig does not match the Terraform EKS endpoint.
 
     - name: Install or upgrade the pinned Jenkins Helm release
       kubernetes.core.helm:
