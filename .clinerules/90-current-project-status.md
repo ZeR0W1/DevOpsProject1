@@ -13,14 +13,14 @@ superseded evidence belong in `misc/recovery/PROJECT_HISTORY.md`.
 - The separate retained, versioned, encrypted state bucket was created and the
   main stack now uses its S3 backend with native lock files.
 - The configured main S3 backend is shared with the sister workspace
-  `/home/geeta/Project1-prometheus-lab`. The monitoring-lab teardown completed in
-  AWS account `058264247987`, region `us-east-1`, after exact authorized deletion
-  of one verified orphan EKS service-created security group. Shared main Terraform
-  state is now empty after the Assignment 4 acceptance-stack teardown. For the
-  final absolute-zero evidence run, the separately authorized reset removed all 23
-  retained state-bucket version entries and the bucket itself after preserving the
-  clean checkout's bootstrap state in a mode-0600 recovery backup. No active
-  bootstrap state remains.
+  `/home/geeta/Project1-prometheus-lab`. The latest authorized Assignment 4
+  teardown in AWS account `058264247987`, region `us-east-1`, removed the webhook,
+  application objects, dedicated cluster content, all 77 Terraform-owned main-stack
+  addresses, and the self-signed certificate without an application-data backup.
+  The subsequent absolute-zero reset removed all 24 retained state-bucket version
+  entries and the bucket itself. Main state is empty, no active bootstrap state or
+  retained recovery backup remains, and read-only audit found no target EKS, RDS,
+  application bucket, ALB, NAT gateway, VPC, certificate, or state bucket.
 - The old external `devops-app-eks` lecture-lab cluster was verified absent in
   `us-east-1` on 2026-08-29 and is no longer an active ownership boundary.
 - Any future Terraform-owned stack remains a parallel recreation,
@@ -45,7 +45,8 @@ superseded evidence belong in `misc/recovery/PROJECT_HISTORY.md`.
   teardown then completed without an application-data backup: the webhook and
   application objects were removed, the dedicated cluster was purged, all 77
   Terraform-owned addresses were destroyed, and the self-signed certificate was
-  deleted. Main state is empty; the separate state bucket is retained.
+  deleted. Main state is empty; the later authorized absolute-zero reset also
+  removed the separate state bucket.
 - The Assignment 4 webhook direction is a direct GitHub-to-Jenkins webhook, not
   the discarded Lambda/SQS relay. The planned controls are the current GitHub
   `hooks` CIDR allowlist, GitHub webhook HMAC validation, private Jenkins UI
@@ -146,8 +147,9 @@ superseded evidence belong in `misc/recovery/PROJECT_HISTORY.md`.
   result. The implementation makes cleanup failure-safe and makes the in-cluster
   trigger follow its queue item and require the exact build to finish `SUCCESS`
   within a bounded ten-minute Job. The webhook-triggered CI build 5 passed, so the
-  cleanup fix is cloud-accepted; the exact create-lifecycle result gate remains to
-  be exercised during the next clean E2E.
+  cleanup fix is cloud-accepted. A later from-zero run exercised the exact
+  create-lifecycle result gate successfully after correcting optional empty image-
+  tag handling; that run was intentionally not accepted as final evidence.
 - The acceptance implementation also extracts the CI trigger,
   Jenkins job seeding, registry credential configuration, and webhook Groovy
   programs from oversized inline playbook blocks into project-owned helpers.
@@ -183,7 +185,16 @@ superseded evidence belong in `misc/recovery/PROJECT_HISTORY.md`.
   dedicated cluster, destroyed all 77 Terraform-owned addresses, verified empty
   main state, and deleted the self-signed certificate. Read-only audit found no
   target EKS, RDS, application bucket, ALB, NAT gateway, VPC, or certificate. The
-  retained state bucket and external quick-demo bucket remain.
+  external quick-demo bucket remains outside project ownership.
+- A subsequent from-zero reproducibility attempt reached healthy source-built
+  images tagged `2-890ad6889043`: CI build 2 and standalone CD build 1 completed
+  `SUCCESS`, the exact create result gate passed, all three releases were 2/2 Ready
+  at revision 1, public routes returned HTTP 200, and current hardening and
+  NetworkPolicy controls were present. Two create-path defects discovered en route
+  were fixed and pushed: create now stages backend initialization after fresh
+  bootstrap, and the CI trigger accepts an intentionally empty optional image tag.
+  Because the run required these interventions and had no common rollback target,
+  it is diagnostic acceptance only; final evidence must be rerun from zero.
 - The untracked `k8s/logging/` directory is unrelated class-lab work; preserve it
   untouched and exclude it from Assignment 4 commits and acceptance reasoning.
 - During current acceptance work, Jenkins intentionally watches only
@@ -212,18 +223,19 @@ superseded evidence belong in `misc/recovery/PROJECT_HISTORY.md`.
 Resume on branch `aws4-jenkins-cicd` from the current local code and the verified
 absolute-zero operational boundary.
 Main Terraform state is empty in account `058264247987`, region `us-east-1`; the
-remote-state bucket and active bootstrap state are absent. One timestamped,
-mode-0600 bootstrap-state recovery backup is retained only in
-`/home/geeta/Project1-e2e-clean/terraform/state_backups/`.
+remote-state bucket, active bootstrap state, and bootstrap recovery backups are
+absent.
 The final evidence run is at verified absolute zero. The protected historical
 `scripts/recreate_state_bucket_boundary.sh` targets retired ownership and must not
 be rerun.
 Preserve untracked `k8s/logging/` and `scripts/recreate_state_bucket_boundary.sh`.
 The active-path diagnostic hardening is complete and validated.
-The state-boundary reset is complete. Setup and the final create E2E remain
-separately unauthorized.
-The ignored lifecycle artifacts in `/home/geeta/Project1-e2e-clean` remain the most recent lifecycle context;
-do not substitute same-named artifacts from another checkout without an explicit decision to regenerate them.
+The clean checkout `/home/geeta/Project1-e2e-clean` is tracked-clean at pushed
+commit `890ad68`; its generated tools, credentials, local variables, Terraform
+initialization, live state, generated output, recovery data, and state backups were
+explicitly deleted. Tomorrow's final evidence attempt must begin with `bash setup.sh`
+in that checkout and fresh state bootstrap; setup and create remain separately
+unauthorized.
 
 ## Status-file maintenance rule
 
