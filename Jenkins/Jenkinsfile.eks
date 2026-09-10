@@ -283,6 +283,65 @@ spec:
                     }
                 }
 
+                stage('Trivy Image Scan') {
+                    when { expression { !params.VALIDATE_ONLY && params.DELIVERY_MODE == 'BUILD_AND_DEPLOY' } }
+                    steps {
+                        container('trivy') {
+                            sh '''#!/bin/sh
+                                set -eu
+                                mkdir -p image-scan-reports
+                                scan_status=0
+                                for component in frontend backend worker; do
+                                  case "$component" in
+                                    frontend) repository="$FRONTEND_IMAGE_REPOSITORY" ;;
+                                    backend) repository="$BACKEND_IMAGE_REPOSITORY" ;;
+                                    worker) repository="$WORKER_IMAGE_REPOSITORY" ;;
+                                  esac
+                                  digest="$(cat "image-digests/${component}.txt")"
+                                  if ! printf '%s\n' "$digest" | grep -Eq '^sha256:[0-9a-f]{64}$'; then
+                                    echo "Invalid ${component} image digest; refusing to scan or deploy." >&2
+                                    exit 1
+                                  fi
+                                  image_reference="${repository}@${digest}"
+                                  report="image-scan-reports/${component}.txt"
+                                  echo "Scanning immutable ${component} image ${image_reference}"
+                                  if ! trivy image \
+                                    --scanners vuln \
+                                    --severity HIGH,CRITICAL \
+                                    --exit-code 1 \
+                                    --format table \
+                                    --output "$report" \
+                                    "$image_reference"; then
+                                    scan_status=1
+                                  fi
+                                  [ ! -f "$report" ] || cat "$report"
+                                done
+                                exit "$scan_status"
+                            '''
+                        }
+                    }
+                    post {
+                        always {
+                            archiveArtifacts artifacts: 'image-scan-reports/*.txt', allowEmptyArchive: true, fingerprint: true
+                        }
+                        failure {
+                            withCredentials([usernamePassword(credentialsId: params.DOCKERHUB_CREDENTIALS_ID, usernameVariable: 'DOCKERHUB_USERNAME', passwordVariable: 'DOCKERHUB_TOKEN')]) {
+                                container('python') {
+                                    sh '''#!/bin/sh
+                                        set -eu
+                                        python3 scripts/dockerhub_cleanup_failed_scan.py \
+                                          --tag "$IMAGE_TAG_RESOLVED" \
+                                          --digest-directory image-digests \
+                                          --repository "frontend=$FRONTEND_IMAGE_REPOSITORY" \
+                                          --repository "backend=$BACKEND_IMAGE_REPOSITORY" \
+                                          --repository "worker=$WORKER_IMAGE_REPOSITORY"
+                                    '''
+                                }
+                            }
+                        }
+                    }
+                }
+
                 stage('Seed or Reset Frontend Content in S3') {
                     when { expression { !params.VALIDATE_ONLY } }
                     steps {

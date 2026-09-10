@@ -132,10 +132,15 @@ runtime source is the Terraform-owned, versioned S3 object `index.html`.
 
 ## Jenkins model
 
-CI runs blocking Bandit, Flake8, pytest/JUnit, Helm, and source-build Trivy gates,
-then builds all three images with Kaniko under one immutable tag and records their
-digests. CD remains a separate job and is the only Jenkins path with
-namespace-scoped application mutation permission.
+CI runs blocking Bandit, Flake8, pytest/JUnit, Helm, and an early Trivy
+filesystem vulnerability/secret gate. Kaniko then builds and pushes all three
+Docker Hub images under one immutable tag and records their digests. Before CD
+can run, a second blocking Trivy gate scans each pushed image by its exact digest
+for HIGH/CRITICAL vulnerabilities and archives all three reports. If that image
+gate fails, CI verifies that every live tag still resolves to this build's
+recorded digest before deleting the three failed-scan tags from Docker Hub. CD
+remains a separate job and is the only Jenkins path with namespace-scoped
+application mutation permission.
 
 The shared ALB sends only GitHub `hooks` CIDRs on exact `/github-webhook/` to the
 fixed webhook NodePort; HMAC validation is mandatory. Jenkins' normal Service is
@@ -367,9 +372,12 @@ lifecycle stage. Chart lint/render commands are in [`helm/README.md`](helm/READM
   the AWS RDS CA bundle would allow `verify-full` hostname and CA verification.
 - Terraform, not Kubernetes, owns the shared ALB, listener rules, target groups,
   and TLS resources; Kubernetes owns only the stable NodePort Services.
-- Source-build CI runs fail on Bandit, Flake8, pytest, or HIGH/CRITICAL Trivy
-  vulnerability/secret findings. Promoted prebuilt-image mode does not claim to
-  rescan unavailable source-built images.
+- Source-build CI runs fail on Bandit, Flake8, pytest, HIGH/CRITICAL filesystem
+  vulnerability/secret findings, or HIGH/CRITICAL findings in any of the three
+  built images scanned by immutable digest. A failed image gate cannot trigger CD
+  and invokes digest-verified deletion of only that build's Docker Hub tags.
+  Promoted prebuilt-image mode does not claim to rescan unavailable source-built
+  images.
 
 ## Detailed documentation
 
