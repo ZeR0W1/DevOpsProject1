@@ -18,7 +18,8 @@ The worker is the persistence and integration layer.
 ```text
 src/worker/
   api.py
-  config.py
+  worker_config.py
+  test_api.py
   README.md
 ```
 

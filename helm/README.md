@@ -146,7 +146,8 @@ They are one layer rather than a complete identity firewall:
 - worker PostgreSQL and HTTPS egress rules restrict ports, while RDS security
   groups and workload IAM enforce the allowed destination/resource identity; and
 - node-originated health probes follow the EKS VPC CNI/Kubernetes node-traffic
-  behavior and must be reverified in the clean E2E deployment.
+  behavior; the final accepted E2E verified all readiness/liveness probes with
+  VPC CNI NetworkPolicy enforcement enabled.
 
 ## Release behavior and verification
 
@@ -167,7 +168,7 @@ kubectl rollout status deployment/backend -n devops-app --timeout=5m
 kubectl rollout status deployment/frontend -n devops-app --timeout=5m
 ```
 
-The functional acceptance path must also prove public frontend access,
+The accepted functional path proves public frontend access,
 frontend-to-backend-to-worker communication, PostgreSQL persistence, encrypted S3
 catalog synchronization, SNS publication, and recovery after replacing one Pod.
 Those end-to-end checks belong to the guarded lifecycle rather than direct Helm

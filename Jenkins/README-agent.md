@@ -17,13 +17,14 @@ controller and agent images:
 EKS-native CI pipeline:
 
 ```text
-zer0w1/devops-project1-jenkins-agent:eks-python-v1
+zer0w1/devops-project1-jenkins-agent:eks-python-v2
 ```
 
 `Jenkins/Jenkinsfile.eks` runs this image as the `python` container in an
 ephemeral Kubernetes agent Pod. The Kubernetes plugin overrides the image entry
 point with `cat`; no permanent inbound node or host Docker socket is required by
-the active EKS pipeline.
+the active EKS pipeline. The published `v2` image is built from the digest-pinned
+Jenkins inbound-agent base declared by `Dockerfile.agent`.
 
 It includes:
 
@@ -42,7 +43,7 @@ From the repository root:
 ```bash
 docker build \
   -f Jenkins/Dockerfile.agent \
-  -t zer0w1/devops-project1-jenkins-agent:eks-python-v1 \
+  -t zer0w1/devops-project1-jenkins-agent:eks-python-v2 \
   Jenkins
 ```
 
@@ -64,12 +65,15 @@ dedicated pinned Trivy container, not from this Python image.
   path uses the separate unprivileged Kaniko container.
 - The bundled Sonar Scanner and Docker CLI are not currently invoked by
   `Jenkinsfile.eks`; enable them only through a reviewed, resource-bounded stage.
-- `RUN_TRIVY_SCAN=true` enables the dedicated Trivy filesystem vulnerability and
-  secret scan only in `BUILD_AND_DEPLOY`; it fails on HIGH/CRITICAL findings.
+- Source-build CI always runs two blocking Trivy gates: an early filesystem
+  vulnerability/secret scan and a post-push scan of every component by its exact
+  immutable digest. Either gate fails on HIGH/CRITICAL findings.
+- If the post-push image gate fails, CI verifies each live tag still resolves to
+  that build's archived digest before deleting only those failed-build tags.
 - The active EKS pipeline uses Docker Hub credentials referenced by
   `DOCKERHUB_CREDENTIALS_ID` only to push application images.
 - `Jenkinsfile.eks` owns tests and publication of one immutable tag across all
   three services. `Jenkinsfile-deploy` alone receives namespace-scoped deployment
-  access and performs FULL or CONTENT_ONLY delivery.
+  access and performs FULL, CONTENT_ONLY, or manual guarded ROLLBACK delivery.
 - Jenkins is ClusterIP-only. Ansible seeds jobs and registry credentials through
   hardened short-lived in-cluster Jobs rather than exposing the controller.

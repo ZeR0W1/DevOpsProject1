@@ -41,7 +41,10 @@ synchronization mechanics used by CI/CD.
 
 Because the frontend is static and nginx-based, it has no Python dependency file.
 
-The `helm/frontend` `LoadBalancer` Service is the only public application entry
-point. Backend, worker, Jenkins, RDS, S3, and SNS remain non-public. Derive the
-current load-balancer hostname from Kubernetes status; do not hard-code an
-ephemeral hostname or restore the retired EC2/systemd deployment path.
+The `helm/frontend` Service uses fixed NodePort `32081`, which is targeted only by
+the Terraform-owned shared public ALB. The ALB default route serves the frontend;
+its only Jenkins exception is the exact `/github-webhook/` path from GitHub hooks
+CIDRs to separate NodePort `32080`. Backend, worker, the normal Jenkins Service,
+RDS, S3, and SNS remain non-public. Derive the current frontend URL from Terraform
+output `public_url`; do not hard-code an ephemeral hostname or restore the retired
+EC2/systemd deployment path.

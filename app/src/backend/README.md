@@ -18,7 +18,7 @@ The backend is the validation and orchestration layer.
 ```text
 src/backend/
   api.py
-  config.py
+  backend_config.py
   machine.py
   schema.py
   README.md

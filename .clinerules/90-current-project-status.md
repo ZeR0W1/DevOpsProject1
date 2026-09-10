@@ -14,11 +14,13 @@ superseded evidence belong in `misc/recovery/PROJECT_HISTORY.md`.
   main stack now uses its S3 backend with native lock files.
 - The configured main S3 backend is shared with the sister workspace
   `/home/geeta/Project1-prometheus-lab`. The current Assignment 4 final-evidence
-  stack is active in AWS account `058264247987`, region `us-east-1`, from lifecycle
-  checkout `/home/geeta/Project1-e2e-clean`. Its initialized main state owns 77
-  addresses, and the target EKS cluster currently runs all three application
-  Deployments. Generated lifecycle artifacts, credentials, kubeconfig, backend
-  configuration, state recovery data, and backups must remain in that checkout.
+  stack is active in AWS account `058264247987`, region `us-east-1`. Its initialized
+  main state owns 77 addresses, and the target EKS cluster currently runs all three
+  application Deployments. The explicitly authorized local handoff copied the
+  authoritative encrypted environment, Terraform inputs, application runtime, and
+  kubeconfig from `/home/geeta/Project1-e2e-clean` to `/home/geeta/Project1` without
+  changing remote state, infrastructure, or Jenkins. The regular checkout is now
+  the lifecycle operator; retain the clean checkout unchanged as a fallback.
 - The old external `devops-app-eks` lecture-lab cluster was verified absent in
   `us-east-1` on 2026-08-29 and is no longer an active ownership boundary.
 - Any future Terraform-owned stack remains a parallel recreation,
@@ -72,15 +74,38 @@ superseded evidence belong in `misc/recovery/PROJECT_HISTORY.md`.
   a real frontend-to-backend/worker HTTP smoke test in standalone CD. CI also makes
   Bandit and Flake8 blocking over explicit first-party Python
   files and adds a scoped Flake8 policy.
-- The source checkout now has a locally validated remediation for the Assignment 4
-  image-scan evidence gap: after Kaniko pushes all three images, CI scans each exact
-  immutable digest for HIGH/CRITICAL vulnerabilities before CD. A failed image
-  gate verifies all live Docker Hub tag digests before deleting only that build's
-  three tags. Five focused cleanup tests, Python compilation, and Git whitespace
-  validation pass. An authorized bounded EKS preflight of the currently deployed
-  frontend, backend, and worker digests with the same Trivy policy reported zero
-  HIGH and zero CRITICAL findings for each image. The new Jenkins stage still
-  requires commit/push authorization and live CI evidence.
+- The Assignment 4 image-scan remediation is committed, pushed, and cloud-accepted.
+  Source-build CI build 7 at commit `e121f0a` completed `SUCCESS` with immutable tag
+  `7-e121f0acc00d` and `DEPLOY_TO_EKS=false`. Bandit archived zero errors/findings,
+  seven tests passed, and the blocking pipeline completed. Jenkins archived one
+  digest and one Trivy report for each of frontend, backend, and worker; every
+  exact digest scan reported zero HIGH and zero CRITICAL findings, and read-only
+  Docker Hub inspection matched all three archived digests. The standalone CD
+  count remained four, its stage was explicitly skipped, and all three healthy
+  Deployments remained on accepted tag `2-192958c291ba`.
+- Controlled failed-scan behavior is also cloud-accepted. CI build 10 used temporary
+  commit `7001992` and tag `10-70019927c15e`; frontend/backend scans remained clean,
+  while the intentionally vulnerable worker scan found six HIGH and zero CRITICAL
+  findings and failed the pipeline. Post-stage cleanup deleted all three exact
+  temporary Docker Hub tags, subsequent public checks returned 404 for each, S3 and
+  standalone CD stages were skipped, CD remained at four builds, and all live
+  Deployments remained 2/2 Ready on tag `2-192958c291ba`. The temporary local and
+  remote evidence branch and generated cleanup-only recovery files were removed;
+  Jenkins builds and screenshots were preserved.
+- The final-stack data path is cloud-accepted. One explicitly approved synthetic
+  request entered through public frontend route `/machines`, traversed the internal
+  backend and worker Services, and returned HTTP 201 with record ID 2. The
+  PostgreSQL-backed public catalog and AES256-encrypted, versioned S3
+  `instances.json` contained the same record. The worker returns only after its
+  synchronous SNS `Publish`; CloudWatch reported exactly one SNS message in the
+  request window, no worker error signatures appeared, and all three Deployments
+  remained 2/2 Ready.
+- Final-stack self-healing is cloud-accepted. After one explicitly approved
+  frontend Pod deletion, the owning ReplicaSet immediately created a replacement
+  Pod with a different UID on the same immutable image. Sorted namespace events
+  showed the stop, successful create, scheduling, pull, container creation, and
+  start sequence. All three Deployments returned to 2/2 Ready and public `/`,
+  `/health`, and `/machines` checks remained HTTP 200.
 - The implementation enables EKS VPC CNI
   NetworkPolicy enforcement; adds default-deny-by-selection ingress/egress
   policies for frontend, backend, and worker; enables `RuntimeDefault` seccomp and
@@ -213,36 +238,40 @@ superseded evidence belong in `misc/recovery/PROJECT_HISTORY.md`.
 
 ## Immediate work queue
 
-1. Review and, with explicit authorization, commit and push only the intended
-   image-scan remediation files. Exclude temporary evidence files, screenshots,
-   `k8s/logging/`, and `scripts/recreate_state_bucket_boundary.sh`.
-2. Trigger one source-build CI run without CD, capture successful Bandit/Flake8,
-   all three immutable-digest Trivy image results, pushed digest/registry evidence,
-   and exact running-image output. Plan any deliberate failed-CI/registry-cleanup
-   exercise separately before mutation.
-3. Complete the remaining event and rollback/restoration evidence, then obtain
-   separate authorization for final teardown and residual audit.
-4. After final teardown, check out `main`, rerun setup so the
-   ignored watched-branch selection becomes `main`, and validate the production
-   trigger.
+1. Preserve the active final-evidence stack for the imminent project defense; do
+   not run teardown beforehand.
+2. Finish the documentation/evidence pass. After the defense, review teardown as a
+   separate, explicitly authorized operation.
 
 ## Exact resume point
 
 Resume on branch `aws4-jenkins-cicd` with the active final-evidence stack in account
 `058264247987`, region `us-east-1`. Terraform main state in
-`/home/geeta/Project1-e2e-clean` owns 77 addresses, and its generated lifecycle
-artifacts are authoritative. Both checkouts are at pushed commit `7a8731b`; the
-clean lifecycle checkout is tracked-clean. The source checkout contains the
-uncommitted image-scan remediation in `Jenkins/Jenkinsfile.eks`, `README.md`,
-`scripts/dockerhub_cleanup_failed_scan.py`, and
-`scripts/test_dockerhub_cleanup_failed_scan.py`.
+`/home/geeta/Project1` owns 77 addresses, and its handed-off generated lifecycle
+artifacts are authoritative. The source checkout includes the reviewed
+documentation/evidence checkpoint based on `e121f0a`; the retained clean checkout
+is at `7a8731b`. Jenkins CI build 7 from
+`e121f0a` is the accepted source-build/no-CD image-scan evidence: tag
+`7-e121f0acc00d`, three registry-matched immutable digests, and zero HIGH/CRITICAL
+findings for all three images. CD remained at four builds and the live frontend,
+backend, and worker remain 2/2 Ready on tag `2-192958c291ba`.
+Controlled CI build 10 is the accepted failed-scan/registry-cleanup evidence; all
+six temporary tags left by builds 8 and 10 are absent. The temporary evidence
+branch is absent locally and remotely. The lifecycle checkout is back on
+`aws4-jenkins-cicd` at its intentionally tracked-clean `7a8731b` fallback commit;
+do not modify or fast-forward it until after the defense.
+Final-stack record ID 2 is the accepted RDS/S3/SNS data-path evidence.
+The approved frontend Pod deletion is accepted self-healing evidence; its
+replacement reached Ready on the unchanged image and all public checks passed.
 The protected historical `scripts/recreate_state_bucket_boundary.sh` targets
 retired ownership and must not be rerun.
 Preserve untracked `k8s/logging/` and `scripts/recreate_state_bucket_boundary.sh`.
 Also preserve temporary evidence inventory/screenshots unless the user approves
-their exact cleanup. The next boundary is explicit commit/push authorization for
-the four remediation files plus this current-status update, followed by a targeted
-live CI run with `DEPLOY_TO_EKS=false`.
+their exact cleanup. The user explicitly requires the active stack to remain intact
+for the imminent project defense. Continue lifecycle/state operations only from
+`/home/geeta/Project1`; keep `/home/geeta/Project1-e2e-clean` as an untouched
+fallback to avoid concurrent operators. Teardown is deferred until separately
+authorized after the defense.
 
 ## Status-file maintenance rule
 

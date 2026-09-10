@@ -6,16 +6,22 @@ normal destroy lifecycle. Normal destroy retains the state bucket.
 
 ## Fixed ownership boundary
 
-- Execution checkout: `/home/geeta/Project1-e2e-clean`
+- Evidence-run checkout: `/home/geeta/Project1-e2e-clean`
 - AWS account: `058264247987`
 - AWS region: `us-east-1`
 - State bucket: `devops-project1-terraform-state-058264247987-us-east-1`
-- Current bootstrap owner before reset:
+- Bootstrap owner before the completed absolute-zero reset:
   `/home/geeta/Project1-e2e-clean/terraform/state-bootstrap/terraform.tfstate`
-- Backup directory:
+- Evidence-run backup directory:
   `/home/geeta/Project1-e2e-clean/terraform/state_backups/`
 
-Do not substitute artifacts from `/home/geeta/Project1`. The historical
+The final clean run was intentionally executed from the separate checkout above.
+After acceptance, an explicitly authorized local-only handoff copied its current
+encrypted environment, Terraform inputs, application runtime, and kubeconfig into
+`/home/geeta/Project1`; the remote state and live infrastructure were not changed.
+The regular checkout is now the lifecycle operator and the clean checkout is a
+frozen fallback. Do not mix artifacts between them or run concurrent lifecycle
+operations. The historical
 `scripts/recreate_state_bucket_boundary.sh` refers to the retired ownership
 boundary and must not be rerun.
 
